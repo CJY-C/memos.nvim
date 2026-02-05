@@ -91,6 +91,12 @@ COMMANDS                                            *memos-commands*
   (Available in the memo buffer) Saves the memo you are currently
   creating or editing.
 
+*:w*
+  (In the memo buffer) Same as |:MemosSave|.
+
+Untouched memo buffers are not treated as modified, so Neovim should only
+ask to save when content has actually changed.
+
 DEFAULT KEYMAPS                                     *memos-keymaps*
 
 *Global Keymap:*

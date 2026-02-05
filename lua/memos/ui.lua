@@ -124,23 +124,39 @@ end
 function M.return_to_list()
 	local current_edit_buf = vim.api.nvim_get_current_buf()
 
-	-- 1. 先重新显示列表 (这会将当前窗口的内容切换回列表 Buffer)
-	M.show_memos_list(current_filter)
+	-- Try switching first; this respects user 'hidden' policy.
+	local ok, err = pcall(M.show_memos_list, current_filter)
+	if not ok then
+		vim.notify("Could not leave memo buffer: " .. tostring(err), vim.log.levels.WARN)
+		return
+	end
 
-	-- 2. 然后安全地销毁刚才那个编辑 Buffer (force = true 忽略未保存修改)
-	if vim.api.nvim_buf_is_valid(current_edit_buf) then
-		vim.cmd("bwipeout! " .. current_edit_buf)
+	if not vim.api.nvim_buf_is_valid(current_edit_buf) then
+		return
+	end
+
+	-- Never force-delete a modified memo buffer.
+	if vim.bo[current_edit_buf].modified then
+		return
+	end
+
+	-- Clean up unchanged transient buffers.
+	pcall(vim.api.nvim_buf_delete, current_edit_buf, { force = false })
+	if buf_id == current_edit_buf then
+		buf_id = nil
 	end
 end
 
 function M.setup_buffer_for_editing()
-	vim.bo.buftype = "nofile"
-	vim.bo.bufhidden = "wipe"
+	vim.bo.buftype = "acwrite"
+	vim.bo.bufhidden = "hide"
 	vim.bo.swapfile = false
 	vim.bo.buflisted = false
 	vim.bo.filetype = "markdown"
 
 	vim.b.memos_original_content = table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), "\n")
+	-- Initial content load should not be treated as an unsaved user edit.
+	vim.bo.modified = false
 
 	local save_key_string = ""
 	if config.keymaps.buffer.save and config.keymaps.buffer.save ~= "" then
@@ -154,6 +170,12 @@ function M.setup_buffer_for_editing()
 	end
 
 	vim.api.nvim_buf_create_user_command(0, "MemosSave", 'lua require("memos.ui").save_or_create_dispatcher()', {})
+	vim.api.nvim_create_autocmd("BufWriteCmd", {
+		buffer = 0,
+		callback = function()
+			M.save_or_create_dispatcher()
+		end,
+	})
 	if config.keymaps.buffer.save and config.keymaps.buffer.save ~= "" then
 		vim.api.nvim_buf_set_keymap(
 			0,
@@ -251,6 +273,7 @@ function M.save_or_create_dispatcher()
 					vim.notify("✅ Memo updated successfully!")
 					if vim.api.nvim_buf_is_valid(bufnr_to_save) then
 						vim.b[bufnr_to_save].memos_original_content = content
+						vim.bo[bufnr_to_save].modified = false
 					end
 				end)
 				M.refresh_list_silently()
@@ -261,6 +284,11 @@ function M.save_or_create_dispatcher()
 			if new_memo and new_memo.name then
 				vim.schedule(function()
 					vim.notify("✅ Memo created successfully!")
+					if vim.api.nvim_buf_is_valid(bufnr_to_save) then
+						vim.b[bufnr_to_save].memos_memo_name = new_memo.name
+						vim.b[bufnr_to_save].memos_original_content = content
+						vim.bo[bufnr_to_save].modified = false
+					end
 					M.show_memos_list(current_filter)
 					-- 立即重新打开刚刚创建的 memo，进入编辑模式
 					vim.schedule(function()

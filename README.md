@@ -30,6 +30,8 @@ Install with [lazy.nvim](https://github.com/folke/lazy.nvim):
 -   `:Memos`: Opens a floating window to list and search your memos.
 -   `:MemosCreate`: Opens a new buffer to create a new memo.
 -   `:MemosSave`: (Available in the memo buffer) Saves the memo you are currently creating or editing.
+-   `:w`: (In the memo buffer) Same as `:MemosSave`.
+-   Untouched memo buffers are not marked as modified, so quitting Neovim will not prompt to save unless you actually edit.
 
 ### Default Keymaps
 
@@ -149,6 +151,8 @@ require("memos").setup({
 -   `:Memos`: 打开一个浮动窗口，列出并搜索你的 memos。
 -   `:MemosCreate`: 打开一个新的缓冲区来创建 memo。
 -   `:MemosSave`: (在 memo 编辑缓冲区中可用) 保存你正在创建或编辑的 memo。
+-   `:w`: (在 memo 编辑缓冲区中可用) 等同于 `:MemosSave`。
+-   未修改的 memo 缓冲区不会被标记为已更改；只有真正编辑后退出时才会提示保存。
 
 ### 默认快捷键
 
