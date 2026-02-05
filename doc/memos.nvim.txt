@@ -39,6 +39,10 @@ Install with |lazy.nvim|:
 >lua
 -- lua/plugins/memos.lua
 require("memos").setup({
+  active_user = "default",
+  users = {
+    { username = "default", host = "http://127.0.0.1:5230", token = "token_1" },
+  },
 
   -- Number of memos to fetch per page
   page_size = 50,
@@ -91,11 +95,20 @@ COMMANDS                                            *memos-commands*
   (Available in the memo buffer) Saves the memo you are currently
   creating or editing.
 
+*:MemosSwitch*
+  Select and switch to another saved account.
+
+*:MemosAddUser*
+  Add a new account (username, host, token) interactively.
+
 *:w*
   (In the memo buffer) Same as |:MemosSave|.
 
 Untouched memo buffers are not treated as modified, so Neovim should only
 ask to save when content has actually changed.
+
+If MEMOS_HOST or MEMOS_TOKEN is set, account switching is disabled for
+the current session.
 
 DEFAULT KEYMAPS                                     *memos-keymaps*
 
@@ -131,6 +144,11 @@ Default configuration:
 >lua
 -- lua/plugins/memos.lua
 require("memos").setup({
+  active_user = "default",
+  users = {
+    { username = "default", host = "http://127.0.0.1:5230", token = "token_1" },
+    { username = "work", host = "http://10.0.0.8:5230", token = "token_2" },
+  },
   auto_save = false,
   -- Number of memos to fetch per page
   page_size = 50,

@@ -9,6 +9,16 @@ local current_page_token = nil
 local current_user = nil
 local current_filter = nil
 
+function M.on_account_switched()
+	current_user = nil
+	current_page_token = nil
+	memos_cache = {}
+
+	if buf_id and vim.api.nvim_buf_is_valid(buf_id) and vim.fn.bufwinid(buf_id) ~= -1 then
+		M.show_memos_list(current_filter)
+	end
+end
+
 local function is_float_window(win)
 	local cfg = vim.api.nvim_win_get_config(win)
 	return cfg and cfg.relative and cfg.relative ~= ""
