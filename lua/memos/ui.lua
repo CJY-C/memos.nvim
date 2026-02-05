@@ -9,6 +9,69 @@ local current_page_token = nil
 local current_user = nil
 local current_filter = nil
 
+local function is_float_window(win)
+	local cfg = vim.api.nvim_win_get_config(win)
+	return cfg and cfg.relative and cfg.relative ~= ""
+end
+
+local function count_normal_windows()
+	local count = 0
+	for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+		if vim.api.nvim_win_is_valid(win) and not is_float_window(win) then
+			count = count + 1
+		end
+	end
+	return count
+end
+
+local function switch_away_and_wipe(current_buf)
+	local alt = vim.fn.bufnr("#")
+	if alt > 0 and vim.api.nvim_buf_is_valid(alt) and alt ~= current_buf then
+		vim.api.nvim_set_current_buf(alt)
+	else
+		vim.cmd("enew")
+	end
+
+	if vim.api.nvim_buf_is_valid(current_buf) then
+		vim.api.nvim_buf_delete(current_buf, { force = true })
+	end
+	if buf_id == current_buf then
+		buf_id = nil
+	end
+end
+
+function M.quit_memos_list()
+	local current_win = vim.api.nvim_get_current_win()
+	local current_buf = vim.api.nvim_get_current_buf()
+	local is_memos_float = false
+
+	local ok, win_var = pcall(vim.api.nvim_win_get_var, current_win, "memos_window")
+	if ok and win_var == true then
+		is_memos_float = true
+	end
+
+	-- Floating mode should close the float window itself.
+	if is_memos_float then
+		local ok_close = pcall(vim.api.nvim_win_close, current_win, true)
+		if not ok_close then
+			switch_away_and_wipe(current_buf)
+		end
+		return
+	end
+
+	-- In non-floating mode, only close this window when there are multiple normal windows.
+	if count_normal_windows() > 1 then
+		local ok_close = pcall(vim.api.nvim_win_close, current_win, true)
+		if not ok_close then
+			switch_away_and_wipe(current_buf)
+		end
+		return
+	end
+
+	-- Last normal window: switch away first, then wipe the memos buffer.
+	switch_away_and_wipe(current_buf)
+end
+
 function M.render_memos(data, append)
 	vim.schedule(function()
 		if not buf_id or not vim.api.nvim_buf_is_valid(buf_id) then
@@ -37,8 +100,14 @@ function M.render_memos(data, append)
 			table.insert(lines, help)
 		else
 			for i, memo in ipairs(memos_cache) do
-				local first_line = memo.content:match("^[^\n]*")
-				local display_time = memo.displayTime:sub(1, 10)
+				local content = type(memo.content) == "string" and memo.content or ""
+				local first_line = content:match("^[^\n]*") or ""
+				local display_time = type(memo.displayTime) == "string" and memo.displayTime or ""
+				if display_time == "" then
+					display_time = "unknown"
+				else
+					display_time = display_time:sub(1, 10)
+				end
 				table.insert(lines, string.format("%d. [%s] %s", i, display_time, first_line))
 			end
 		end
@@ -125,7 +194,12 @@ function M.setup_buffer_for_editing()
 end
 
 function M.open_memo_for_edit(memo, open_cmd)
-	local first_line = memo.content:match("^[^\n]*")
+	if not memo or not memo.name or memo.name == "" then
+		vim.notify("Selected memo has no valid identifier.", vim.log.levels.ERROR)
+		return
+	end
+	local content = type(memo.content) == "string" and memo.content or ""
+	local first_line = content:match("^[^\n]*") or "memo"
 	local buffer_name = "memos/"
 		.. memo.name:gsub("memos/", "")
 		.. "/"
@@ -143,7 +217,7 @@ function M.open_memo_for_edit(memo, open_cmd)
 	else
 		vim.cmd(open_cmd)
 		vim.api.nvim_buf_set_name(0, buffer_name)
-		vim.api.nvim_buf_set_lines(0, 0, -1, false, vim.split(memo.content, "\n"))
+		vim.api.nvim_buf_set_lines(0, 0, -1, false, vim.split(content, "\n"))
 		vim.b.memos_memo_name = memo.name
 		M.setup_buffer_for_editing()
 	end
@@ -338,7 +412,7 @@ function M.show_memos_list(filter)
 		local list_keymaps = config.keymaps.list
 		set_keymap(list_keymaps.edit_memo, '<Cmd>lua require("memos.ui").edit_selected_memo()<CR>')
 		set_keymap(list_keymaps.vsplit_edit_memo, '<Cmd>lua require("memos.ui").edit_selected_memo_in_vsplit()<CR>')
-		set_keymap(list_keymaps.quit, "<Cmd>bwipeout!<CR>")
+		set_keymap(list_keymaps.quit, '<Cmd>lua require("memos.ui").quit_memos_list()<CR>')
 		set_keymap(list_keymaps.search_memos, '<Cmd>lua require("memos.ui").search_memos()<CR>')
 		set_keymap(list_keymaps.refresh_list, '<Cmd>lua require("memos.ui").show_memos_list()<CR>')
 		set_keymap(list_keymaps.next_page, '<Cmd>lua require("memos.ui").load_next_page()<CR>')
@@ -377,6 +451,11 @@ function M.edit_selected_memo_in_vsplit()
 	local line_num = vim.api.nvim_win_get_cursor(0)[1]
 	local selected_memo = memos_cache[line_num]
 	if selected_memo then
+		local current_win = vim.api.nvim_get_current_win()
+		local ok, is_memos_window = pcall(vim.api.nvim_win_get_var, current_win, "memos_window")
+		if ok and is_memos_window == true then
+			pcall(vim.api.nvim_win_close, current_win, true)
+		end
 		M.open_memo_for_edit(selected_memo, "vsplit | enew")
 	end
 end
@@ -384,10 +463,11 @@ end
 function M.confirm_delete_memo()
 	local line_num = vim.api.nvim_win_get_cursor(0)[1]
 	local selected_memo = memos_cache[line_num]
-	if not selected_memo then
+	if not selected_memo or not selected_memo.name or selected_memo.name == "" then
 		return
 	end
-	local choice = vim.fn.confirm("Delete this memo?\n[" .. selected_memo.content:sub(1, 50) .. "...]", "&Yes\n&No", 2)
+	local preview = (type(selected_memo.content) == "string" and selected_memo.content or ""):sub(1, 50)
+	local choice = vim.fn.confirm("Delete this memo?\n[" .. preview .. "...]", "&Yes\n&No", 2)
 	if choice == 1 then
 		api.delete_memo(selected_memo.name, function(success)
 			if success then

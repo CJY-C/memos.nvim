@@ -41,7 +41,9 @@ Install with |lazy.nvim|:
 require("memos").setup({
 
   -- Number of memos to fetch per page
-  pageSize = 50,
+  page_size = 50,
+  -- API compatibility mode: "auto", "modern", "legacy"
+  api_version = "auto",
   auto_save = false,
   -- Window configuration
   window = {
@@ -125,7 +127,9 @@ Default configuration:
 require("memos").setup({
   auto_save = false,
   -- Number of memos to fetch per page
-  pageSize = 50,
+  page_size = 50,
+  -- API compatibility mode: "auto", "modern", "legacy"
+  api_version = "auto",
 
   -- Set to false or nil to disable a keymap
   keymaps = {

@@ -5,6 +5,7 @@ M.config = {
 	token = nil,
 	auto_save = false,
 	page_size = 50,
+	api_version = "auto", -- "auto" | "modern" | "legacy"
 	-- 【新增】窗口配置
 	window = {
 		enable_float = true, -- 默认为 false，设为 true 则开启浮动窗口
@@ -106,6 +107,19 @@ function M.setup(opts)
 
 	-- 4. 加载用户在 setup() 中直接提供的配置 (优先级最高)
 	final_config = vim.tbl_deep_extend("force", final_config, opts or {})
+
+	local valid_api_versions = {
+		auto = true,
+		modern = true,
+		legacy = true,
+	}
+	if not valid_api_versions[final_config.api_version] then
+		vim.notify(
+			string.format("Invalid api_version '%s', fallback to 'auto'.", tostring(final_config.api_version)),
+			vim.log.levels.WARN
+		)
+		final_config.api_version = "auto"
+	end
 
 	M.config = final_config
 end

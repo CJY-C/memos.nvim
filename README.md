@@ -73,6 +73,9 @@ require("memos").setup({
 
   -- Number of memos to fetch per page
   page_size = 50,
+  -- API compatibility mode: "auto", "modern", "legacy"
+  -- "auto" tries modern first, then falls back to legacy.
+  api_version = "auto",
 
   -- Auto-save the memo when leaving insert mode or holding the cursor.
   auto_save = false,
@@ -189,6 +192,9 @@ require("memos").setup({
 
   -- 每页获取的 memo 数量
   page_size = 50,
+  -- API 兼容模式: "auto"、"modern"、"legacy"
+  -- "auto" 会先尝试 modern，再回退到 legacy。
+  api_version = "auto",
 
   -- 当离开插入模式或光标静止时，自动保存 memo。
   auto_save = false,
