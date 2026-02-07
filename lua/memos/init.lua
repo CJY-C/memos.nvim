@@ -388,4 +388,10 @@ function M.show_list()
 	end)
 end
 
+function M.modify_meta()
+	ensure_config(function()
+		require("memos.ui").modify_current_memo_metadata()
+	end)
+end
+
 return M

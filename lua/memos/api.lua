@@ -353,6 +353,78 @@ function M.update_memo(memo_name, content, callback)
 	end)
 end
 
+function M.get_memo(memo_name, callback)
+	local cfg = get_config()
+	if not memo_name or memo_name == "" then
+		callback(nil)
+		return
+	end
+
+	execute("get memo", {
+		modern = function()
+			return { "-X", "GET", cfg.host .. "/api/v1/" .. memo_name }
+		end,
+		legacy = function()
+			return { "-X", "GET", cfg.host .. "/api/v1/" .. memo_name }
+		end,
+	}, function(body)
+		return normalize_memo(decode_json(body))
+	end, function(memo, err)
+		if memo then
+			callback(memo)
+		else
+			vim.schedule(function()
+				vim.notify("Failed to fetch memo: " .. tostring(err), vim.log.levels.ERROR)
+			end)
+			callback(nil)
+		end
+	end)
+end
+
+function M.update_memo_metadata(memo_name, fields, update_mask, callback)
+	local cfg = get_config()
+	local json_data = vim.json.encode(fields or {})
+	local update_mask_value = update_mask or ""
+
+	execute("update memo metadata", {
+		modern = function()
+			local url = cfg.host .. "/api/v1/" .. memo_name
+			if update_mask_value ~= "" then
+				url = url .. "?updateMask=" .. url_encode(update_mask_value)
+			end
+			return {
+				"-X",
+				"PATCH",
+				url,
+				"-H",
+				"Content-Type: application/json",
+				"--data",
+				json_data,
+			}
+		end,
+		legacy = function()
+			return {
+				"-X",
+				"PATCH",
+				cfg.host .. "/api/v1/" .. memo_name,
+				"-H",
+				"Content-Type: application/json",
+				"--data",
+				json_data,
+			}
+		end,
+	}, function(_)
+		return true
+	end, function(success, err)
+		if not success then
+			vim.schedule(function()
+				vim.notify("Failed to update memo metadata: " .. tostring(err), vim.log.levels.ERROR)
+			end)
+		end
+		callback(success == true)
+	end)
+end
+
 function M.delete_memo(memo_name, callback)
 	local cfg = get_config()
 

@@ -57,6 +57,7 @@ Install with [lazy.nvim](https://github.com/folke/lazy.nvim):
 | `d` or `dd` | Delete the selected memo           |
 | `<CR>`      | Edit the selected memo             |
 | `<Tab>`     | Edit the selected memo in a vsplit |
+| `m`         | Edit metadata for the selected memo |
 | `s`         | Search your memos                  |
 | `r`         | Refresh the memo list              |
 | `.`         | Load the next page of memos        |
@@ -196,6 +197,7 @@ require("memos").setup({
 | `d` 或 `dd` | 删除所选的 memo             |
 | `<CR>`      | 编辑所选的 memo             |
 | `<Tab>`     | 在垂直分屏中编辑所选的 memo |
+| `m`         | 编辑所选 memo 的元数据     |
 | `s`         | 搜索你的 memos              |
 | `r`         | 刷新 memo 列表              |
 | `.`         | 加载下一页 memos            |

@@ -26,6 +26,10 @@ leaving Neovim.
   window.
 - *Create & Edit*: Create new memos or edit existing ones in a dedicated
   buffer with `markdown` filetype support.
+- *Edit Metadata*: Update memo metadata (visibility, pinned, display time,
+  create time, state) from the list.
+  Time fields expect ISO 8601 / RFC3339. If you omit a timezone (for
+  example `2025-02-07T12:34:56`), the plugin appends `Z` (UTC).
 - *Delete Memos*: Delete memos directly from the list.
 - *Customizable*: Configure API endpoints, keymaps, and more.
 - *First-time Setup*: On first launch, you will be prompted to enter your Memos host and token. You can choose to save these permanently.
@@ -103,6 +107,9 @@ COMMANDS                                            *memos-commands*
 *:MemosAddUser*
   Add a new account (username, host, token) interactively.
 
+*:MemosModifyMeta*
+  (In the memo buffer) Modify memo metadata. New memo will be created first.
+
 *:w*
   (In the memo buffer) Same as |:MemosSave|.
 
@@ -128,6 +135,7 @@ DEFAULT KEYMAPS                                     *memos-keymaps*
 | `d` or `dd`        | Delete the selected memo             |
 | `<CR>`             | Edit the selected memo               |
 | `<Tab>`            | Edit the selected memo in a vsplit   |
+| `m`                | Edit metadata for the selected memo  |
 | `s`                | Search your memos                    |
 | `r`                | Refresh the memo list                |
 | `.`                | Load the next page of memos          |

@@ -491,6 +491,7 @@ function M.show_memos_list(filter)
 		local list_keymaps = config.keymaps.list
 		set_keymap(list_keymaps.edit_memo, '<Cmd>lua require("memos.ui").edit_selected_memo()<CR>')
 		set_keymap(list_keymaps.vsplit_edit_memo, '<Cmd>lua require("memos.ui").edit_selected_memo_in_vsplit()<CR>')
+		set_keymap(list_keymaps.edit_metadata, '<Cmd>lua require("memos.ui").edit_selected_memo_metadata()<CR>')
 		set_keymap(list_keymaps.quit, '<Cmd>lua require("memos.ui").quit_memos_list()<CR>')
 		set_keymap(list_keymaps.search_memos, '<Cmd>lua require("memos.ui").search_memos()<CR>')
 		set_keymap(list_keymaps.refresh_list, '<Cmd>lua require("memos.ui").show_memos_list()<CR>')
@@ -624,6 +625,386 @@ end
 function M.search_memos()
 	vim.ui.input({ prompt = "Search Memos: " }, function(input)
 		M.show_memos_list(input or "")
+	end)
+end
+
+local function prompt_select_field(callback)
+	local items = {
+		{ key = "visibility", label = "Visibility" },
+		{ key = "pinned", label = "Pinned" },
+		{ key = "displayTime", label = "Display time" },
+		{ key = "createTime", label = "Create time" },
+		{ key = "relations", label = "Relations" },
+		{ key = "state", label = "State" },
+	}
+	vim.schedule(function()
+		vim.ui.select(items, {
+			prompt = "Edit memo metadata:",
+			format_item = function(item)
+				return item.label
+			end,
+		}, function(choice)
+			if not choice then
+				callback(nil)
+				return
+			end
+			callback(choice.key)
+		end)
+	end)
+end
+
+local function prompt_select_enum(prompt, choices, callback)
+	local items = {}
+	for _, value in ipairs(choices) do
+		table.insert(items, { value = value })
+	end
+	vim.schedule(function()
+		vim.ui.select(items, {
+			prompt = prompt,
+			format_item = function(item)
+				return item.value
+			end,
+		}, function(choice)
+			if not choice then
+				callback(nil)
+				return
+			end
+			callback(choice.value)
+		end)
+	end)
+end
+
+local function prompt_select_boolean(prompt, callback)
+	local items = { { value = true, label = "true" }, { value = false, label = "false" } }
+	vim.schedule(function()
+		vim.ui.select(items, {
+			prompt = prompt,
+			format_item = function(item)
+				return item.label
+			end,
+		}, function(choice)
+			if not choice then
+				callback(nil)
+				return
+			end
+			callback(choice.value)
+		end)
+	end)
+end
+
+local function normalize_iso_time(input)
+	local value = vim.trim(input or "")
+	if value == "" then
+		return value
+	end
+	if value:match("Z$") or value:match("[%+%-]%d%d:%d%d$") then
+		return value
+	end
+	if value:match("^%d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d$") then
+		return value .. "Z"
+	end
+	return value
+end
+
+local function prompt_iso_time(prompt, default_value, callback)
+	vim.schedule(function()
+		vim.ui.input({
+			prompt = prompt .. " (ISO 8601, e.g. 2025-02-07T12:34:56Z): ",
+			default = default_value or "",
+		}, function(input)
+			if not input or input == "" then
+				callback(nil)
+				return
+			end
+			callback(normalize_iso_time(input))
+		end)
+	end)
+end
+
+local function is_time_field(field)
+	return field == "displayTime" or field == "createTime"
+end
+
+local function normalize_memo_name(raw)
+	if type(raw) ~= "string" then
+		return nil
+	end
+	local trimmed = vim.trim(raw)
+	if trimmed == "" then
+		return nil
+	end
+	if trimmed:match("^memos/") then
+		return trimmed
+	end
+	if trimmed:match("^%d+$") then
+		return "memos/" .. trimmed
+	end
+	return nil
+end
+
+local function get_default_relation_memo_name(memo)
+	local relations = memo and memo.relations or nil
+	if type(relations) ~= "table" or #relations == 0 then
+		return ""
+	end
+	local first = relations[1]
+	local related = first and first.relatedMemo or nil
+	if related and related.name and related.name ~= "" then
+		return related.name
+	end
+	return ""
+end
+
+local function get_default_relation_type(memo)
+	local relations = memo and memo.relations or nil
+	if type(relations) ~= "table" or #relations == 0 then
+		return "TYPE_UNSPECIFIED"
+	end
+	local first = relations[1]
+	local rel_type = first and first.type or nil
+	if type(rel_type) == "string" and rel_type ~= "" then
+		return rel_type
+	end
+	return "TYPE_UNSPECIFIED"
+end
+
+local function to_snake_mask(field)
+	if field == "displayTime" then
+		return "display_time"
+	end
+	if field == "createTime" then
+		return "create_time"
+	end
+	return field
+end
+
+local function update_metadata_field(memo, field, value)
+	if not memo or not memo.name or memo.name == "" then
+		return
+	end
+	local fields = {
+		content = memo.content or "",
+	}
+	fields[field] = value
+
+	local function notify_success()
+		vim.schedule(function()
+			vim.notify("✅ Memo metadata updated.")
+			M.refresh_list_silently()
+		end)
+	end
+
+	local function notify_unchanged()
+		vim.schedule(function()
+			vim.notify("⚠️ Memo metadata was not applied by server.", vim.log.levels.WARN)
+			M.refresh_list_silently()
+		end)
+	end
+
+	if not is_time_field(field) then
+		api.update_memo_metadata(memo.name, fields, field, function(success)
+			if success then
+				notify_success()
+			end
+		end)
+		return
+	end
+
+	local function attempt(update_mask, tried_retry)
+		api.update_memo_metadata(memo.name, fields, update_mask, function(success)
+			if not success then
+				return
+			end
+			api.get_memo(memo.name, function(updated)
+				if not updated then
+					return
+				end
+				if updated[field] == value then
+					notify_success()
+					return
+				end
+				if not tried_retry then
+					local snake = to_snake_mask(field)
+					if snake ~= update_mask then
+						attempt(snake, true)
+						return
+					end
+				end
+				notify_unchanged()
+			end)
+		end)
+	end
+
+	attempt(field, false)
+end
+
+local function edit_metadata_flow(memo)
+	if not memo or not memo.name or memo.name == "" then
+		return
+	end
+	prompt_select_field(function(field)
+		if not field then
+			return
+		end
+		if field == "visibility" then
+			prompt_select_enum("Visibility", { "PRIVATE", "PROTECTED", "PUBLIC" }, function(value)
+				if value then
+					update_metadata_field(memo, "visibility", value)
+				end
+			end)
+			return
+		end
+		if field == "pinned" then
+			prompt_select_boolean("Pinned", function(value)
+				if value ~= nil then
+					update_metadata_field(memo, "pinned", value)
+				end
+			end)
+			return
+		end
+		if field == "displayTime" then
+			prompt_iso_time("Display time", memo.displayTime, function(value)
+				if value then
+					update_metadata_field(memo, "displayTime", value)
+				end
+			end)
+			return
+		end
+		if field == "createTime" then
+			prompt_iso_time("Create time", memo.createTime, function(value)
+				if value then
+					update_metadata_field(memo, "createTime", value)
+				end
+			end)
+			return
+		end
+		if field == "relations" then
+			local clipboard_name = normalize_memo_name(vim.fn.getreg("+") or "")
+			local default_relation = clipboard_name or get_default_relation_memo_name(memo)
+			vim.schedule(function()
+				vim.ui.input({
+					prompt = "Related memo id (memos/<id>): ",
+					default = default_relation,
+				}, function(input)
+					if input == nil then
+						return
+					end
+					local normalized = normalize_memo_name(input or "")
+					if not normalized or normalized == "" then
+						local choice = vim.fn.confirm("Clear all relations?", "&Yes\n&No", 2)
+						if choice ~= 1 then
+							return
+						end
+						local fields = {
+							content = memo.content or "",
+							relations = {},
+						}
+						api.update_memo_metadata(memo.name, fields, "relations", function(success)
+							if success then
+								vim.schedule(function()
+									vim.notify("✅ Memo relations cleared.")
+									M.refresh_list_silently()
+								end)
+							end
+						end)
+						return
+					end
+
+					local default_type = get_default_relation_type(memo)
+					vim.ui.input({
+						prompt = "Relation type: ",
+						default = default_type,
+					}, function(type_input)
+						if not type_input or type_input == "" then
+							return
+						end
+						local fields = {
+							content = memo.content or "",
+							relations = {
+								{
+									memo = { name = memo.name },
+									relatedMemo = { name = normalized },
+									type = type_input,
+								},
+							},
+						}
+						api.update_memo_metadata(memo.name, fields, "relations", function(success)
+							if success then
+								vim.schedule(function()
+									vim.notify("✅ Memo relations updated.")
+									M.refresh_list_silently()
+								end)
+							end
+						end)
+					end)
+				end)
+			end)
+			return
+		end
+		if field == "state" then
+			prompt_select_enum("State", { "NORMAL", "ARCHIVED" }, function(value)
+				if value then
+					update_metadata_field(memo, "state", value)
+				end
+			end)
+			return
+		end
+	end)
+end
+
+function M.edit_selected_memo_metadata()
+	local line_num = vim.api.nvim_win_get_cursor(0)[1]
+	local selected_memo = memos_cache[line_num]
+	if not selected_memo or not selected_memo.name or selected_memo.name == "" then
+		return
+	end
+	api.get_memo(selected_memo.name, function(memo)
+		if not memo then
+			return
+		end
+		edit_metadata_flow(memo)
+	end)
+end
+
+function M.modify_current_memo_metadata()
+	local memo_name = vim.b.memos_memo_name
+	if memo_name and memo_name ~= "" then
+		api.get_memo(memo_name, function(memo)
+			if not memo then
+				return
+			end
+			edit_metadata_flow(memo)
+		end)
+		return
+	end
+
+	local bufnr = vim.api.nvim_get_current_buf()
+	local content = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
+	if content == "" then
+		vim.notify("Memo is empty, not sending.", vim.log.levels.WARN)
+		return
+	end
+
+	api.create_memo(content, function(new_memo)
+		if not new_memo or not new_memo.name then
+			vim.schedule(function()
+				vim.notify("❌ Failed to create memo.", vim.log.levels.ERROR)
+			end)
+			return
+		end
+		vim.schedule(function()
+			if vim.api.nvim_buf_is_valid(bufnr) then
+				vim.b[bufnr].memos_memo_name = new_memo.name
+				vim.b[bufnr].memos_original_content = content
+				vim.bo[bufnr].modified = false
+			end
+		end)
+		api.get_memo(new_memo.name, function(memo)
+			if not memo then
+				return
+			end
+			edit_metadata_flow(memo)
+		end)
 	end)
 end
 

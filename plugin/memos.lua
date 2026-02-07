@@ -28,6 +28,13 @@ end, {
 	desc = "Add a Memos account",
 })
 
+vim.api.nvim_create_user_command("MemosModifyMeta", function()
+	require("memos").modify_meta()
+end, {
+	nargs = 0,
+	desc = "Modify memo metadata",
+})
+
 -- 【新增】创建启动快捷键
 -- 使用 vim.schedule 确保在所有插件加载后执行，避免 require('memos') 失败
 vim.schedule(function()
