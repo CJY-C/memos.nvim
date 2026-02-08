@@ -167,6 +167,8 @@ function M.setup_buffer_for_editing()
 	vim.b.memos_original_content = table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), "\n")
 	-- Initial content load should not be treated as an unsaved user edit.
 	vim.bo.modified = false
+	vim.b.memos_save_inflight = false
+	vim.b.memos_save_pending = false
 
 	local save_key_string = ""
 	if config.keymaps.buffer.save and config.keymaps.buffer.save ~= "" then
@@ -267,12 +269,36 @@ end
 
 function M.save_or_create_dispatcher()
 	local bufnr_to_save = vim.api.nvim_get_current_buf()
+	if vim.b[bufnr_to_save].memos_save_inflight then
+		vim.b[bufnr_to_save].memos_save_pending = true
+		return
+	end
+	vim.b[bufnr_to_save].memos_save_inflight = true
 	local memo_name = vim.b.memos_memo_name
 	local content = table.concat(vim.api.nvim_buf_get_lines(bufnr_to_save, 0, -1, false), "\n")
 
 	if content == "" then
 		vim.notify("Memo is empty, not sending.", vim.log.levels.WARN)
+		vim.b[bufnr_to_save].memos_save_inflight = false
 		return
+	end
+
+	local function finalize_save()
+		if not vim.api.nvim_buf_is_valid(bufnr_to_save) then
+			return
+		end
+		vim.b[bufnr_to_save].memos_save_inflight = false
+		if vim.b[bufnr_to_save].memos_save_pending then
+			vim.b[bufnr_to_save].memos_save_pending = false
+			local current_content = table.concat(vim.api.nvim_buf_get_lines(bufnr_to_save, 0, -1, false), "\n")
+			if vim.b[bufnr_to_save].memos_original_content ~= current_content then
+				vim.schedule(function()
+					if vim.api.nvim_buf_is_valid(bufnr_to_save) then
+						M.save_or_create_dispatcher()
+					end
+				end)
+			end
+		end
 	end
 
 	if memo_name then
@@ -285,8 +311,13 @@ function M.save_or_create_dispatcher()
 						vim.b[bufnr_to_save].memos_original_content = content
 						vim.bo[bufnr_to_save].modified = false
 					end
+					finalize_save()
 				end)
 				M.refresh_list_silently()
+			else
+				vim.schedule(function()
+					finalize_save()
+				end)
 			end
 		end)
 	else
@@ -304,10 +335,12 @@ function M.save_or_create_dispatcher()
 					vim.schedule(function()
 						M.open_memo_for_edit(new_memo, "enew")
 					end)
+					finalize_save()
 				end)
 			else
 				vim.schedule(function()
 					vim.notify("❌ Failed to create memo.", vim.log.levels.ERROR)
+					finalize_save()
 				end)
 			end
 		end)

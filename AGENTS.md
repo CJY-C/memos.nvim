@@ -1,6 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
+
 - `plugin/memos.lua`: Neovim entrypoint that defines `:Memos` and `:MemosCreate` commands and startup keymap wiring.
 - `lua/memos/`: core Lua modules:
   - `init.lua` for setup/config loading and public API.
@@ -10,6 +11,7 @@
 - `README.md`: user-facing install, config, and usage examples.
 
 ## Build, Test, and Development Commands
+
 - No build step is required; this is a pure Lua Neovim plugin.
 - Quick smoke test:
   - `./scripts/smoke-test.sh`
@@ -20,6 +22,7 @@
   3. Confirm list, create, edit, delete, and pagination behavior against a live Memos instance.
 
 ## Coding Style & Naming Conventions
+
 - Language: Lua (Neovim API style).
 - Prefer snake_case for config keys and Lua identifiers (for example, `page_size`, `auto_save`).
 - Match existing file style: concise functions, direct API calls, minimal abstraction.
@@ -27,11 +30,13 @@
 - Keep help/docs updates in sync when changing commands, keymaps, or config fields.
 
 ## Testing Guidelines
+
 - There is no committed automated test suite yet; rely on headless load checks plus manual Neovim smoke testing.
 - When fixing regressions, include clear reproduction steps in the PR and verify both list and edit/create flows.
 - Test config precedence paths when relevant: defaults, saved config file, environment variables, and `setup()` overrides.
 
 ## Commit & Pull Request Guidelines
+
 - Follow the repository’s existing commit style: short, imperative subjects (for example, `fix bugs`, `update readme`).
 - Prefer scoped prefixes when useful (`feat:`, `fix:`), and call out breaking changes explicitly.
 - PRs should include: purpose, user-facing impact, manual test steps, and doc updates (`README.md`/`doc/memos.nvim.txt`) when behavior changes.
