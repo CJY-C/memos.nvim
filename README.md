@@ -6,12 +6,14 @@ A Neovim plugin to interact with [Memos](https://github.com/usememos/memos) righ
 
 ## ✨ Features
 
--   **List Memos**: View, search, and paginate through your memos.
--   **Create & Edit**: Create new memos or edit existing ones in a dedicated buffer with `markdown` filetype support.
--   **Delete Memos**: Delete memos directly from the list.
--   **Customizable**: Configure API endpoints, keymaps, and more.
--   **First-time Setup**: On first launch, you will be prompted to enter your Memos host and token. You can choose to save these permanently.
--   **Floating Window**: Optional LazyVim-style floating window for the memo list.
+- **List Memos**: View, search, and paginate through your memos.
+- **Create & Edit**: Create new memos or edit existing ones in a dedicated buffer with `markdown` filetype support.
+- **Edit Metadata**: Update memo metadata (visibility, pinned, display time, create time, state) from the list.
+  - Time fields expect ISO 8601 / RFC3339. If you omit a timezone (e.g. `2025-02-07T12:34:56`), the plugin appends `Z` (UTC).
+- **Delete Memos**: Delete memos directly from the list.
+- **Customizable**: Configure API endpoints, keymaps, and more.
+- **First-time Setup**: On first launch, you will be prompted to enter your Memos host and token. You can choose to save these permanently.
+- **Floating Window**: Optional LazyVim-style floating window for the memo list.
 
 ## 📦 Installation
 
@@ -27,14 +29,15 @@ Install with [lazy.nvim](https://github.com/folke/lazy.nvim):
 
 ### Commands
 
--   `:Memos`: Opens a floating window to list and search your memos.
--   `:MemosCreate`: Opens a new buffer to create a new memo.
--   `:MemosSave`: (Available in the memo buffer) Saves the memo you are currently creating or editing.
--   `:MemosSwitch`: Select and switch to another saved account.
--   `:MemosAddUser`: Add a new account (`username`, `host`, `token`) interactively.
--   `:w`: (In the memo buffer) Same as `:MemosSave`.
--   Untouched memo buffers are not marked as modified, so quitting Neovim will not prompt to save unless you actually edit.
--   If `MEMOS_HOST` or `MEMOS_TOKEN` is set, account switching is disabled for that session.
+- `:Memos`: Opens a floating window to list and search your memos.
+- `:MemosCreate`: Opens a new buffer to create a new memo.
+- `:MemosSave`: (Available in the memo buffer) Saves the memo you are currently creating or editing.
+- `:MemosSwitch`: Select and switch to another saved account.
+- `:MemosAddUser`: Add a new account (`username`, `host`, `token`) interactively.
+- `:MemosModifyMeta`: (In memo buffer) Modify memo metadata; new memo will be created first.
+- `:w`: (In the memo buffer) Same as `:MemosSave`.
+- Untouched memo buffers are not marked as modified, so quitting Neovim will not prompt to save unless you actually edit.
+- If `MEMOS_HOST` or `MEMOS_TOKEN` is set, account switching is disabled for that session.
 
 ### Default Keymaps
 
@@ -49,6 +52,8 @@ Install with [lazy.nvim](https://github.com/folke/lazy.nvim):
 | Key         | Action                             |
 | ----------- | ---------------------------------- |
 | `a`         | Add a new memo                     |
+| `y`         | Copy selected memo ID to clipboard |
+| `p`         | Paste memo ID from clipboard       |
 | `d` or `dd` | Delete the selected memo           |
 | `<CR>`      | Edit the selected memo             |
 | `<Tab>`     | Edit the selected memo in a vsplit |
@@ -69,6 +74,7 @@ You can override the default settings by passing a table to the `setup()` functi
 
 > **Note:** On first use, you will be prompted to enter your Memos host and token. You can choose to save these permanently.
 > The config file will be stored at:
+>
 > - **macOS / Linux**: `~/.local/share/nvim/memos.nvim/config.json`
 > - **Windows**: `~/AppData/Local/nvim-data/memos.nvim/config.json`
 
@@ -106,11 +112,14 @@ require("memos").setup({
     -- Keymaps for the memo list window
     list = {
       add_memo = "a",
+      copy_memo_id = "y",
       delete_memo = "d",
       delete_memo_visual = "dd",
       -- Assign both <CR> and 'i' to edit a memo
       edit_memo = { "<CR>", "i" },
       vsplit_edit_memo = "<Tab>",
+      edit_metadata = "m",
+      paste_memo = "p",
       search_memos = "s",
       refresh_list = "r",
       next_page = ".",
@@ -136,12 +145,14 @@ require("memos").setup({
 
 ## ✨ 功能
 
--   **列表 Memos**: 查看、搜索和翻页你的 memos。
--   **创建与编辑**: 在专用的、支持 `markdown` 文件类型的缓冲区中创建新 memo 或编辑现有 memo。
--   **删除 Memos**: 直接从列表中删除 memo。
--   **可定制**: 可配置 API 地址、快捷键等。
--   **首次启动引导**: 首次启动时会提示输入 Memos 的 host 和 token，并询问是否永久保存。
--   **浮动窗口**: 可选的 LazyVim 风格浮动窗口来展示 memo 列表。
+- **列表 Memos**: 查看、搜索和翻页你的 memos。
+- **创建与编辑**: 在专用的、支持 `markdown` 文件类型的缓冲区中创建新 memo 或编辑现有 memo。
+- **编辑元数据**: 在列表中更新 memo 的可见性、置顶、展示时间、创建时间、状态。
+  - 时间字段需 ISO 8601 / RFC3339 格式；若未包含时区（如 `2025-02-07T12:34:56`），插件会自动追加 `Z`（UTC）。
+- **删除 Memos**: 直接从列表中删除 memo。
+- **可定制**: 可配置 API 地址、快捷键等。
+- **首次启动引导**: 首次启动时会提示输入 Memos 的 host 和 token，并询问是否永久保存。
+- **浮动窗口**: 可选的 LazyVim 风格浮动窗口来展示 memo 列表。
 
 ## 📦 安装
 
@@ -157,14 +168,15 @@ require("memos").setup({
 
 ### 命令
 
--   `:Memos`: 打开一个浮动窗口，列出并搜索你的 memos。
--   `:MemosCreate`: 打开一个新的缓冲区来创建 memo。
--   `:MemosSave`: (在 memo 编辑缓冲区中可用) 保存你正在创建或编辑的 memo。
--   `:MemosSwitch`: 选择并切换已保存账号。
--   `:MemosAddUser`: 交互式添加新账号（`username`、`host`、`token`）。
--   `:w`: (在 memo 编辑缓冲区中可用) 等同于 `:MemosSave`。
--   未修改的 memo 缓冲区不会被标记为已更改；只有真正编辑后退出时才会提示保存。
--   如果设置了 `MEMOS_HOST` 或 `MEMOS_TOKEN`，该会话中将禁用账号切换。
+- `:Memos`: 打开一个浮动窗口，列出并搜索你的 memos。
+- `:MemosCreate`: 打开一个新的缓冲区来创建 memo。
+- `:MemosSave`: (在 memo 编辑缓冲区中可用) 保存你正在创建或编辑的 memo。
+- `:MemosSwitch`: 选择并切换已保存账号。
+- `:MemosAddUser`: 交互式添加新账号（`username`、`host`、`token`）。
+- `:MemosModifyMeta`: （在 memo 编辑缓冲区中可用）修改 memo 元数据；新 memo 会先创建。
+- `:w`: (在 memo 编辑缓冲区中可用) 等同于 `:MemosSave`。
+- 未修改的 memo 缓冲区不会被标记为已更改；只有真正编辑后退出时才会提示保存。
+- 如果设置了 `MEMOS_HOST` 或 `MEMOS_TOKEN`，该会话中将禁用账号切换。
 
 ### 默认快捷键
 
@@ -179,6 +191,8 @@ require("memos").setup({
 | 按键        | 功能                        |
 | ----------- | --------------------------- |
 | `a`         | 新增一个 memo               |
+| `y`         | 复制选中 memo 的 ID 到剪贴板 |
+| `p`         | 从剪贴板粘贴 memo ID        |
 | `d` 或 `dd` | 删除所选的 memo             |
 | `<CR>`      | 编辑所选的 memo             |
 | `<Tab>`     | 在垂直分屏中编辑所选的 memo |
@@ -199,6 +213,7 @@ require("memos").setup({
 
 > **注意：** 首次使用时会提示输入 Memos 的 host 和 token，并询问是否永久保存。
 > 配置文件将存储在：
+>
 > - **macOS / Linux**: `~/.local/share/nvim/memos.nvim/config.json`
 > - **Windows**: `~/AppData/Local/nvim-data/memos.nvim/config.json`
 
@@ -236,11 +251,14 @@ require("memos").setup({
     -- memo 列表窗口的快捷键
     list = {
       add_memo = "a",
+      copy_memo_id = "y",
       delete_memo = "d",
       delete_memo_visual = "dd",
       -- 将 <CR> 和 i 键都设置为编辑功能
       edit_memo = { "<CR>", "i" },
       vsplit_edit_memo = "<Tab>",
+      edit_metadata = "m",
+      paste_memo = "p",
       search_memos = "s",
       refresh_list = "r",
       next_page = ".",

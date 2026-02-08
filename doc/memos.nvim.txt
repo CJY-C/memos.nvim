@@ -64,10 +64,12 @@ require("memos").setup({
     -- Keymaps for the memo list window
     list = {
       add_memo = "a",
+      copy_memo_id = "y",
       delete_memo = "d",
       delete_memo_visual = "dd",
       edit_memo = "<CR>",
       vsplit_edit_memo = "<Tab>",
+      paste_memo = "p",
       search_memos = "s",
       refresh_list = "r",
       next_page = ".",
@@ -121,6 +123,8 @@ DEFAULT KEYMAPS                                     *memos-keymaps*
 | Key                | Action                               |
 |--------------------|--------------------------------------|
 | `a`                | Add a new memo                       |
+| `y`                | Copy selected memo ID to clipboard   |
+| `p`                | Paste memo ID from clipboard         |
 | `d` or `dd`        | Delete the selected memo             |
 | `<CR>`             | Edit the selected memo               |
 | `<Tab>`            | Edit the selected memo in a vsplit   |
@@ -163,10 +167,13 @@ require("memos").setup({
     -- Keymaps for the memo list window
     list = {
       add_memo = "a",
+      copy_memo_id = "y",
       delete_memo = "d",
       delete_memo_visual = "dd",
       edit_memo = "<CR>",
       vsplit_edit_memo = "<Tab>",
+      edit_metadata = "m",
+      paste_memo = "p",
       search_memos = "s",
       refresh_list = "r",
       next_page = ".",

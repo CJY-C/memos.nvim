@@ -375,4 +375,28 @@ function M.delete_memo(memo_name, callback)
 	end)
 end
 
+function M.get_memo(memo_name, callback)
+	if not memo_name or memo_name == "" then
+		callback(nil, "Missing memo id")
+		return
+	end
+	local cfg = get_config()
+	execute("get memo", {
+		modern = function()
+			return { "-X", "GET", cfg.host .. "/api/v1/" .. memo_name }
+		end,
+		legacy = function()
+			return { "-X", "GET", cfg.host .. "/api/v1/" .. memo_name }
+		end,
+	}, function(body)
+		return normalize_memo(decode_json(body))
+	end, function(memo, err)
+		if not memo then
+			callback(nil, err)
+			return
+		end
+		callback(memo, nil)
+	end)
+end
+
 return M

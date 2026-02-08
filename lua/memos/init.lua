@@ -19,10 +19,13 @@ M.config = {
 		start_memos = "<leader>mm",
 		list = {
 			add_memo = "a",
+			copy_memo_id = "y",
 			delete_memo = "d",
 			delete_memo_visual = "dd",
 			edit_memo = "<CR>",
 			vsplit_edit_memo = "<Tab>",
+			edit_metadata = "m",
+			paste_memo = "p",
 			search_memos = "s",
 			refresh_list = "r",
 			next_page = ".",
@@ -68,7 +71,12 @@ local function normalize_users(raw_users)
 	local normalized = {}
 	local seen = {}
 	for _, user in ipairs(raw_users) do
-		if type(user) == "table" and is_non_empty(user.username) and is_non_empty(user.host) and is_non_empty(user.token) then
+		if
+			type(user) == "table"
+			and is_non_empty(user.username)
+			and is_non_empty(user.host)
+			and is_non_empty(user.token)
+		then
 			if not seen[user.username] then
 				table.insert(normalized, {
 					username = user.username,

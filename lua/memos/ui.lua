@@ -364,6 +364,14 @@ function M.create_memo_in_buffer()
 	M.setup_buffer_for_editing()
 end
 
+function M.create_memo_from_content(content)
+	vim.cmd("enew")
+	vim.b.memos_memo_name = nil
+	vim.api.nvim_buf_set_name(0, "memos/new_memo_" .. vim.fn.strftime("%s"))
+	vim.api.nvim_buf_set_lines(0, 0, -1, false, vim.split(content or "", "\n"))
+	M.setup_buffer_for_editing()
+end
+
 -- 【新增】创建居中浮动窗口的辅助函数
 local function create_float_window(buf)
 	local width = math.floor(vim.o.columns * (config.window.width or 0.8))
@@ -488,6 +496,8 @@ function M.show_memos_list(filter)
 		set_keymap(list_keymaps.refresh_list, '<Cmd>lua require("memos.ui").show_memos_list()<CR>')
 		set_keymap(list_keymaps.next_page, '<Cmd>lua require("memos.ui").load_next_page()<CR>')
 		set_keymap(list_keymaps.add_memo, '<Cmd>lua require("memos.ui").create_memo_in_buffer()<CR>')
+		set_keymap(list_keymaps.copy_memo_id, '<Cmd>lua require("memos.ui").copy_selected_memo_id()<CR>')
+		set_keymap(list_keymaps.paste_memo, '<Cmd>lua require("memos.ui").paste_memo_from_clipboard()<CR>')
 		set_keymap(list_keymaps.delete_memo, '<Cmd>lua require("memos.ui").confirm_delete_memo()<CR>')
 		set_keymap(list_keymaps.delete_memo_visual, '<Cmd>lua require("memos.ui").confirm_delete_memo()<CR>')
 	end
@@ -529,6 +539,62 @@ function M.edit_selected_memo_in_vsplit()
 		end
 		M.open_memo_for_edit(selected_memo, "vsplit | enew")
 	end
+end
+
+function M.copy_selected_memo_id()
+	local line_num = vim.api.nvim_win_get_cursor(0)[1]
+	local selected_memo = memos_cache[line_num]
+	if not selected_memo or not selected_memo.name or selected_memo.name == "" then
+		vim.notify("Selected memo has no valid identifier.", vim.log.levels.WARN)
+		return
+	end
+
+	local preview = (type(selected_memo.content) == "string" and selected_memo.content or ""):sub(1, 50)
+	local choice = vim.fn.confirm("Copy this memo ID?\n[" .. preview .. "...]", "&Yes\n&No", 2)
+	if choice ~= 1 then
+		return
+	end
+
+	vim.fn.setreg("+", selected_memo.name)
+	vim.notify("📋 Memo ID copied to clipboard.")
+end
+
+local function normalize_memo_name(raw)
+	if type(raw) ~= "string" then
+		return nil
+	end
+	local trimmed = vim.trim(raw)
+	if trimmed == "" then
+		return nil
+	end
+	if trimmed:match("^memos/") then
+		return trimmed
+	end
+	if trimmed:match("^%d+$") then
+		return "memos/" .. trimmed
+	end
+	return nil
+end
+
+function M.paste_memo_from_clipboard()
+	local raw = vim.fn.getreg("+")
+	local memo_name = normalize_memo_name(raw)
+	if not memo_name then
+		vim.notify("Clipboard does not contain a valid memo id.", vim.log.levels.WARN)
+		return
+	end
+
+	api.get_memo(memo_name, function(memo, err)
+		if not memo then
+			vim.schedule(function()
+				vim.notify("Failed to fetch memo: " .. tostring(err), vim.log.levels.ERROR)
+			end)
+			return
+		end
+		vim.schedule(function()
+			M.create_memo_from_content(type(memo.content) == "string" and memo.content or "")
+		end)
+	end)
 end
 
 function M.confirm_delete_memo()
