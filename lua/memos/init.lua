@@ -15,6 +15,7 @@ M.config = {
 		"display_time desc",
 		"create_time desc",
 	},
+	list_state_default = "NORMAL",
 	window = {
 		enable_float = true,
 		width = 0.85,
@@ -37,6 +38,7 @@ M.config = {
 			next_page = ".",
 			quit = "q",
 			toggle_sort = "<S-s>",
+			toggle_state = "<S-a>",
 		},
 		buffer = {
 			save = "<leader>ms",

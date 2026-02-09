@@ -23,7 +23,7 @@ leaving Neovim.
 2. Features                                           *memos-features*
 
 - *List Memos*: View, search, and paginate through your memos in a floating
-  window.
+  window (with pinned/archived indicators).
 - *Create & Edit*: Create new memos or edit existing ones in a dedicated
   buffer with `markdown` filetype support.
 - *Edit Metadata*: Update memo metadata (visibility, pinned, display time,
@@ -60,6 +60,8 @@ require("memos").setup({
     "display_time desc",
     "create_time desc",
   },
+  -- Default state to request in list (modern API only)
+  list_state_default = "NORMAL",
   auto_save = false,
   -- Window configuration
   window = {
@@ -86,6 +88,7 @@ require("memos").setup({
       refresh_list = "r",
       next_page = ".",
       toggle_sort = "<S-s>",
+      toggle_state = "<S-a>",
       quit = "q",
     },
     -- Keymaps for the editing/creating buffer
@@ -152,6 +155,7 @@ DEFAULT KEYMAPS                                     *memos-keymaps*
 | `r`                | Refresh the memo list                |
 | `.`                | Load the next page of memos          |
 | `<S-s>`            | Select list sort order               |
+| `<S-a>`            | Toggle memo state (NORMAL/ARCHIVED)  |
 | `q`                | Quit the list window                 |
 
 *In the Edit/Create Buffer:*
@@ -187,6 +191,8 @@ require("memos").setup({
     "display_time desc",
     "create_time desc",
   },
+  -- Default state to request in list (modern API only)
+  list_state_default = "NORMAL",
 
   -- Set to false or nil to disable a keymap
   keymaps = {
@@ -207,6 +213,7 @@ require("memos").setup({
       refresh_list = "r",
       next_page = ".",
       toggle_sort = "<S-s>",
+      toggle_state = "<S-a>",
       quit = "q",
     },
     -- Keymaps for the editing/creating buffer

@@ -10,6 +10,7 @@ local current_user = nil
 local current_filter = nil
 local current_order_by = nil
 local current_sort_index = nil
+local current_state = nil
 local last_float_buf_id = nil
 
 function M.on_account_switched()
@@ -18,6 +19,7 @@ function M.on_account_switched()
 	memos_cache = {}
 	current_order_by = nil
 	current_sort_index = nil
+	current_state = nil
 
 	if buf_id and vim.api.nvim_buf_is_valid(buf_id) and vim.fn.bufwinid(buf_id) ~= -1 then
 		M.show_memos_list(current_filter)
@@ -97,6 +99,9 @@ function M.quit_memos_list()
 
 	-- Last normal window: switch away first, then wipe the memos buffer.
 	switch_away_and_wipe(current_buf)
+	current_order_by = nil
+	current_sort_index = nil
+	current_state = nil
 end
 
 function M.render_memos(data, append)
@@ -135,7 +140,18 @@ function M.render_memos(data, append)
 				else
 					display_time = display_time:sub(1, 10)
 				end
-				table.insert(lines, string.format("%d. [%s] %s", i, display_time, first_line))
+				local badges = {}
+				if memo.pinned == true then
+					table.insert(badges, "P")
+				end
+				if memo.state == "ARCHIVED" then
+					table.insert(badges, "A")
+				end
+				local badge_text = ""
+				if #badges > 0 then
+					badge_text = "[" .. table.concat(badges, "") .. "] "
+				end
+				table.insert(lines, string.format("%d. [%s] %s%s", i, display_time, badge_text, first_line))
 			end
 		end
 		if current_page_token ~= "" then
@@ -392,7 +408,7 @@ function M.refresh_list_silently()
 	if not current_user or not current_user.name then
 		return
 	end
-	api.list_memos(current_user.name, current_filter, config.page_size, nil, current_order_by, function(data)
+	api.list_memos(current_user.name, current_filter, config.page_size, nil, current_order_by, current_state, function(data)
 		M.render_memos(data, false)
 	end)
 end
@@ -515,6 +531,17 @@ function M.cycle_sort()
 	prompt_select_sort()
 end
 
+function M.toggle_state()
+	if current_state == "ARCHIVED" then
+		current_state = "NORMAL"
+	else
+		current_state = "ARCHIVED"
+	end
+	current_page_token = nil
+	vim.notify("State: " .. tostring(current_state))
+	M.show_memos_list(current_filter, { force_refresh = true, reason = "state" })
+end
+
 local function render_cached_list()
 	M.render_memos({
 		memos = memos_cache,
@@ -561,6 +588,9 @@ function M.show_memos_list(filter, opts)
 	if not current_order_by or current_order_by == "" then
 		current_order_by = config.list_sort_default
 		current_sort_index = resolve_sort_index(current_order_by)
+	end
+	if not current_state or current_state == "" then
+		current_state = config.list_state_default or "NORMAL"
 	end
 
 	-- 检查 buffer 是否存在且有效
@@ -631,7 +661,7 @@ end
 				vim.schedule(function()
 					vim.notify("Fetching memos for " .. user.name .. "...")
 				end)
-				api.list_memos(user.name, current_filter, config.page_size, nil, current_order_by, function(data)
+				api.list_memos(user.name, current_filter, config.page_size, nil, current_order_by, current_state, function(data)
 					M.render_memos(data, false)
 				end)
 			else
@@ -681,6 +711,7 @@ end
 		set_keymap(list_keymaps.delete_memo, '<Cmd>lua require("memos.ui").confirm_delete_memo()<CR>')
 		set_keymap(list_keymaps.delete_memo_visual, '<Cmd>lua require("memos.ui").confirm_delete_memo()<CR>')
 		set_keymap(list_keymaps.toggle_sort, '<Cmd>lua require("memos.ui").cycle_sort()<CR>')
+		set_keymap(list_keymaps.toggle_state, '<Cmd>lua require("memos.ui").toggle_state()<CR>')
 	end
 end
 
@@ -696,7 +727,14 @@ function M.load_next_page()
 	vim.schedule(function()
 		vim.notify("Loading next page...")
 	end)
-	api.list_memos(current_user.name, current_filter, config.page_size, current_page_token, current_order_by, function(data)
+	api.list_memos(
+		current_user.name,
+		current_filter,
+		config.page_size,
+		current_page_token,
+		current_order_by,
+		current_state,
+		function(data)
 		M.render_memos(data, true)
 	end)
 end

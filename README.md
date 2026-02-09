@@ -6,7 +6,7 @@ A Neovim plugin to interact with [Memos](https://github.com/usememos/memos) righ
 
 ## ✨ Features
 
-- **List Memos**: View, search, and paginate through your memos.
+- **List Memos**: View, search, and paginate through your memos (shows pinned/archived indicators).
 - **Create & Edit**: Create new memos or edit existing ones in a dedicated buffer with `markdown` filetype support.
 - **Edit Metadata**: Update memo metadata (visibility, pinned, display time, create time, state) from the list.
   - Time fields expect ISO 8601 / RFC3339. If you omit a timezone (e.g. `2025-02-07T12:34:56`), the plugin appends `Z` (UTC).
@@ -63,6 +63,7 @@ Install with [lazy.nvim](https://github.com/folke/lazy.nvim):
 | `r`         | Refresh the memo list              |
 | `.`         | Load the next page of memos        |
 | `<S-s>`     | Select list sort order             |
+| `<S-a>`     | Toggle memo state (NORMAL/ARCHIVED) |
 | `q`         | Quit the list window               |
 
 #### In the Edit/Create Buffer
@@ -104,6 +105,8 @@ require("memos").setup({
     "display_time desc",
     "create_time desc",
   },
+  -- Default state to request in list (modern API only)
+  list_state_default = "NORMAL",
 
   -- Auto-save the memo when leaving insert mode or holding the cursor.
   auto_save = false,
@@ -135,6 +138,7 @@ require("memos").setup({
       refresh_list = "r",
       next_page = ".",
       toggle_sort = "<S-s>",
+      toggle_state = "<S-a>",
       quit = "q",
     },
     -- Keymaps for the editing/creating buffer
@@ -157,7 +161,7 @@ require("memos").setup({
 
 ## ✨ 功能
 
-- **列表 Memos**: 查看、搜索和翻页你的 memos。
+- **列表 Memos**: 查看、搜索和翻页你的 memos（显示置顶/归档标识）。
 - **创建与编辑**: 在专用的、支持 `markdown` 文件类型的缓冲区中创建新 memo 或编辑现有 memo。
 - **编辑元数据**: 在列表中更新 memo 的可见性、置顶、展示时间、创建时间、状态。
   - 时间字段需 ISO 8601 / RFC3339 格式；若未包含时区（如 `2025-02-07T12:34:56`），插件会自动追加 `Z`（UTC）。
@@ -214,6 +218,7 @@ require("memos").setup({
 | `r`         | 刷新 memo 列表              |
 | `.`         | 加载下一页 memos            |
 | `<S-s>`     | 选择列表排序                |
+| `<S-a>`     | 切换 memo 状态（NORMAL/ARCHIVED） |
 | `q`         | 退出列表窗口                |
 
 #### 在编辑/创建缓冲区中
@@ -255,6 +260,8 @@ require("memos").setup({
     "display_time desc",
     "create_time desc",
   },
+  -- 列表请求的默认状态（仅 modern API 支持）
+  list_state_default = "NORMAL",
 
   -- 当离开插入模式或光标静止时，自动保存 memo。
   auto_save = false,
@@ -286,6 +293,7 @@ require("memos").setup({
       refresh_list = "r",
       next_page = ".",
       toggle_sort = "<S-s>",
+      toggle_state = "<S-a>",
       quit = "q",
     },
     -- 编辑/创建窗口的快捷键

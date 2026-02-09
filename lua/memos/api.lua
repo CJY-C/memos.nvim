@@ -211,7 +211,7 @@ local function execute(operation, builders, parser, callback)
 	attempt(1, nil)
 end
 
-local function build_list_url(mode, parent, filter, page_size, pageToken, order_by)
+local function build_list_url(mode, parent, filter, page_size, pageToken, order_by, state)
 	local cfg = get_config()
 	local params = {}
 	if mode == "legacy" and parent and parent ~= "" then
@@ -230,6 +230,9 @@ local function build_list_url(mode, parent, filter, page_size, pageToken, order_
 	if filter and filter ~= "" then
 		local raw_filter = 'content.contains("' .. vim.fn.escape(filter, '"') .. '")'
 		table.insert(params, "filter=" .. url_encode(raw_filter))
+	end
+	if mode == "modern" and state and state ~= "" then
+		table.insert(params, "state=" .. url_encode(state))
 	end
 	if mode == "modern" and order_by and order_by ~= "" then
 		table.insert(params, "orderBy=" .. url_encode(order_by))
@@ -261,13 +264,13 @@ function M.get_current_user(callback)
 	end)
 end
 
-function M.list_memos(parent, filter, page_size, pageToken, order_by, callback)
+function M.list_memos(parent, filter, page_size, pageToken, order_by, state, callback)
 	execute("list memos", {
 		modern = function()
-			return { "-X", "GET", build_list_url("modern", parent, filter, page_size, pageToken, order_by) }
+			return { "-X", "GET", build_list_url("modern", parent, filter, page_size, pageToken, order_by, state) }
 		end,
 		legacy = function()
-			return { "-X", "GET", build_list_url("legacy", parent, filter, page_size, pageToken, order_by) }
+			return { "-X", "GET", build_list_url("legacy", parent, filter, page_size, pageToken, order_by, state) }
 		end,
 	}, function(body)
 		return normalize_list_response(decode_json(body))
