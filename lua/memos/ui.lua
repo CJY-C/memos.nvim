@@ -10,6 +10,7 @@ local current_user = nil
 local current_filter = nil
 local current_order_by = nil
 local current_sort_index = nil
+local last_float_buf_id = nil
 
 function M.on_account_switched()
 	current_user = nil
@@ -23,9 +24,21 @@ function M.on_account_switched()
 	end
 end
 
+local create_float_window
+
 local function is_float_window(win)
 	local cfg = vim.api.nvim_win_get_config(win)
 	return cfg and cfg.relative and cfg.relative ~= ""
+end
+
+local function find_memos_float_window()
+	for _, w in ipairs(vim.api.nvim_list_wins()) do
+		local ok, v = pcall(vim.api.nvim_win_get_var, w, "memos_window")
+		if ok and v == true and vim.api.nvim_win_is_valid(w) then
+			return w
+		end
+	end
+	return nil
 end
 
 local function count_normal_windows()
@@ -84,8 +97,6 @@ function M.quit_memos_list()
 
 	-- Last normal window: switch away first, then wipe the memos buffer.
 	switch_away_and_wipe(current_buf)
-	current_order_by = nil
-	current_sort_index = nil
 end
 
 function M.render_memos(data, append)
@@ -252,14 +263,38 @@ function M.open_memo_for_edit(memo, open_cmd)
 		if win_id ~= -1 then
 			vim.api.nvim_set_current_win(win_id)
 		else
+			if config.window and config.window.enable_float then
+				local float_win = find_memos_float_window()
+				if float_win then
+					vim.api.nvim_set_current_win(float_win)
+				end
+			end
 			vim.api.nvim_set_current_buf(existing_bufnr)
 		end
 	else
-		vim.cmd(open_cmd)
+		local used_float = false
+		if config.window and config.window.enable_float then
+			local float_win = find_memos_float_window()
+			if float_win then
+				vim.api.nvim_set_current_win(float_win)
+				vim.cmd("enew")
+				used_float = true
+			end
+		end
+		if not used_float then
+			vim.cmd(open_cmd)
+		end
 		vim.api.nvim_buf_set_name(0, buffer_name)
 		vim.api.nvim_buf_set_lines(0, 0, -1, false, vim.split(content, "\n"))
 		vim.b.memos_memo_name = memo.name
 		M.setup_buffer_for_editing()
+	end
+	if config.window and config.window.enable_float then
+		local current_win = vim.api.nvim_get_current_win()
+		local ok, is_memos_window = pcall(vim.api.nvim_win_get_var, current_win, "memos_window")
+		if ok and is_memos_window == true then
+			last_float_buf_id = vim.api.nvim_get_current_buf()
+		end
 	end
 end
 
@@ -363,11 +398,34 @@ function M.refresh_list_silently()
 end
 
 function M.create_memo_in_buffer()
-	vim.cmd("enew")
+	local used_float = false
+	if config.window and config.window.enable_float then
+		local float_win = find_memos_float_window()
+		if float_win then
+			vim.api.nvim_set_current_win(float_win)
+			vim.cmd("enew")
+			used_float = true
+		else
+			local new_buf = vim.api.nvim_create_buf(false, true)
+			create_float_window(new_buf)
+			vim.api.nvim_set_current_buf(new_buf)
+			used_float = true
+		end
+	end
+	if not used_float then
+		vim.cmd("enew")
+	end
 	vim.b.memos_memo_name = nil
 	-- 使用一个带时间戳的、独一无二的临时名字，防止冲突
 	vim.api.nvim_buf_set_name(0, "memos/new_memo_" .. vim.fn.strftime("%s"))
 	M.setup_buffer_for_editing()
+	if config.window and config.window.enable_float then
+		local current_win = vim.api.nvim_get_current_win()
+		local ok, is_memos_window = pcall(vim.api.nvim_win_get_var, current_win, "memos_window")
+		if ok and is_memos_window == true then
+			last_float_buf_id = vim.api.nvim_get_current_buf()
+		end
+	end
 end
 
 function M.create_memo_from_content(content)
@@ -379,7 +437,7 @@ function M.create_memo_from_content(content)
 end
 
 -- 【新增】创建居中浮动窗口的辅助函数
-local function create_float_window(buf)
+create_float_window = function(buf)
 	local width = math.floor(vim.o.columns * (config.window.width or 0.8))
 	local height = math.floor(vim.o.lines * (config.window.height or 0.8))
 
@@ -402,6 +460,20 @@ local function create_float_window(buf)
 	local win = vim.api.nvim_open_win(buf, true, opts)
 	-- 关键：标记这个窗口是 Memos 的专用窗口
 	vim.api.nvim_win_set_var(win, "memos_window", true)
+	last_float_buf_id = buf
+	local group = vim.api.nvim_create_augroup("MemosFloatAutoClose", { clear = false })
+	vim.api.nvim_create_autocmd("WinLeave", {
+		group = group,
+		once = true,
+		callback = function()
+			if vim.api.nvim_win_is_valid(win) then
+				local ok, is_memos_window = pcall(vim.api.nvim_win_get_var, win, "memos_window")
+				if ok and is_memos_window == true then
+					pcall(vim.api.nvim_win_close, win, true)
+				end
+			end
+		end,
+	})
 	return win
 end
 
@@ -456,8 +528,48 @@ function M.cycle_sort()
 	prompt_select_sort()
 end
 
-function M.show_memos_list(filter)
-	current_filter = filter
+local function render_cached_list()
+	M.render_memos({
+		memos = memos_cache,
+		nextPageToken = current_page_token or "",
+	}, false)
+end
+
+function M.toggle_memos_list()
+	if config.window and config.window.enable_float then
+		local existing = find_memos_float_window()
+		if existing then
+			pcall(vim.api.nvim_win_close, existing, true)
+			return
+		end
+		if last_float_buf_id and vim.api.nvim_buf_is_valid(last_float_buf_id) then
+			create_float_window(last_float_buf_id)
+			return
+		end
+	end
+	if not (config.window and config.window.enable_float) then
+		if buf_id and vim.api.nvim_buf_is_valid(buf_id) then
+			local win_id = vim.fn.bufwinid(buf_id)
+			if win_id ~= -1 then
+				pcall(vim.api.nvim_win_close, win_id, true)
+				return
+			end
+		end
+	end
+	M.show_memos_list(nil, { force_refresh = false, reason = "toggle" })
+end
+
+function M.show_memos_list(filter, opts)
+	opts = opts or {}
+	local new_filter = filter
+	local filter_changed = false
+	if new_filter == nil then
+		new_filter = current_filter
+	end
+	if current_filter ~= new_filter then
+		filter_changed = true
+	end
+	current_filter = new_filter
 	local should_create_buf = true
 	if not current_order_by or current_order_by == "" then
 		current_order_by = config.list_sort_default
@@ -475,7 +587,7 @@ function M.show_memos_list(filter)
 		vim.bo[buf_id].filetype = "memos_list"
 		vim.bo[buf_id].modifiable = false
 		vim.bo[buf_id].buflisted = false
-		vim.bo[buf_id].bufhidden = "wipe"
+		vim.bo[buf_id].bufhidden = "hide"
 	end
 
 	-- 检查该 buffer 是否已经在一个窗口中打开
@@ -485,47 +597,76 @@ function M.show_memos_list(filter)
 	else
 		if config.window and config.window.enable_float then
 			-- 【新增】查找是否已经存在 Memos 浮动窗口
-			local found_win = nil
-			for _, w in ipairs(vim.api.nvim_list_wins()) do
-				local s, v = pcall(vim.api.nvim_win_get_var, w, "memos_window")
-				if s and v == true and vim.api.nvim_win_is_valid(w) then
-					found_win = w
-					break
-				end
-			end
+			local found_win = find_memos_float_window()
 
 			if found_win then
 				-- 如果找到了，就复用它，直接切换 buffer
 				vim.api.nvim_set_current_win(found_win)
 				vim.api.nvim_set_current_buf(buf_id)
+				last_float_buf_id = buf_id
+				local group = vim.api.nvim_create_augroup("MemosFloatAutoClose", { clear = false })
+				vim.api.nvim_create_autocmd("WinLeave", {
+					group = group,
+					once = true,
+					callback = function()
+						if vim.api.nvim_win_is_valid(found_win) then
+							local ok, is_memos_window = pcall(vim.api.nvim_win_get_var, found_win, "memos_window")
+							if ok and is_memos_window == true then
+								pcall(vim.api.nvim_win_close, found_win, true)
+							end
+						end
+					end,
+				})
 			else
 				-- 没找到才新建
 				create_float_window(buf_id)
 			end
-		else
-			-- 非浮动模式，直接切换 buffer
-			vim.api.nvim_set_current_buf(buf_id)
+	else
+		-- 非浮动模式，直接切换 buffer
+		vim.api.nvim_set_current_buf(buf_id)
+	end
+end
+	if config.window and config.window.enable_float then
+		local current_win = vim.api.nvim_get_current_win()
+		local ok, is_memos_window = pcall(vim.api.nvim_win_get_var, current_win, "memos_window")
+		if ok and is_memos_window == true then
+			last_float_buf_id = buf_id
 		end
 	end
 
-	vim.schedule(function()
-		vim.notify("Getting user info...")
-	end)
-	api.get_current_user(function(user)
-		if user and user.name then
-			current_user = user
-			vim.schedule(function()
-				vim.notify("Fetching memos for " .. user.name .. "...")
-			end)
-			api.list_memos(user.name, current_filter, config.page_size, nil, current_order_by, function(data)
-				M.render_memos(data, false)
-			end)
-		else
-			vim.schedule(function()
-				vim.notify("Could not get user, aborting fetch.", vim.log.levels.ERROR)
-			end)
-		end
-	end)
+	if memos_cache and #memos_cache > 0 then
+		render_cached_list()
+	end
+
+	local need_fetch = false
+	if opts.force_refresh then
+		need_fetch = true
+	elseif filter_changed then
+		need_fetch = true
+	elseif not memos_cache or #memos_cache == 0 then
+		need_fetch = true
+	end
+
+	if need_fetch then
+		vim.schedule(function()
+			vim.notify("Getting user info...")
+		end)
+		api.get_current_user(function(user)
+			if user and user.name then
+				current_user = user
+				vim.schedule(function()
+					vim.notify("Fetching memos for " .. user.name .. "...")
+				end)
+				api.list_memos(user.name, current_filter, config.page_size, nil, current_order_by, function(data)
+					M.render_memos(data, false)
+				end)
+			else
+				vim.schedule(function()
+					vim.notify("Could not get user, aborting fetch.", vim.log.levels.ERROR)
+				end)
+			end
+		end)
+	end
 
 	-- 【修改】这个函数现在可以处理单个按键（字符串）或多个按键（table）
 	local function set_keymap(keys, command)
@@ -555,7 +696,10 @@ function M.show_memos_list(filter)
 		set_keymap(list_keymaps.edit_metadata, '<Cmd>lua require("memos.ui").edit_selected_memo_metadata()<CR>')
 		set_keymap(list_keymaps.quit, '<Cmd>lua require("memos.ui").quit_memos_list()<CR>')
 		set_keymap(list_keymaps.search_memos, '<Cmd>lua require("memos.ui").search_memos()<CR>')
-		set_keymap(list_keymaps.refresh_list, '<Cmd>lua require("memos.ui").show_memos_list()<CR>')
+		set_keymap(
+			list_keymaps.refresh_list,
+			'<Cmd>lua require("memos.ui").show_memos_list(nil, { force_refresh = true })<CR>'
+		)
 		set_keymap(list_keymaps.next_page, '<Cmd>lua require("memos.ui").load_next_page()<CR>')
 		set_keymap(list_keymaps.add_memo, '<Cmd>lua require("memos.ui").create_memo_in_buffer()<CR>')
 		set_keymap(list_keymaps.copy_memo_id, '<Cmd>lua require("memos.ui").copy_selected_memo_id()<CR>')
@@ -686,7 +830,7 @@ end
 
 function M.search_memos()
 	vim.ui.input({ prompt = "Search Memos: " }, function(input)
-		M.show_memos_list(input or "")
+		M.show_memos_list(input or "", { force_refresh = true })
 	end)
 end
 

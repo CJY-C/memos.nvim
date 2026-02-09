@@ -391,7 +391,7 @@ end
 
 function M.show_list()
 	ensure_config(function()
-		require("memos.ui").show_memos_list()
+		require("memos.ui").toggle_memos_list()
 	end)
 end
 

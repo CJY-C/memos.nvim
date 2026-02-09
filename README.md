@@ -29,7 +29,7 @@ Install with [lazy.nvim](https://github.com/folke/lazy.nvim):
 
 ### Commands
 
-- `:Memos`: Opens a floating window to list and search your memos.
+- `:Memos`: Toggles the list window (float or non-float); cached content is kept until a manual refresh.
 - `:MemosCreate`: Opens a new buffer to create a new memo.
 - `:MemosSave`: (Available in the memo buffer) Saves the memo you are currently creating or editing.
 - `:MemosSwitch`: Select and switch to another saved account.
@@ -38,6 +38,7 @@ Install with [lazy.nvim](https://github.com/folke/lazy.nvim):
 - `:w`: (In the memo buffer) Same as `:MemosSave`.
 - Untouched memo buffers are not marked as modified, so quitting Neovim will not prompt to save unless you actually edit.
 - If `MEMOS_HOST` or `MEMOS_TOKEN` is set, account switching is disabled for that session.
+- When floating window is enabled, memo edits open in the same float and are restored when toggling `:Memos`.
 
 ### Default Keymaps
 
@@ -179,7 +180,7 @@ require("memos").setup({
 
 ### 命令
 
-- `:Memos`: 打开一个浮动窗口，列出并搜索你的 memos。
+- `:Memos`: 切换列表窗口（浮动或非浮动）；列表内容会缓存直到手动刷新。
 - `:MemosCreate`: 打开一个新的缓冲区来创建 memo。
 - `:MemosSave`: (在 memo 编辑缓冲区中可用) 保存你正在创建或编辑的 memo。
 - `:MemosSwitch`: 选择并切换已保存账号。
@@ -188,6 +189,7 @@ require("memos").setup({
 - `:w`: (在 memo 编辑缓冲区中可用) 等同于 `:MemosSave`。
 - 未修改的 memo 缓冲区不会被标记为已更改；只有真正编辑后退出时才会提示保存。
 - 如果设置了 `MEMOS_HOST` 或 `MEMOS_TOKEN`，该会话中将禁用账号切换。
+- 如果启用了浮动窗口，memo 编辑会在同一个浮动窗口中打开，并在切换 `:Memos` 时保留。
 
 ### 默认快捷键
 

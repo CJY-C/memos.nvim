@@ -101,7 +101,7 @@ require("memos").setup({
 COMMANDS                                            *memos-commands*
 
 *:Memos*
-  Opens a floating window to list and search your memos.
+  Toggles the list window (float or non-float); cached content is kept until a manual refresh.
 
 *:MemosCreate*
   Opens a new buffer to create a new memo.
@@ -127,6 +127,9 @@ ask to save when content has actually changed.
 
 If MEMOS_HOST or MEMOS_TOKEN is set, account switching is disabled for
 the current session.
+
+When floating window is enabled, memo edits open in the same float and
+are restored when toggling |:Memos|.
 
 DEFAULT KEYMAPS                                     *memos-keymaps*
 
