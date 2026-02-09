@@ -9,6 +9,12 @@ M.config = {
 	auto_save = false,
 	page_size = 50,
 	api_version = "auto", -- "auto" | "modern" | "legacy"
+	list_sort_default = "pinned desc, display_time desc",
+	list_sort_presets = {
+		"pinned desc, display_time desc",
+		"display_time desc",
+		"create_time desc",
+	},
 	window = {
 		enable_float = true,
 		width = 0.85,
@@ -30,6 +36,7 @@ M.config = {
 			refresh_list = "r",
 			next_page = ".",
 			quit = "q",
+			toggle_sort = "<S-s>",
 		},
 		buffer = {
 			save = "<leader>ms",

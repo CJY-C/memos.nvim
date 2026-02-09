@@ -8,11 +8,15 @@ local buf_id = nil
 local current_page_token = nil
 local current_user = nil
 local current_filter = nil
+local current_order_by = nil
+local current_sort_index = nil
 
 function M.on_account_switched()
 	current_user = nil
 	current_page_token = nil
 	memos_cache = {}
+	current_order_by = nil
+	current_sort_index = nil
 
 	if buf_id and vim.api.nvim_buf_is_valid(buf_id) and vim.fn.bufwinid(buf_id) ~= -1 then
 		M.show_memos_list(current_filter)
@@ -80,6 +84,8 @@ function M.quit_memos_list()
 
 	-- Last normal window: switch away first, then wipe the memos buffer.
 	switch_away_and_wipe(current_buf)
+	current_order_by = nil
+	current_sort_index = nil
 end
 
 function M.render_memos(data, append)
@@ -351,7 +357,7 @@ function M.refresh_list_silently()
 	if not current_user or not current_user.name then
 		return
 	end
-	api.list_memos(current_user.name, current_filter, config.page_size, nil, function(data)
+	api.list_memos(current_user.name, current_filter, config.page_size, nil, current_order_by, function(data)
 		M.render_memos(data, false)
 	end)
 end
@@ -399,9 +405,64 @@ local function create_float_window(buf)
 	return win
 end
 
+local function get_sort_presets()
+	local presets = config.list_sort_presets
+	if type(presets) ~= "table" or #presets == 0 then
+		return { config.list_sort_default }
+	end
+	return presets
+end
+
+local function resolve_sort_index(order_by)
+	local presets = get_sort_presets()
+	for i, preset in ipairs(presets) do
+		if preset == order_by then
+			return i
+		end
+	end
+	return 1
+end
+
+local function prompt_select_sort()
+	local presets = get_sort_presets()
+	if #presets == 0 then
+		return
+	end
+	local items = {}
+	for _, preset in ipairs(presets) do
+		table.insert(items, { value = preset })
+	end
+	local default_value = current_order_by or config.list_sort_default
+	vim.schedule(function()
+		vim.ui.select(items, {
+			prompt = "Select sort order:",
+			format_item = function(item)
+				return item.value
+			end,
+		}, function(choice)
+			if not choice then
+				return
+			end
+			current_order_by = choice.value
+			current_sort_index = resolve_sort_index(current_order_by)
+			current_page_token = nil
+			vim.notify("Sort: " .. tostring(current_order_by))
+			M.show_memos_list(current_filter)
+		end)
+	end)
+end
+
+function M.cycle_sort()
+	prompt_select_sort()
+end
+
 function M.show_memos_list(filter)
 	current_filter = filter
 	local should_create_buf = true
+	if not current_order_by or current_order_by == "" then
+		current_order_by = config.list_sort_default
+		current_sort_index = resolve_sort_index(current_order_by)
+	end
 
 	-- 检查 buffer 是否存在且有效
 	if buf_id and vim.api.nvim_buf_is_valid(buf_id) then
@@ -456,7 +517,7 @@ function M.show_memos_list(filter)
 			vim.schedule(function()
 				vim.notify("Fetching memos for " .. user.name .. "...")
 			end)
-			api.list_memos(user.name, current_filter, config.page_size, nil, function(data)
+			api.list_memos(user.name, current_filter, config.page_size, nil, current_order_by, function(data)
 				M.render_memos(data, false)
 			end)
 		else
@@ -501,6 +562,7 @@ function M.show_memos_list(filter)
 		set_keymap(list_keymaps.paste_memo, '<Cmd>lua require("memos.ui").paste_memo_from_clipboard()<CR>')
 		set_keymap(list_keymaps.delete_memo, '<Cmd>lua require("memos.ui").confirm_delete_memo()<CR>')
 		set_keymap(list_keymaps.delete_memo_visual, '<Cmd>lua require("memos.ui").confirm_delete_memo()<CR>')
+		set_keymap(list_keymaps.toggle_sort, '<Cmd>lua require("memos.ui").cycle_sort()<CR>')
 	end
 end
 
@@ -516,7 +578,7 @@ function M.load_next_page()
 	vim.schedule(function()
 		vim.notify("Loading next page...")
 	end)
-	api.list_memos(current_user.name, current_filter, config.page_size, current_page_token, function(data)
+	api.list_memos(current_user.name, current_filter, config.page_size, current_page_token, current_order_by, function(data)
 		M.render_memos(data, true)
 	end)
 end

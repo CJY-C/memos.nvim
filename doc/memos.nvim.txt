@@ -52,6 +52,14 @@ require("memos").setup({
   page_size = 50,
   -- API compatibility mode: "auto", "modern", "legacy"
   api_version = "auto",
+  -- Default list sort order (modern API only)
+  list_sort_default = "pinned desc, display_time desc",
+  -- Presets used by <S-s> to select sort in list
+  list_sort_presets = {
+    "pinned desc, display_time desc",
+    "display_time desc",
+    "create_time desc",
+  },
   auto_save = false,
   -- Window configuration
   window = {
@@ -77,6 +85,7 @@ require("memos").setup({
       search_memos = "s",
       refresh_list = "r",
       next_page = ".",
+      toggle_sort = "<S-s>",
       quit = "q",
     },
     -- Keymaps for the editing/creating buffer
@@ -139,6 +148,7 @@ DEFAULT KEYMAPS                                     *memos-keymaps*
 | `s`                | Search your memos                    |
 | `r`                | Refresh the memo list                |
 | `.`                | Load the next page of memos          |
+| `<S-s>`            | Select list sort order               |
 | `q`                | Quit the list window                 |
 
 *In the Edit/Create Buffer:*
@@ -166,6 +176,14 @@ require("memos").setup({
   page_size = 50,
   -- API compatibility mode: "auto", "modern", "legacy"
   api_version = "auto",
+  -- Default list sort order (modern API only)
+  list_sort_default = "pinned desc, display_time desc",
+  -- Presets used by <S-s> to select sort in list
+  list_sort_presets = {
+    "pinned desc, display_time desc",
+    "display_time desc",
+    "create_time desc",
+  },
 
   -- Set to false or nil to disable a keymap
   keymaps = {
@@ -185,6 +203,7 @@ require("memos").setup({
       search_memos = "s",
       refresh_list = "r",
       next_page = ".",
+      toggle_sort = "<S-s>",
       quit = "q",
     },
     -- Keymaps for the editing/creating buffer

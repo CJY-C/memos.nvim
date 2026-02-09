@@ -61,6 +61,7 @@ Install with [lazy.nvim](https://github.com/folke/lazy.nvim):
 | `s`         | Search your memos                  |
 | `r`         | Refresh the memo list              |
 | `.`         | Load the next page of memos        |
+| `<S-s>`     | Select list sort order             |
 | `q`         | Quit the list window               |
 
 #### In the Edit/Create Buffer
@@ -94,6 +95,14 @@ require("memos").setup({
   -- API compatibility mode: "auto", "modern", "legacy"
   -- "auto" tries modern first, then falls back to legacy.
   api_version = "auto",
+  -- Default list sort order (modern API only)
+  list_sort_default = "pinned desc, display_time desc",
+  -- Presets used by <S-s> to select sort in list
+  list_sort_presets = {
+    "pinned desc, display_time desc",
+    "display_time desc",
+    "create_time desc",
+  },
 
   -- Auto-save the memo when leaving insert mode or holding the cursor.
   auto_save = false,
@@ -124,6 +133,7 @@ require("memos").setup({
       search_memos = "s",
       refresh_list = "r",
       next_page = ".",
+      toggle_sort = "<S-s>",
       quit = "q",
     },
     -- Keymaps for the editing/creating buffer
@@ -201,6 +211,7 @@ require("memos").setup({
 | `s`         | 搜索你的 memos              |
 | `r`         | 刷新 memo 列表              |
 | `.`         | 加载下一页 memos            |
+| `<S-s>`     | 选择列表排序                |
 | `q`         | 退出列表窗口                |
 
 #### 在编辑/创建缓冲区中
@@ -234,6 +245,14 @@ require("memos").setup({
   -- API 兼容模式: "auto"、"modern"、"legacy"
   -- "auto" 会先尝试 modern，再回退到 legacy。
   api_version = "auto",
+  -- 默认列表排序（仅 modern API 支持）
+  list_sort_default = "pinned desc, display_time desc",
+  -- 列表内 <S-s> 选择的排序预设
+  list_sort_presets = {
+    "pinned desc, display_time desc",
+    "display_time desc",
+    "create_time desc",
+  },
 
   -- 当离开插入模式或光标静止时，自动保存 memo。
   auto_save = false,
@@ -264,6 +283,7 @@ require("memos").setup({
       search_memos = "s",
       refresh_list = "r",
       next_page = ".",
+      toggle_sort = "<S-s>",
       quit = "q",
     },
     -- 编辑/创建窗口的快捷键
