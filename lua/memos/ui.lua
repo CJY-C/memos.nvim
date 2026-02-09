@@ -841,8 +841,89 @@ function M.confirm_delete_memo()
 end
 
 function M.search_memos()
-	vim.ui.input({ prompt = "Search Memos: " }, function(input)
-		M.show_memos_list(input or "", { force_refresh = true })
+	local function looks_like_cel(expr)
+		if expr:find("content%.contains%(") then
+			return true
+		end
+		if expr:find(" in tags") or expr:find("tags") then
+			return true
+		end
+		if expr:find("&&") or expr:find("||") then
+			return true
+		end
+		if expr:find("==") or expr:find("~=") or expr:find(">=") or expr:find("<=") then
+			return true
+		end
+		if expr:find("%(") or expr:find("%)") then
+			return true
+		end
+		if expr:find('".+"') and (expr:find("&&") or expr:find("||") or expr:find(" in ")) then
+			return true
+		end
+		return false
+	end
+
+	local function build_filter_from_input(raw)
+		local input = vim.trim(raw or "")
+		if input == "" then
+			return ""
+		end
+		if looks_like_cel(input) then
+			return input
+		end
+
+		local clauses = {}
+		local remaining = input
+
+		for tag in input:gmatch("#([%w_/%-]+)") do
+			local escaped = vim.fn.escape(tag, '"')
+			table.insert(clauses, string.format('"%s" in tags', escaped))
+		end
+
+		remaining = remaining:gsub("#[%w_/%-]+", " ")
+		remaining = vim.trim(remaining)
+		if remaining ~= "" then
+			local tokens = {}
+			local rest = remaining
+			while true do
+				local start_q, end_q = rest:find('"(.-)"')
+				if not start_q then
+					break
+				end
+				local before = vim.trim(rest:sub(1, start_q - 1))
+				if before ~= "" then
+					for _, word in ipairs(vim.split(before, "%s+")) do
+						if word ~= "" then
+							table.insert(tokens, word)
+						end
+					end
+				end
+				local quoted = rest:sub(start_q + 1, end_q - 1)
+				if quoted ~= "" then
+					table.insert(tokens, quoted)
+				end
+				rest = rest:sub(end_q + 1)
+			end
+			rest = vim.trim(rest)
+			if rest ~= "" then
+				for _, word in ipairs(vim.split(rest, "%s+")) do
+					if word ~= "" then
+						table.insert(tokens, word)
+					end
+				end
+			end
+			for _, token in ipairs(tokens) do
+				local escaped = vim.fn.escape(token, '"')
+				table.insert(clauses, string.format('content.contains("%s")', escaped))
+			end
+		end
+		return table.concat(clauses, " && ")
+	end
+
+	vim.ui.input({
+		prompt = 'Search (text or CEL): foo bar | "foo bar" | #area/work #todo | content.contains("foo") && "work" in tags: ',
+	}, function(input)
+		M.show_memos_list(build_filter_from_input(input), { force_refresh = true })
 	end)
 end
 

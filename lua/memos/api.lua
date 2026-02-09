@@ -228,7 +228,24 @@ local function build_list_url(mode, parent, filter, page_size, pageToken, order_
 		table.insert(params, "pageToken=" .. url_encode(pageToken))
 	end
 	if filter and filter ~= "" then
-		local raw_filter = 'content.contains("' .. vim.fn.escape(filter, '"') .. '")'
+		local is_cel = false
+		if filter:find("content%.contains%(") then
+			is_cel = true
+		elseif filter:find(" in tags") or filter:find("tags") then
+			is_cel = true
+		elseif filter:find("&&") or filter:find("||") then
+			is_cel = true
+		elseif filter:find("==") or filter:find("~=") or filter:find(">=") or filter:find("<=") then
+			is_cel = true
+		elseif filter:find("%(") or filter:find("%)") then
+			is_cel = true
+		end
+		local raw_filter
+		if is_cel then
+			raw_filter = filter
+		else
+			raw_filter = 'content.contains("' .. vim.fn.escape(filter, '"') .. '")'
+		end
 		table.insert(params, "filter=" .. url_encode(raw_filter))
 	end
 	if mode == "modern" and state and state ~= "" then
