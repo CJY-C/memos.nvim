@@ -461,19 +461,6 @@ create_float_window = function(buf)
 	-- 关键：标记这个窗口是 Memos 的专用窗口
 	vim.api.nvim_win_set_var(win, "memos_window", true)
 	last_float_buf_id = buf
-	local group = vim.api.nvim_create_augroup("MemosFloatAutoClose", { clear = false })
-	vim.api.nvim_create_autocmd("WinLeave", {
-		group = group,
-		once = true,
-		callback = function()
-			if vim.api.nvim_win_is_valid(win) then
-				local ok, is_memos_window = pcall(vim.api.nvim_win_get_var, win, "memos_window")
-				if ok and is_memos_window == true then
-					pcall(vim.api.nvim_win_close, win, true)
-				end
-			end
-		end,
-	})
 	return win
 end
 
@@ -519,7 +506,7 @@ local function prompt_select_sort()
 			current_sort_index = resolve_sort_index(current_order_by)
 			current_page_token = nil
 			vim.notify("Sort: " .. tostring(current_order_by))
-			M.show_memos_list(current_filter)
+			M.show_memos_list(current_filter, { force_refresh = true, reason = "sort" })
 		end)
 	end)
 end
@@ -604,19 +591,6 @@ function M.show_memos_list(filter, opts)
 				vim.api.nvim_set_current_win(found_win)
 				vim.api.nvim_set_current_buf(buf_id)
 				last_float_buf_id = buf_id
-				local group = vim.api.nvim_create_augroup("MemosFloatAutoClose", { clear = false })
-				vim.api.nvim_create_autocmd("WinLeave", {
-					group = group,
-					once = true,
-					callback = function()
-						if vim.api.nvim_win_is_valid(found_win) then
-							local ok, is_memos_window = pcall(vim.api.nvim_win_get_var, found_win, "memos_window")
-							if ok and is_memos_window == true then
-								pcall(vim.api.nvim_win_close, found_win, true)
-							end
-						end
-					end,
-				})
 			else
 				-- 没找到才新建
 				create_float_window(buf_id)
