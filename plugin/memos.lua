@@ -21,11 +21,18 @@ end, {
 	desc = "Switch active Memos account",
 })
 
-vim.api.nvim_create_user_command("MemosAddUser", function()
+vim.api.nvim_create_user_command("MemosUserAdd", function()
 	require("memos").add_user_interactive()
 end, {
 	nargs = 0,
 	desc = "Add a Memos account",
+})
+
+vim.api.nvim_create_user_command("MemosUserDelete", function()
+	require("memos").delete_user_interactive()
+end, {
+	nargs = 0,
+	desc = "Delete a saved Memos account",
 })
 
 vim.api.nvim_create_user_command("MemosModifyMeta", function()

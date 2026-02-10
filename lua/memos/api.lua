@@ -210,7 +210,9 @@ local function normalize_list_response(data, mode, meta)
 		local next_token = ""
 		local limit = meta and meta.limit or 0
 		local offset = meta and meta.offset or 0
-		if limit > 0 and #data >= limit then
+		if #data == 0 then
+			next_token = ""
+		elseif limit > 0 and #data >= limit then
 			next_token = tostring(offset + limit)
 		end
 		return {
@@ -536,42 +538,6 @@ function M.update_memo(memo_name, content, callback)
 	end)
 end
 
-function M.get_memo(memo_name, callback)
-	local cfg = get_config()
-	if not memo_name or memo_name == "" then
-		callback(nil)
-		return
-	end
-
-	execute("get memo", {
-		["v0.26"] = function()
-			return { "-X", "GET", cfg.host .. "/api/v1/" .. memo_name }
-		end,
-		["v0.25"] = function()
-			return { "-X", "GET", cfg.host .. "/api/v1/" .. memo_name }
-		end,
-		["v0.21"] = function()
-			local id = parse_memo_id(memo_name) or memo_name or ""
-			return { "-X", "GET", cfg.host .. "/api/v1/memo/" .. id }
-		end,
-	}, function(body, mode)
-		local decoded = decode_json(body)
-		if mode == "v0.21" and type(decoded) == "table" and decoded[1] then
-			return normalize_memo(decoded[1], mode)
-		end
-		return normalize_memo(decoded, mode)
-	end, function(memo, err)
-		if memo then
-			callback(memo)
-		else
-			vim.schedule(function()
-				vim.notify("Failed to fetch memo: " .. tostring(err), vim.log.levels.ERROR)
-			end)
-			callback(nil)
-		end
-	end)
-end
-
 function M.update_memo_metadata(memo_name, fields, update_mask, callback)
 	local cfg = get_config()
 	local update_mask_value = update_mask or ""
@@ -723,7 +689,14 @@ function M.get_capabilities()
 		if cfg.api_version and cfg.api_version ~= "auto" then
 			mode = cfg.api_version
 		else
-			mode = "v0.26"
+			return {
+				mode = nil,
+				supports_sort = false,
+				supports_state = false,
+				search_mode = "simple",
+				supports_display_time = false,
+				supports_relations_api = false,
+			}
 		end
 	end
 	return {

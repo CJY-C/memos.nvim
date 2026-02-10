@@ -73,6 +73,22 @@ local function read_config_file()
 	return decoded
 end
 
+local function normalize_host_value(host)
+	local value = vim.trim(host or "")
+	if value == "" then
+		return ""
+	end
+	value = value:gsub("/+$", "")
+	return value
+end
+
+local function user_key(user)
+	if not user or not user.username or not user.host then
+		return nil
+	end
+	return user.username .. "@" .. normalize_host_value(user.host)
+end
+
 local function normalize_users(raw_users)
 	if type(raw_users) ~= "table" then
 		return {}
@@ -86,44 +102,89 @@ local function normalize_users(raw_users)
 			and is_non_empty(user.host)
 			and is_non_empty(user.token)
 		then
-			if not seen[user.username] then
+			local host = normalize_host_value(user.host)
+			local key = user.username .. "@" .. host
+			if not seen[key] then
 				table.insert(normalized, {
 					username = user.username,
-					host = user.host,
+					host = host,
 					token = user.token,
 				})
-				seen[user.username] = true
+				seen[key] = true
 			end
 		end
 	end
 	return normalized
 end
 
+local function resolve_active_user(raw_active_user, users)
+	if not is_non_empty(raw_active_user) then
+		return nil, nil
+	end
+	if raw_active_user:find("@") then
+		local uname, host = raw_active_user:match("^(.-)@(.+)$")
+		if uname and host then
+			local normalized_key = uname .. "@" .. normalize_host_value(host)
+			for _, user in ipairs(users) do
+				if user_key(user) == normalized_key then
+					return normalized_key, nil
+				end
+			end
+		end
+	end
+	local matches = {}
+	for _, user in ipairs(users) do
+		if user.username == raw_active_user then
+			table.insert(matches, user)
+		end
+	end
+	if #matches == 0 then
+		return nil, nil
+	end
+	local warning = nil
+	if #matches > 1 then
+		warning = string.format(
+			"Multiple accounts share username '%s'; picked %s.",
+			raw_active_user,
+			user_key(matches[1])
+		)
+	end
+	return user_key(matches[1]), warning
+end
+
 local function migrate_legacy_config(data)
 	local migrated = false
 	local users = normalize_users(data.users)
 	local active_user = data.active_user
+	local warning = nil
 
 	if #users == 0 and is_non_empty(data.host) and is_non_empty(data.token) then
 		users = {
 			{
 				username = "default",
-				host = data.host,
+				host = normalize_host_value(data.host),
 				token = data.token,
 			},
 		}
-		active_user = "default"
+		active_user = user_key(users[1])
 		migrated = true
 	end
 
-	if #users > 0 and (not is_non_empty(active_user)) then
-		active_user = users[1].username
+	local resolved, resolved_warning = resolve_active_user(active_user, users)
+	if resolved_warning then
+		warning = resolved_warning
+		migrated = true
 	end
+	if not resolved and #users > 0 then
+		resolved = user_key(users[1])
+	end
+	active_user = resolved
 
 	return {
 		users = users,
 		active_user = active_user,
 		migrated = migrated,
+		warning = warning,
 	}
 end
 
@@ -144,9 +205,9 @@ local function save_accounts()
 	return true
 end
 
-local function find_user(username)
+local function find_user(key)
 	for _, user in ipairs(accounts.users) do
-		if user.username == username then
+		if user_key(user) == key then
 			return user
 		end
 	end
@@ -162,7 +223,7 @@ local function apply_active_user_to_config(cfg)
 	if not user then
 		return false
 	end
-	cfg.active_user = user.username
+	cfg.active_user = accounts.active_user
 	cfg.username = user.username
 	cfg.host = user.host
 	cfg.token = user.token
@@ -173,26 +234,47 @@ function M.list_users()
 	return vim.deepcopy(accounts.users)
 end
 
-function M.switch_user(username)
-	if not is_non_empty(username) then
-		vim.notify("Username is required.", vim.log.levels.ERROR)
+function M.switch_user(user_identifier)
+	if not is_non_empty(user_identifier) then
+		vim.notify("User identifier is required.", vim.log.levels.ERROR)
 		return false
 	end
-	local user = find_user(username)
+	local key = user_identifier
+	if user_identifier:find("@") then
+		local uname, host = user_identifier:match("^(.-)@(.+)$")
+		if uname and host then
+			key = uname .. "@" .. normalize_host_value(host)
+		end
+	end
+	local user = find_user(key)
 	if not user then
-		vim.notify("User '" .. username .. "' not found.", vim.log.levels.ERROR)
-		return false
+		local matches = {}
+		for _, candidate in ipairs(accounts.users) do
+			if candidate.username == user_identifier then
+				table.insert(matches, candidate)
+			end
+		end
+		if #matches == 1 then
+			user = matches[1]
+			key = user_key(user)
+		elseif #matches > 1 then
+			vim.notify("Multiple accounts named '" .. user_identifier .. "'. Use :MemosSwitch.", vim.log.levels.ERROR)
+			return false
+		else
+			vim.notify("User '" .. user_identifier .. "' not found.", vim.log.levels.ERROR)
+			return false
+		end
 	end
 	if M.is_env_locked() then
 		vim.notify("Cannot switch account while MEMOS_HOST/MEMOS_TOKEN is set.", vim.log.levels.WARN)
 		return false
 	end
-	if accounts.active_user == username then
-		vim.notify("Already using account '" .. username .. "'.", vim.log.levels.INFO)
+	if accounts.active_user == key then
+		vim.notify("Already using account '" .. user.username .. " (" .. user.host .. ")'.", vim.log.levels.INFO)
 		return true
 	end
 
-	accounts.active_user = username
+	accounts.active_user = key
 	if not save_accounts() then
 		vim.notify("Failed to persist active account.", vim.log.levels.WARN)
 	end
@@ -200,18 +282,19 @@ function M.switch_user(username)
 	pcall(function()
 		require("memos.ui").on_account_switched()
 	end)
-	vim.notify("Switched Memos account to '" .. username .. "'.", vim.log.levels.INFO)
+	vim.notify("Switched Memos account to '" .. user.username .. " (" .. user.host .. ")'.", vim.log.levels.INFO)
 	return true
 end
 
 function M.switch_user_interactive()
 	if #accounts.users == 0 then
-		vim.notify("No saved users. Use :MemosAddUser first.", vim.log.levels.WARN)
+		vim.notify("No saved users. Use :MemosUserAdd first.", vim.log.levels.WARN)
 		return
 	end
 	local items = {}
 	for _, user in ipairs(accounts.users) do
 		table.insert(items, {
+			key = user_key(user),
 			username = user.username,
 			host = user.host,
 		})
@@ -225,17 +308,99 @@ function M.switch_user_interactive()
 		if not choice then
 			return
 		end
-		M.switch_user(choice.username)
+		M.switch_user(choice.key)
+	end)
+end
+
+function M.delete_user_interactive()
+	if #accounts.users == 0 then
+		vim.notify("No saved users. Use :MemosUserAdd first.", vim.log.levels.WARN)
+		return
+	end
+	local items = {}
+	for _, user in ipairs(accounts.users) do
+		table.insert(items, {
+			key = user_key(user),
+			username = user.username,
+			host = user.host,
+		})
+	end
+	vim.ui.select(items, {
+		prompt = "Delete Memos user:",
+		format_item = function(item)
+			return string.format("%s (%s)", item.username, item.host)
+		end,
+	}, function(choice)
+		if not choice then
+			return
+		end
+		local confirm = vim.fn.confirm(
+			string.format("Delete user '%s (%s)'?", choice.username, choice.host),
+			"&Yes\n&No",
+			2
+		)
+		if confirm ~= 1 then
+			return
+		end
+		local new_users = {}
+		local removed = false
+		for _, user in ipairs(accounts.users) do
+			if user_key(user) ~= choice.key then
+				table.insert(new_users, user)
+			else
+				removed = true
+			end
+		end
+		if not removed then
+			return
+		end
+		accounts.users = new_users
+		local active_changed = false
+		if accounts.active_user == choice.key then
+			if #accounts.users > 0 then
+				accounts.active_user = user_key(accounts.users[1])
+			else
+				accounts.active_user = nil
+			end
+			active_changed = true
+		end
+		if not save_accounts() then
+			vim.notify("Failed to persist users config.", vim.log.levels.WARN)
+		end
+		if active_changed then
+			if not M.is_env_locked() then
+				if accounts.active_user then
+					apply_active_user_to_config(M.config)
+				else
+					M.config.active_user = nil
+					M.config.username = nil
+					M.config.host = nil
+					M.config.token = nil
+				end
+			else
+				M.config.active_user = accounts.active_user
+			end
+			pcall(function()
+				require("memos.ui").on_account_switched()
+			end)
+		end
+		vim.notify("Deleted Memos user '" .. choice.username .. " (" .. choice.host .. ")'.", vim.log.levels.INFO)
 	end)
 end
 
 local function add_user_record(user)
-	if find_user(user.username) then
-		return false, "User '" .. user.username .. "' already exists."
+	local record = {
+		username = user.username,
+		host = normalize_host_value(user.host),
+		token = user.token,
+	}
+	local key = user_key(record)
+	if find_user(key) then
+		return false, "User '" .. record.username .. " (" .. record.host .. ")' already exists."
 	end
-	table.insert(accounts.users, user)
+	table.insert(accounts.users, record)
 	if not is_non_empty(accounts.active_user) then
-		accounts.active_user = user.username
+		accounts.active_user = key
 	end
 	if not save_accounts() then
 		vim.notify("Failed to persist users config.", vim.log.levels.WARN)
@@ -249,9 +414,10 @@ function M.add_user(user, switch_now)
 		vim.notify(err, vim.log.levels.ERROR)
 		return false
 	end
-	vim.notify("Added Memos user '" .. user.username .. "'.", vim.log.levels.INFO)
+	local host = normalize_host_value(user.host)
+	vim.notify("Added Memos user '" .. user.username .. " (" .. host .. ")'.", vim.log.levels.INFO)
 	if switch_now then
-		M.switch_user(user.username)
+		M.switch_user(user.username .. "@" .. host)
 	elseif not is_non_empty(M.config.host) and not is_non_empty(M.config.token) and not M.is_env_locked() then
 		apply_active_user_to_config(M.config)
 	end
@@ -264,13 +430,15 @@ local function prompt_for_new_user(callback)
 			vim.notify("No username entered.", vim.log.levels.ERROR)
 			return
 		end
-		if find_user(username) then
-			vim.notify("User '" .. username .. "' already exists.", vim.log.levels.ERROR)
-			return
-		end
 		vim.ui.input({ prompt = "Memos Host URL (e.g., http://127.0.0.1:5230):" }, function(host)
 			if not is_non_empty(host) then
 				vim.notify("No host entered.", vim.log.levels.ERROR)
+				return
+			end
+			local normalized_host = normalize_host_value(host)
+			local key = username .. "@" .. normalized_host
+			if find_user(key) then
+				vim.notify("User '" .. username .. " (" .. normalized_host .. ")' already exists.", vim.log.levels.ERROR)
 				return
 			end
 			vim.ui.input({ prompt = "Memos Access Token:", hide = true }, function(token)
@@ -280,7 +448,7 @@ local function prompt_for_new_user(callback)
 				end
 				callback({
 					username = username,
-					host = host,
+					host = normalized_host,
 					token = token,
 				})
 			end)
@@ -296,7 +464,7 @@ function M.add_user_interactive(on_done)
 		end
 		local choice = vim.fn.confirm("Switch to '" .. new_user.username .. "' now?", "&Yes\n&No", 1)
 		if choice == 1 then
-			M.switch_user(new_user.username)
+			M.switch_user(user_key(new_user))
 		end
 		if on_done then
 			on_done()
@@ -317,7 +485,7 @@ local function prompt_for_config(on_ready)
 	if not M.is_env_locked() and apply_active_user_to_config(M.config) then
 		on_ready()
 	else
-		vim.notify("Memos credentials are not ready. Use :MemosSwitch or :MemosAddUser.", vim.log.levels.ERROR)
+		vim.notify("Memos credentials are not ready. Use :MemosSwitch or :MemosUserAdd.", vim.log.levels.ERROR)
 	end
 end
 
@@ -360,9 +528,13 @@ function M.setup(opts)
 	final_config = vim.tbl_deep_extend("force", final_config, opts or {})
 
 	accounts.users = normalize_users(final_config.users)
-	accounts.active_user = final_config.active_user
+	local resolved_active, _ = resolve_active_user(final_config.active_user, accounts.users)
+	if not resolved_active and #accounts.users > 0 then
+		resolved_active = user_key(accounts.users[1])
+	end
+	accounts.active_user = resolved_active
 	if #accounts.users > 0 and not find_user(accounts.active_user) then
-		accounts.active_user = accounts.users[1].username
+		accounts.active_user = user_key(accounts.users[1])
 	end
 
 	local uses_direct_credentials = opts and (is_non_empty(opts.host) or is_non_empty(opts.token))
@@ -409,6 +581,9 @@ function M.setup(opts)
 
 	if migrated.migrated then
 		save_accounts()
+	end
+	if migrated.warning then
+		vim.notify(migrated.warning, vim.log.levels.WARN)
 	end
 end
 

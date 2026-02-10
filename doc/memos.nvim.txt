@@ -40,7 +40,7 @@ Install with |lazy.nvim|:
 >lua
 -- lua/plugins/memos.lua
 require("memos").setup({
-  active_user = "default",
+  active_user = "default@http://127.0.0.1:5230",
   users = {
     { username = "default", host = "http://127.0.0.1:5230", token = "token_1" },
   },
@@ -122,8 +122,11 @@ COMMANDS                                            *memos-commands*
 *:MemosSwitch*
   Select and switch to another saved account.
 
-*:MemosAddUser*
+*:MemosUserAdd*
   Add a new account (username, host, token) interactively.
+
+*:MemosUserDelete*
+  Delete a saved account interactively.
 
 *:MemosModifyMeta*
   (In the memo buffer) Modify memo metadata. New memo will be created first.
@@ -182,7 +185,7 @@ Default configuration:
 >lua
 -- lua/plugins/memos.lua
 require("memos").setup({
-  active_user = "default",
+  active_user = "default@http://127.0.0.1:5230",
   users = {
     { username = "default", host = "http://127.0.0.1:5230", token = "token_1" },
     { username = "work", host = "http://10.0.0.8:5230", token = "token_2" },

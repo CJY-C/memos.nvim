@@ -33,7 +33,8 @@ Install with [lazy.nvim](https://github.com/folke/lazy.nvim):
 - `:MemosCreate`: Opens a new buffer to create a new memo.
 - `:MemosSave`: (Available in the memo buffer) Saves the memo you are currently creating or editing.
 - `:MemosSwitch`: Select and switch to another saved account.
-- `:MemosAddUser`: Add a new account (`username`, `host`, `token`) interactively.
+- `:MemosUserAdd`: Add a new account (`username`, `host`, `token`) interactively.
+- `:MemosUserDelete`: Delete a saved account interactively.
 - `:MemosModifyMeta`: (In memo buffer) Modify memo metadata; new memo will be created first.
 - `:w`: (In the memo buffer) Same as `:MemosSave`.
 - Untouched memo buffers are not marked as modified, so quitting Neovim will not prompt to save unless you actually edit.
@@ -86,8 +87,8 @@ You can override the default settings by passing a table to the `setup()` functi
 ```lua
 -- lua/plugins/memos.lua
 require("memos").setup({
-  -- Active account username in users[]
-  active_user = "default",
+  -- Active account key in users[] (username@host)
+  active_user = "default@http://127.0.0.1:5230",
   users = {
     { username = "default", host = "http://127.0.0.1:5230", token = "token_1" },
     { username = "work", host = "http://10.0.0.8:5230", token = "token_2" },
@@ -200,7 +201,8 @@ Notes on API versions:
 - `:MemosCreate`: 打开一个新的缓冲区来创建 memo。
 - `:MemosSave`: (在 memo 编辑缓冲区中可用) 保存你正在创建或编辑的 memo。
 - `:MemosSwitch`: 选择并切换已保存账号。
-- `:MemosAddUser`: 交互式添加新账号（`username`、`host`、`token`）。
+- `:MemosUserAdd`: 交互式添加新账号（`username`、`host`、`token`）。
+- `:MemosUserDelete`: 交互式删除已保存账号。
 - `:MemosModifyMeta`: （在 memo 编辑缓冲区中可用）修改 memo 元数据；新 memo 会先创建。
 - `:w`: (在 memo 编辑缓冲区中可用) 等同于 `:MemosSave`。
 - 未修改的 memo 缓冲区不会被标记为已更改；只有真正编辑后退出时才会提示保存。
@@ -253,8 +255,8 @@ Notes on API versions:
 ```lua
 -- lua/plugins/memos.lua
 require("memos").setup({
-  -- 当前激活账号（对应 users 中的 username）
-  active_user = "default",
+  -- 当前激活账号（对应 users 中的 username@host）
+  active_user = "default@http://127.0.0.1:5230",
   users = {
     { username = "default", host = "http://127.0.0.1:5230", token = "token_1" },
     { username = "work", host = "http://10.0.0.8:5230", token = "token_2" },

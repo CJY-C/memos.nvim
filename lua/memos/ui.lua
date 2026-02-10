@@ -598,30 +598,20 @@ function M.show_memos_list(filter, opts)
 		filter_changed = true
 	end
 	current_filter = new_filter
-	local should_create_buf = true
 	local cap = get_capabilities()
 	local supports_sort = cap and cap.supports_sort
 	local supports_state = cap and cap.supports_state
-	if supports_sort then
-		if not current_order_by or current_order_by == "" then
-			current_order_by = config.list_sort_default
-			current_sort_index = resolve_sort_index(current_order_by)
-		end
-	else
-		current_order_by = nil
-		current_sort_index = nil
+	if not current_order_by or current_order_by == "" then
+		current_order_by = config.list_sort_default
 	end
-	if supports_state then
-		if not current_state or current_state == "" then
-			current_state = config.list_state_default or "NORMAL"
-		end
-	else
-		current_state = nil
+	current_sort_index = resolve_sort_index(current_order_by)
+	if not current_state or current_state == "" then
+		current_state = config.list_state_default or "NORMAL"
 	end
 
-	-- 检查 buffer 是否存在且有效
+	-- Ensure list buffer exists.
 	if buf_id and vim.api.nvim_buf_is_valid(buf_id) then
-		should_create_buf = false
+		-- keep existing
 	else
 		buf_id = vim.api.nvim_create_buf(false, true) -- 改为 false, true (unlisted, scratch)
 		vim.api.nvim_buf_set_name(buf_id, "MemosList")
@@ -633,29 +623,24 @@ function M.show_memos_list(filter, opts)
 		vim.bo[buf_id].bufhidden = "hide"
 	end
 
-	-- 检查该 buffer 是否已经在一个窗口中打开
+	-- Focus existing window if buffer is already visible.
 	local win_id = vim.fn.bufwinid(buf_id)
 	if win_id ~= -1 then
 		vim.api.nvim_set_current_win(win_id)
 	else
 		if config.window and config.window.enable_float then
-			-- 【新增】查找是否已经存在 Memos 浮动窗口
 			local found_win = find_memos_float_window()
-
 			if found_win then
-				-- 如果找到了，就复用它，直接切换 buffer
 				vim.api.nvim_set_current_win(found_win)
 				vim.api.nvim_set_current_buf(buf_id)
 				last_float_buf_id = buf_id
 			else
-				-- 没找到才新建
 				create_float_window(buf_id)
 			end
-	else
-		-- 非浮动模式，直接切换 buffer
-		vim.api.nvim_set_current_buf(buf_id)
+		else
+			vim.api.nvim_set_current_buf(buf_id)
+		end
 	end
-end
 	if config.window and config.window.enable_float then
 		local current_win = vim.api.nvim_get_current_win()
 		local ok, is_memos_window = pcall(vim.api.nvim_win_get_var, current_win, "memos_window")
@@ -719,7 +704,7 @@ end
 		end
 	end
 
-	if config.keymaps and config.keymaps.list then
+	if config.keymaps and config.keymaps.list and not vim.b[buf_id].memos_list_keymaps then
 		local list_keymaps = config.keymaps.list
 		set_keymap(list_keymaps.edit_memo, '<Cmd>lua require("memos.ui").edit_selected_memo()<CR>')
 		set_keymap(list_keymaps.vsplit_edit_memo, '<Cmd>lua require("memos.ui").edit_selected_memo_in_vsplit()<CR>')
@@ -738,6 +723,7 @@ end
 		set_keymap(list_keymaps.delete_memo_visual, '<Cmd>lua require("memos.ui").confirm_delete_memo()<CR>')
 		set_keymap(list_keymaps.toggle_sort, '<Cmd>lua require("memos.ui").cycle_sort()<CR>')
 		set_keymap(list_keymaps.toggle_state, '<Cmd>lua require("memos.ui").toggle_state()<CR>')
+		vim.b[buf_id].memos_list_keymaps = true
 	end
 end
 
@@ -855,7 +841,7 @@ function M.confirm_delete_memo()
 			if success then
 				vim.schedule(function()
 					vim.notify("✅ Memo deleted.")
-					M.show_memos_list(current_filter)
+					M.show_memos_list(current_filter, { force_refresh = true, reason = "delete" })
 				end)
 			else
 				vim.schedule(function()
