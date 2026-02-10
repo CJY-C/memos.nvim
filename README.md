@@ -61,18 +61,22 @@ Install with [lazy.nvim](https://github.com/folke/lazy.nvim):
 | `<CR>`      | Edit the selected memo             |
 | `<Tab>`     | Edit the selected memo in a vsplit |
 | `m`         | Edit metadata for the selected memo |
-| `s`         | Search your memos                  |
+| `s` or `f`  | Search your memos                  |
+| `<S-f>`     | Fuzzy tag search (CEL only)        |
 | `r`         | Refresh the memo list              |
 | `.`         | Load the next page of memos        |
 | `<S-s>`     | Select list sort order             |
 | `<S-a>`     | Toggle memo state (NORMAL/ARCHIVED) |
 | `q`         | Quit the list window               |
 
+Note: `f` overrides Neovim's built-in find-char motion in the Memos list buffer only.
+
 #### In the Edit/Create Buffer
 
 | Key          | Action                |
 | ------------ | --------------------- |
 | `<leader>ms` | Save the current memo |
+| `<leader>me` | Edit memo metadata    |
 
 ## ⚙️ Configuration
 
@@ -137,7 +141,8 @@ require("memos").setup({
       vsplit_edit_memo = "<Tab>",
       edit_metadata = "m",
       paste_memo = "p",
-      search_memos = "s",
+      search_memos = { "s", "f" },
+      search_fuzzy = "<S-f>",
       refresh_list = "r",
       next_page = ".",
       toggle_sort = "<S-s>",
@@ -147,6 +152,7 @@ require("memos").setup({
     -- Keymaps for the editing/creating buffer
     buffer = {
       save = "<leader>ms",
+      edit_metadata = "<leader>me",
       -- Back to list from a memo
       back_to_list = '<Esc>'
     },
@@ -305,7 +311,8 @@ require("memos").setup({
       vsplit_edit_memo = "<Tab>",
       edit_metadata = "m",
       paste_memo = "p",
-      search_memos = "s",
+      search_memos = { "s", "f" },
+      search_fuzzy = "<S-f>",
       refresh_list = "r",
       next_page = ".",
       toggle_sort = "<S-s>",
@@ -315,6 +322,7 @@ require("memos").setup({
     -- 编辑/创建窗口的快捷键
     buffer = {
       save = "<leader>ms",
+      edit_metadata = "<leader>me",
       -- 从memo中返回列表的快捷键，默认设为 Esc
       back_to_list = '<Esc>' 
     },

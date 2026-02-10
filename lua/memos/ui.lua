@@ -245,6 +245,16 @@ function M.setup_buffer_for_editing()
 		end
 	end
 
+	if config.keymaps.buffer.edit_metadata and config.keymaps.buffer.edit_metadata ~= "" then
+		vim.api.nvim_buf_set_keymap(
+			0,
+			"n",
+			config.keymaps.buffer.edit_metadata,
+			'<Cmd>lua require("memos.ui").modify_current_memo_metadata()<CR>',
+			{ noremap = true, silent = true }
+		)
+	end
+
 	if config.auto_save then
 		local group = vim.api.nvim_create_augroup("MemosAutoSave", { clear = true })
 		vim.api.nvim_create_autocmd("InsertLeave", {
@@ -711,6 +721,7 @@ function M.show_memos_list(filter, opts)
 		set_keymap(list_keymaps.edit_metadata, '<Cmd>lua require("memos.ui").edit_selected_memo_metadata()<CR>')
 		set_keymap(list_keymaps.quit, '<Cmd>lua require("memos.ui").quit_memos_list()<CR>')
 		set_keymap(list_keymaps.search_memos, '<Cmd>lua require("memos.ui").search_memos()<CR>')
+		set_keymap(list_keymaps.search_fuzzy, '<Cmd>lua require("memos.ui").search_memos_fuzzy()<CR>')
 		set_keymap(
 			list_keymaps.refresh_list,
 			'<Cmd>lua require("memos.ui").show_memos_list(nil, { force_refresh = true })<CR>'
@@ -945,6 +956,207 @@ function M.search_memos()
 		prompt = 'Search (text or CEL): foo bar | "foo bar" | #area/work #todo | content.contains("foo") && "work" in tags: ',
 	}, function(input)
 		M.show_memos_list(build_filter_from_input(input), { force_refresh = true })
+	end)
+end
+
+function M.search_memos_fuzzy()
+	local cap = get_capabilities()
+	if cap and cap.search_mode == "simple" then
+		vim.notify("Fuzzy search requires CEL (v0.25/v0.26).", vim.log.levels.WARN)
+		return
+	end
+
+	local function tokenize(input)
+		local tokens = {}
+		local i = 1
+		local len = #input
+		while i <= len do
+			local ch = input:sub(i, i)
+			if ch:match("%s") then
+				i = i + 1
+			elseif ch == "(" then
+				table.insert(tokens, { type = "LPAREN" })
+				i = i + 1
+			elseif ch == ")" then
+				table.insert(tokens, { type = "RPAREN" })
+				i = i + 1
+			elseif ch == "," then
+				table.insert(tokens, { type = "OR" })
+				i = i + 1
+			elseif ch == "&" and input:sub(i, i + 1) == "&&" then
+				table.insert(tokens, { type = "AND" })
+				i = i + 2
+			elseif ch == "|" and input:sub(i, i + 1) == "||" then
+				table.insert(tokens, { type = "OR" })
+				i = i + 2
+			elseif ch == '"' then
+				local j = i + 1
+				while j <= len and input:sub(j, j) ~= '"' do
+					j = j + 1
+				end
+				if j > len then
+					return nil, "Unterminated string."
+				end
+				local value = input:sub(i + 1, j - 1)
+				table.insert(tokens, { type = "TERM", kind = "content", value = value })
+				i = j + 1
+			elseif ch == "#" then
+				local j = i + 1
+				while j <= len and input:sub(j, j):match("[%w_/%-]") do
+					j = j + 1
+				end
+				local value = input:sub(i + 1, j - 1)
+				if value == "" then
+					return nil, "Invalid tag."
+				end
+				table.insert(tokens, { type = "TERM", kind = "tag", value = value })
+				i = j
+			else
+				local j = i
+				while j <= len do
+					local c = input:sub(j, j)
+					if c:match("%s") or c == "(" or c == ")" or c == "," then
+						break
+					end
+					if c == "&" and input:sub(j, j + 1) == "&&" then
+						break
+					end
+					if c == "|" and input:sub(j, j + 1) == "||" then
+						break
+					end
+					j = j + 1
+				end
+				local value = input:sub(i, j - 1)
+				if value ~= "" then
+					table.insert(tokens, { type = "TERM", kind = "content", value = value })
+				end
+				i = j
+			end
+		end
+		return tokens, nil
+	end
+
+	local function insert_implicit_and(tokens)
+		local out = {}
+		local function is_term_like(tok)
+			return tok.type == "TERM" or tok.type == "RPAREN"
+		end
+		local function is_start_like(tok)
+			return tok.type == "TERM" or tok.type == "LPAREN"
+		end
+		for idx, tok in ipairs(tokens) do
+			local prev = out[#out]
+			if prev and is_term_like(prev) and is_start_like(tok) then
+				table.insert(out, { type = "AND" })
+			end
+			table.insert(out, tok)
+		end
+		return out
+	end
+
+	local function term_to_cel(term)
+		local escaped = vim.fn.escape(term.value, '"')
+		if term.kind == "tag" then
+			return string.format(
+				'("%s" in tags || tags.exists(t, t.startsWith("%s/")) || tags.exists(t, t.endsWith("/%s")))',
+				escaped,
+				escaped,
+				escaped
+			)
+		end
+		return string.format('content.contains("%s")', escaped)
+	end
+
+	local function parse(tokens)
+		local idx = 1
+		local parse_or
+
+		local function parse_primary()
+			local tok = tokens[idx]
+			if not tok then
+				return nil, "Unexpected end of input."
+			end
+			if tok.type == "TERM" then
+				idx = idx + 1
+				return term_to_cel(tok)
+			end
+			if tok.type == "LPAREN" then
+				idx = idx + 1
+				local expr, err = parse_or()
+				if not expr then
+					return nil, err
+				end
+				if not tokens[idx] or tokens[idx].type ~= "RPAREN" then
+					return nil, "Missing ')'."
+				end
+				idx = idx + 1
+				return "(" .. expr .. ")"
+			end
+			return nil, "Unexpected token."
+		end
+
+		local function parse_and()
+			local left, err = parse_primary()
+			if not left then
+				return nil, err
+			end
+			while tokens[idx] and tokens[idx].type == "AND" do
+				idx = idx + 1
+				local right, err2 = parse_primary()
+				if not right then
+					return nil, err2
+				end
+				left = left .. " && " .. right
+			end
+			return left
+		end
+
+		parse_or = function()
+			local left, err = parse_and()
+			if not left then
+				return nil, err
+			end
+			while tokens[idx] and tokens[idx].type == "OR" do
+				idx = idx + 1
+				local right, err2 = parse_and()
+				if not right then
+					return nil, err2
+				end
+				left = left .. " || " .. right
+			end
+			return left
+		end
+
+		local expr, err = parse_or()
+		if not expr then
+			return nil, err
+		end
+		if tokens[idx] then
+			return nil, "Unexpected token."
+		end
+		return expr
+	end
+
+	vim.ui.input({
+		prompt = 'Fuzzy search (pseudo-CEL): "foo bar" #tag, #tag2',
+	}, function(input)
+		local raw = vim.trim(input or "")
+		if raw == "" then
+			M.show_memos_list("", { force_refresh = true })
+			return
+		end
+		local tokens, err = tokenize(raw)
+		if not tokens then
+			vim.notify("Fuzzy search parse error: " .. tostring(err), vim.log.levels.ERROR)
+			return
+		end
+		tokens = insert_implicit_and(tokens)
+		local expr, err2 = parse(tokens)
+		if not expr then
+			vim.notify("Fuzzy search parse error: " .. tostring(err2), vim.log.levels.ERROR)
+			return
+		end
+		M.show_memos_list(expr, { force_refresh = true })
 	end)
 end
 

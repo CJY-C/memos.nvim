@@ -33,7 +33,8 @@ M.config = {
 			vsplit_edit_memo = "<Tab>",
 			edit_metadata = "m",
 			paste_memo = "p",
-			search_memos = "s",
+			search_memos = { "s", "f" },
+			search_fuzzy = "<S-f>",
 			refresh_list = "r",
 			next_page = ".",
 			quit = "q",
@@ -43,6 +44,7 @@ M.config = {
 		buffer = {
 			save = "<leader>ms",
 			back_to_list = "<Esc>",
+			edit_metadata = "<leader>me",
 		},
 	},
 }

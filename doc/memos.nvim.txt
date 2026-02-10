@@ -85,7 +85,8 @@ require("memos").setup({
       edit_memo = "<CR>",
       vsplit_edit_memo = "<Tab>",
       paste_memo = "p",
-      search_memos = "s",
+      search_memos = { "s", "f" },
+      search_fuzzy = "<S-f>",
       refresh_list = "r",
       next_page = ".",
       toggle_sort = "<S-s>",
@@ -163,17 +164,22 @@ DEFAULT KEYMAPS                                     *memos-keymaps*
 | `<CR>`             | Edit the selected memo               |
 | `<Tab>`            | Edit the selected memo in a vsplit   |
 | `m`                | Edit metadata for the selected memo  |
-| `s`                | Search your memos                    |
+| `s` or `f`         | Search your memos                    |
+| `<S-f>`            | Fuzzy tag search (CEL only)          |
 | `r`                | Refresh the memo list                |
 | `.`                | Load the next page of memos          |
 | `<S-s>`            | Select list sort order               |
 | `<S-a>`            | Toggle memo state (NORMAL/ARCHIVED)  |
 | `q`                | Quit the list window                 |
 
+Note: `f` overrides Neovim's built-in find-char motion in the Memos list
+buffer only.
+
 *In the Edit/Create Buffer:*
 | Key                | Action                               |
 |--------------------|--------------------------------------|
 | `<leader>ms`       | Save the current memo                |
+| `<leader>me`       | Edit memo metadata                   |
 
 ==============================================================================
 5. Configuration                                *memos-configuration*
@@ -221,7 +227,8 @@ require("memos").setup({
       vsplit_edit_memo = "<Tab>",
       edit_metadata = "m",
       paste_memo = "p",
-      search_memos = "s",
+      search_memos = { "s", "f" },
+      search_fuzzy = "<S-f>",
       refresh_list = "r",
       next_page = ".",
       toggle_sort = "<S-s>",
@@ -231,6 +238,7 @@ require("memos").setup({
     -- Keymaps for the editing/creating buffer
     buffer = {
       save = "<leader>ms",
+      edit_metadata = "<leader>me",
       -- Back to list from a memo
       back_to_list = '<Esc>'
     },
