@@ -172,7 +172,7 @@ function M.return_to_list()
 	local current_edit_buf = vim.api.nvim_get_current_buf()
 
 	-- Try switching first; this respects user 'hidden' policy.
-	local ok, err = pcall(M.show_memos_list, current_filter)
+	local ok, err = pcall(M.show_memos_list, current_filter, { force_refresh = true, reason = "return" })
 	if not ok then
 		vim.notify("Could not leave memo buffer: " .. tostring(err), vim.log.levels.WARN)
 		return

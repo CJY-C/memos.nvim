@@ -28,6 +28,7 @@
 - Match existing file style: concise functions, direct API calls, minimal abstraction.
 - Keep user-visible command names in PascalCase (`:MemosCreate`) and module paths lowercase (`memos.ui`).
 - Keep help/docs updates in sync when changing commands, keymaps, or config fields.
+- New feature: multiple Memos API versions are supported. Any changes to API calls, data models, or UI flows must account for each supported version and document any version-specific behavior.
 
 ## Testing Guidelines
 
