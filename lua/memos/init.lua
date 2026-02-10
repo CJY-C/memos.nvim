@@ -8,7 +8,7 @@ M.config = {
 	active_user = nil,
 	auto_save = false,
 	page_size = 50,
-	api_version = "auto", -- "auto" | "modern" | "legacy"
+	api_version = "auto", -- "auto" | "v0.26" | "v0.25" | "v0.21"
 	list_sort_default = "pinned desc, display_time desc",
 	list_sort_presets = {
 		"pinned desc, display_time desc",
@@ -321,6 +321,31 @@ local function prompt_for_config(on_ready)
 	end
 end
 
+local function normalize_api_version(value)
+	if value == nil or value == "" then
+		return "auto"
+	end
+	local raw = tostring(value)
+	local lowered = string.lower(raw)
+	if lowered == "auto" then
+		return "auto"
+	end
+	if lowered == "modern" then
+		return "v0.26", "modern"
+	end
+	if lowered == "legacy" then
+		return "v0.25", "legacy"
+	end
+	if lowered:match("^%d") then
+		lowered = "v" .. lowered
+	end
+	local major, minor = lowered:match("^v(%d+)%.(%d+)")
+	if major and minor then
+		return string.format("v%d.%d", tonumber(major), tonumber(minor))
+	end
+	return nil
+end
+
 function M.setup(opts)
 	local final_config = vim.deepcopy(M.config)
 	local file_data = read_config_file()
@@ -357,17 +382,27 @@ function M.setup(opts)
 	final_config.users = vim.deepcopy(accounts.users)
 	final_config.active_user = accounts.active_user
 
+	local normalized_api_version, alias = normalize_api_version(final_config.api_version)
 	local valid_api_versions = {
 		auto = true,
-		modern = true,
-		legacy = true,
+		["v0.26"] = true,
+		["v0.25"] = true,
+		["v0.21"] = true,
 	}
-	if not valid_api_versions[final_config.api_version] then
+	if not normalized_api_version or not valid_api_versions[normalized_api_version] then
 		vim.notify(
 			string.format("Invalid api_version '%s', fallback to 'auto'.", tostring(final_config.api_version)),
 			vim.log.levels.WARN
 		)
 		final_config.api_version = "auto"
+	else
+		final_config.api_version = normalized_api_version
+		if alias then
+			vim.notify(
+				string.format("api_version '%s' is deprecated; use '%s' instead.", alias, normalized_api_version),
+				vim.log.levels.WARN
+			)
+		end
 	end
 
 	M.config = final_config

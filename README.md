@@ -95,10 +95,11 @@ require("memos").setup({
 
   -- Number of memos to fetch per page
   page_size = 50,
-  -- API compatibility mode: "auto", "modern", "legacy"
-  -- "auto" tries modern first, then falls back to legacy.
+  -- API compatibility mode: "auto", "v0.26", "v0.25", "v0.21"
+  -- "auto" tries v0.26 first, then falls back to v0.25 and v0.21.
+  -- "modern"/"legacy" are deprecated aliases for v0.26/v0.25.
   api_version = "auto",
-  -- Default list sort order (modern API only)
+  -- Default list sort order (v0.26 only)
   list_sort_default = "pinned desc, display_time desc",
   -- Presets used by <S-s> to select sort in list
   list_sort_presets = {
@@ -106,7 +107,7 @@ require("memos").setup({
     "display_time desc",
     "create_time desc",
   },
-  -- Default state to request in list (modern API only)
+  -- Default state to request in list (v0.26/v0.21 only)
   list_state_default = "NORMAL",
 
   -- Auto-save the memo when leaving insert mode or holding the cursor.
@@ -151,6 +152,16 @@ require("memos").setup({
   },
 })
 ```
+
+API 版本说明：
+- v0.21 使用 offset 分页，列表不支持排序。
+- v0.21 搜索只支持纯文本 + `#tag`（不支持 CEL 过滤）。
+- v0.21 不支持 displayTime 字段，relations 使用专用接口。
+
+Notes on API versions:
+- v0.21 uses offset pagination; list sort is not available.
+- v0.21 search accepts plain text plus `#tag` (no CEL filters).
+- v0.21 metadata does not support display time; relations use relation endpoints.
 
 ---
 
@@ -251,10 +262,11 @@ require("memos").setup({
 
   -- 每页获取的 memo 数量
   page_size = 50,
-  -- API 兼容模式: "auto"、"modern"、"legacy"
-  -- "auto" 会先尝试 modern，再回退到 legacy。
+  -- API 兼容模式: "auto"、"v0.26"、"v0.25"、"v0.21"
+  -- "auto" 会先尝试 v0.26，再回退到 v0.25 和 v0.21。
+  -- "modern"/"legacy" 为 v0.26/v0.25 的废弃别名。
   api_version = "auto",
-  -- 默认列表排序（仅 modern API 支持）
+  -- 默认列表排序（仅 v0.26 支持）
   list_sort_default = "pinned desc, display_time desc",
   -- 列表内 <S-s> 选择的排序预设
   list_sort_presets = {
@@ -262,7 +274,7 @@ require("memos").setup({
     "display_time desc",
     "create_time desc",
   },
-  -- 列表请求的默认状态（仅 modern API 支持）
+  -- 列表请求的默认状态（仅 v0.26/v0.21 支持）
   list_state_default = "NORMAL",
 
   -- 当离开插入模式或光标静止时，自动保存 memo。

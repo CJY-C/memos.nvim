@@ -3,6 +3,10 @@ local config = require("memos").config
 
 local M = {}
 
+local function get_capabilities()
+	return api.get_capabilities()
+end
+
 local memos_cache = {}
 local buf_id = nil
 local current_page_token = nil
@@ -499,6 +503,11 @@ local function resolve_sort_index(order_by)
 end
 
 local function prompt_select_sort()
+	local cap = get_capabilities()
+	if cap and not cap.supports_sort then
+		vim.notify("Sorting is not supported by this Memos API version.", vim.log.levels.WARN)
+		return
+	end
 	local presets = get_sort_presets()
 	if #presets == 0 then
 		return
@@ -532,6 +541,11 @@ function M.cycle_sort()
 end
 
 function M.toggle_state()
+	local cap = get_capabilities()
+	if cap and not cap.supports_state then
+		vim.notify("State filtering is not supported by this Memos API version.", vim.log.levels.WARN)
+		return
+	end
 	if current_state == "ARCHIVED" then
 		current_state = "NORMAL"
 	else
@@ -585,12 +599,24 @@ function M.show_memos_list(filter, opts)
 	end
 	current_filter = new_filter
 	local should_create_buf = true
-	if not current_order_by or current_order_by == "" then
-		current_order_by = config.list_sort_default
-		current_sort_index = resolve_sort_index(current_order_by)
+	local cap = get_capabilities()
+	local supports_sort = cap and cap.supports_sort
+	local supports_state = cap and cap.supports_state
+	if supports_sort then
+		if not current_order_by or current_order_by == "" then
+			current_order_by = config.list_sort_default
+			current_sort_index = resolve_sort_index(current_order_by)
+		end
+	else
+		current_order_by = nil
+		current_sort_index = nil
 	end
-	if not current_state or current_state == "" then
-		current_state = config.list_state_default or "NORMAL"
+	if supports_state then
+		if not current_state or current_state == "" then
+			current_state = config.list_state_default or "NORMAL"
+		end
+	else
+		current_state = nil
 	end
 
 	-- 检查 buffer 是否存在且有效
@@ -841,6 +867,15 @@ function M.confirm_delete_memo()
 end
 
 function M.search_memos()
+	local cap = get_capabilities()
+	if cap and cap.search_mode == "simple" then
+		vim.ui.input({
+			prompt = "Search (text or #tag): ",
+		}, function(input)
+			M.show_memos_list(vim.trim(input or ""), { force_refresh = true })
+		end)
+		return
+	end
 	local function looks_like_cel(expr)
 		if expr:find("content%.contains%(") then
 			return true
@@ -927,15 +962,16 @@ function M.search_memos()
 	end)
 end
 
-local function prompt_select_field(callback)
-	local items = {
-		{ key = "visibility", label = "Visibility" },
-		{ key = "pinned", label = "Pinned" },
-		{ key = "displayTime", label = "Display time" },
-		{ key = "createTime", label = "Create time" },
-		{ key = "relations", label = "Relations" },
-		{ key = "state", label = "State" },
-	}
+local function prompt_select_field(capabilities, callback)
+	local items = {}
+	table.insert(items, { key = "visibility", label = "Visibility" })
+	table.insert(items, { key = "pinned", label = "Pinned" })
+	if not (capabilities and capabilities.mode == "v0.21") then
+		table.insert(items, { key = "displayTime", label = "Display time" })
+	end
+	table.insert(items, { key = "createTime", label = "Create time" })
+	table.insert(items, { key = "relations", label = "Relations" })
+	table.insert(items, { key = "state", label = "State" })
 	vim.schedule(function()
 		vim.ui.select(items, {
 			prompt = "Edit memo metadata:",
@@ -1005,6 +1041,22 @@ local function normalize_iso_time(input)
 	return value
 end
 
+local function iso_to_unix_time(value)
+	local normalized = normalize_iso_time(value or "")
+	if normalized == "" then
+		return nil
+	end
+	local ok, ts = pcall(vim.fn.strptime, "%Y-%m-%dT%H:%M:%SZ", normalized)
+	if not ok then
+		return nil
+	end
+	local num = tonumber(ts)
+	if not num or num <= 0 then
+		return nil
+	end
+	return num
+end
+
 local function prompt_iso_time(prompt, default_value, callback)
 	vim.schedule(function()
 		vim.ui.input({
@@ -1067,6 +1119,37 @@ local function get_default_relation_type(memo)
 	return "TYPE_UNSPECIFIED"
 end
 
+local function relation_name_from_id(id)
+	if not id then
+		return ""
+	end
+	return "memos/" .. tostring(id)
+end
+
+local function get_default_relation_name_v021(relations)
+	if type(relations) ~= "table" or #relations == 0 then
+		return ""
+	end
+	local first = relations[1]
+	local related = first and (first.relatedMemoID or first.relatedMemoId)
+	if related then
+		return relation_name_from_id(related)
+	end
+	return ""
+end
+
+local function get_default_relation_type_v021(relations)
+	if type(relations) ~= "table" or #relations == 0 then
+		return "REFERENCE"
+	end
+	local first = relations[1]
+	local rel_type = first and first.type or nil
+	if type(rel_type) == "string" and rel_type ~= "" then
+		return rel_type
+	end
+	return "REFERENCE"
+end
+
 local function to_snake_mask(field)
 	if field == "displayTime" then
 		return "display_time"
@@ -1077,8 +1160,142 @@ local function to_snake_mask(field)
 	return field
 end
 
+local function notify_metadata_success()
+	vim.schedule(function()
+		vim.notify("✅ Memo metadata updated.")
+		M.refresh_list_silently()
+	end)
+end
+
+local function notify_metadata_unchanged()
+	vim.schedule(function()
+		vim.notify("⚠️ Memo metadata was not applied by server.", vim.log.levels.WARN)
+		M.refresh_list_silently()
+	end)
+end
+
+local function edit_relations_v021(memo)
+	if not memo or not memo.name or memo.name == "" then
+		return
+	end
+	api.list_memo_relations(memo.name, function(relations, err)
+		if not relations then
+			vim.schedule(function()
+				vim.notify("Failed to fetch memo relations: " .. tostring(err), vim.log.levels.ERROR)
+			end)
+			return
+		end
+		vim.schedule(function()
+			local clipboard_name = normalize_memo_name(vim.fn.getreg("+") or "")
+			local default_relation = clipboard_name or get_default_relation_name_v021(relations)
+			vim.ui.input({
+				prompt = "Related memo id (memos/<id>): ",
+				default = default_relation,
+			}, function(input)
+				if input == nil then
+					return
+				end
+				local normalized = normalize_memo_name(input or "")
+				if not normalized or normalized == "" then
+					local choice = vim.fn.confirm("Clear all relations?", "&Yes\n&No", 2)
+					if choice ~= 1 then
+						return
+					end
+					if type(relations) ~= "table" or #relations == 0 then
+						vim.notify("No relations to clear.", vim.log.levels.INFO)
+						return
+					end
+					local pending = #relations
+					local failed = false
+					for _, rel in ipairs(relations) do
+						local related_id = rel and (rel.relatedMemoID or rel.relatedMemoId)
+						local rel_type = rel and rel.type or "REFERENCE"
+						if related_id then
+							api.delete_memo_relation(memo.name, relation_name_from_id(related_id), rel_type, function(ok, _)
+								if not ok then
+									failed = true
+								end
+								pending = pending - 1
+								if pending == 0 then
+									vim.schedule(function()
+										if failed then
+											vim.notify("❌ Failed to clear some relations.", vim.log.levels.ERROR)
+										else
+											vim.notify("✅ Memo relations cleared.")
+										end
+										M.refresh_list_silently()
+									end)
+								end
+							end)
+						else
+							pending = pending - 1
+						end
+					end
+					return
+				end
+
+				local default_type = get_default_relation_type_v021(relations)
+				vim.ui.input({
+					prompt = "Relation type: ",
+					default = default_type,
+				}, function(type_input)
+					if not type_input or type_input == "" then
+						return
+					end
+					api.create_memo_relation(memo.name, normalized, type_input, function(ok, relation_err)
+						vim.schedule(function()
+							if ok then
+								vim.notify("✅ Memo relations updated.")
+							else
+								vim.notify("❌ Failed to update relations: " .. tostring(relation_err), vim.log.levels.ERROR)
+							end
+							M.refresh_list_silently()
+						end)
+					end)
+				end)
+			end)
+		end)
+	end)
+end
+
 local function update_metadata_field(memo, field, value)
 	if not memo or not memo.name or memo.name == "" then
+		return
+	end
+	local cap = get_capabilities()
+	if cap and cap.mode == "v0.21" then
+		if field == "relations" then
+			edit_relations_v021(memo)
+			return
+		end
+		local fields = {
+			content = memo.content or "",
+		}
+		local update_mask = field
+		if field == "createTime" then
+			local ts = iso_to_unix_time(value)
+			if not ts then
+				vim.notify("Invalid time format for create time.", vim.log.levels.ERROR)
+				return
+			end
+			fields.createdTs = ts
+			update_mask = "createdTs"
+		elseif field == "state" then
+			fields.rowStatus = value
+			update_mask = "rowStatus"
+		elseif field == "visibility" then
+			fields.visibility = value
+		elseif field == "pinned" then
+			fields.pinned = value
+		else
+			vim.notify("This metadata field is not supported in v0.21.", vim.log.levels.WARN)
+			return
+		end
+		api.update_memo_metadata(memo.name, fields, update_mask, function(success)
+			if success then
+				notify_metadata_success()
+			end
+		end)
 		return
 	end
 	local fields = {
@@ -1086,24 +1303,10 @@ local function update_metadata_field(memo, field, value)
 	}
 	fields[field] = value
 
-	local function notify_success()
-		vim.schedule(function()
-			vim.notify("✅ Memo metadata updated.")
-			M.refresh_list_silently()
-		end)
-	end
-
-	local function notify_unchanged()
-		vim.schedule(function()
-			vim.notify("⚠️ Memo metadata was not applied by server.", vim.log.levels.WARN)
-			M.refresh_list_silently()
-		end)
-	end
-
 	if not is_time_field(field) then
 		api.update_memo_metadata(memo.name, fields, field, function(success)
 			if success then
-				notify_success()
+				notify_metadata_success()
 			end
 		end)
 		return
@@ -1119,7 +1322,7 @@ local function update_metadata_field(memo, field, value)
 					return
 				end
 				if updated[field] == value then
-					notify_success()
+					notify_metadata_success()
 					return
 				end
 				if not tried_retry then
@@ -1129,7 +1332,7 @@ local function update_metadata_field(memo, field, value)
 						return
 					end
 				end
-				notify_unchanged()
+				notify_metadata_unchanged()
 			end)
 		end)
 	end
@@ -1141,7 +1344,8 @@ local function edit_metadata_flow(memo)
 	if not memo or not memo.name or memo.name == "" then
 		return
 	end
-	prompt_select_field(function(field)
+	local cap = get_capabilities()
+	prompt_select_field(cap, function(field)
 		if not field then
 			return
 		end
@@ -1178,6 +1382,10 @@ local function edit_metadata_flow(memo)
 			return
 		end
 		if field == "relations" then
+			if cap and cap.mode == "v0.21" then
+				edit_relations_v021(memo)
+				return
+			end
 			local clipboard_name = normalize_memo_name(vim.fn.getreg("+") or "")
 			local default_relation = clipboard_name or get_default_relation_memo_name(memo)
 			vim.schedule(function()
@@ -1255,10 +1463,19 @@ function M.edit_selected_memo_metadata()
 	local line_num = vim.api.nvim_win_get_cursor(0)[1]
 	local selected_memo = memos_cache[line_num]
 	if not selected_memo or not selected_memo.name or selected_memo.name == "" then
+		vim.notify("No memo selected.", vim.log.levels.WARN)
 		return
 	end
-	api.get_memo(selected_memo.name, function(memo)
+	local cap = get_capabilities()
+	if cap and cap.mode == "v0.21" then
+		edit_metadata_flow(selected_memo)
+		return
+	end
+	api.get_memo(selected_memo.name, function(memo, err)
 		if not memo then
+			vim.schedule(function()
+				vim.notify("Failed to load memo metadata: " .. tostring(err), vim.log.levels.ERROR)
+			end)
 			return
 		end
 		edit_metadata_flow(memo)
@@ -1268,8 +1485,11 @@ end
 function M.modify_current_memo_metadata()
 	local memo_name = vim.b.memos_memo_name
 	if memo_name and memo_name ~= "" then
-		api.get_memo(memo_name, function(memo)
+		api.get_memo(memo_name, function(memo, err)
 			if not memo then
+				vim.schedule(function()
+					vim.notify("Failed to load memo metadata: " .. tostring(err), vim.log.levels.ERROR)
+				end)
 				return
 			end
 			edit_metadata_flow(memo)
@@ -1291,6 +1511,7 @@ function M.modify_current_memo_metadata()
 			end)
 			return
 		end
+		local cap = get_capabilities()
 		vim.schedule(function()
 			if vim.api.nvim_buf_is_valid(bufnr) then
 				vim.b[bufnr].memos_memo_name = new_memo.name
@@ -1298,8 +1519,15 @@ function M.modify_current_memo_metadata()
 				vim.bo[bufnr].modified = false
 			end
 		end)
-		api.get_memo(new_memo.name, function(memo)
+		if cap and cap.mode == "v0.21" then
+			edit_metadata_flow(new_memo)
+			return
+		end
+		api.get_memo(new_memo.name, function(memo, err)
 			if not memo then
+				vim.schedule(function()
+					vim.notify("Failed to load memo metadata: " .. tostring(err), vim.log.levels.ERROR)
+				end)
 				return
 			end
 			edit_metadata_flow(memo)

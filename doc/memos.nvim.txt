@@ -16,9 +16,6 @@ A Neovim plugin to interact with Memos (https://github.com/usememos/memos)
 right inside the editor. List, create, edit, and delete your memos without
 leaving Neovim.
 
-一个 Neovim 插件，让你在编辑器内部直接与 Memos 进行交互。无需离开 Neovim
-即可列表、创建、编辑和删除你的 memos。
-
 ==============================================================================
 2. Features                                           *memos-features*
 
@@ -50,9 +47,13 @@ require("memos").setup({
 
   -- Number of memos to fetch per page
   page_size = 50,
-  -- API compatibility mode: "auto", "modern", "legacy"
+  -- API compatibility mode: "auto", "v0.26", "v0.25", "v0.21"
+  -- "auto" tries v0.26 first, then falls back to v0.25 and v0.21.
+  -- "modern"/"legacy" are deprecated aliases for v0.26/v0.25.
+  -- "auto" tries v0.26 first, then falls back to v0.25 and v0.21.
+  -- "modern"/"legacy" are deprecated aliases for v0.26/v0.25.
   api_version = "auto",
-  -- Default list sort order (modern API only)
+  -- Default list sort order (v0.26 only)
   list_sort_default = "pinned desc, display_time desc",
   -- Presets used by <S-s> to select sort in list
   list_sort_presets = {
@@ -60,7 +61,7 @@ require("memos").setup({
     "display_time desc",
     "create_time desc",
   },
-  -- Default state to request in list (modern API only)
+  -- Default state to request in list (v0.26/v0.21 only)
   list_state_default = "NORMAL",
   auto_save = false,
   -- Window configuration
@@ -98,6 +99,11 @@ require("memos").setup({
   },
 })
 <
+Notes on API versions:
+- v0.21 uses offset pagination; list sort is not available.
+- v0.21 search accepts plain text plus #tag (no CEL filters).
+- v0.21 metadata does not support display time; relations use relation endpoints.
+
 ==============================================================================
 4. Usage                                                  *memos-usage*
 
@@ -184,9 +190,9 @@ require("memos").setup({
   auto_save = false,
   -- Number of memos to fetch per page
   page_size = 50,
-  -- API compatibility mode: "auto", "modern", "legacy"
+  -- API compatibility mode: "auto", "v0.26", "v0.25", "v0.21"
   api_version = "auto",
-  -- Default list sort order (modern API only)
+  -- Default list sort order (v0.26 only)
   list_sort_default = "pinned desc, display_time desc",
   -- Presets used by <S-s> to select sort in list
   list_sort_presets = {
@@ -194,7 +200,7 @@ require("memos").setup({
     "display_time desc",
     "create_time desc",
   },
-  -- Default state to request in list (modern API only)
+  -- Default state to request in list (v0.26/v0.21 only)
   list_state_default = "NORMAL",
 
   -- Set to false or nil to disable a keymap
