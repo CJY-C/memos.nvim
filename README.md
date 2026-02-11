@@ -41,7 +41,7 @@ Install with [lazy.nvim](https://github.com/folke/lazy.nvim):
 - `:MemosUserAdd`: Add a new account (`username`, `host`, `token`) interactively.
 - `:MemosUserDelete`: Delete a saved account interactively.
 - `:MemosModifyMeta`: (In memo buffer) Modify memo metadata; new memo will be created first.
-- `:w`: (In the memo buffer) Same as `:MemosSave`.
+- `:w`: (In the memo buffer) Save without switching windows; the list refreshes in the background.
 - Untouched memo buffers are not marked as modified, so quitting Neovim will not prompt to save unless you actually edit.
 - If `MEMOS_HOST` or `MEMOS_TOKEN` is set, account switching is disabled for that session.
 - When floating window is enabled, memo edits open in the same float and are restored when toggling `:Memos`.
@@ -244,7 +244,7 @@ Notes on API versions:
 - `:MemosUserAdd`: 交互式添加新账号（`username`、`host`、`token`）。
 - `:MemosUserDelete`: 交互式删除已保存账号。
 - `:MemosModifyMeta`: （在 memo 编辑缓冲区中可用）修改 memo 元数据；新 memo 会先创建。
-- `:w`: (在 memo 编辑缓冲区中可用) 等同于 `:MemosSave`。
+- `:w`: (在 memo 编辑缓冲区中可用) 保存但不切换窗口；列表会在后台刷新。
 - 未修改的 memo 缓冲区不会被标记为已更改；只有真正编辑后退出时才会提示保存。
 - 如果设置了 `MEMOS_HOST` 或 `MEMOS_TOKEN`，该会话中将禁用账号切换。
 - 如果启用了浮动窗口，memo 编辑会在同一个浮动窗口中打开，并在切换 `:Memos` 时保留。

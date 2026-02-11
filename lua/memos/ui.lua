@@ -472,7 +472,7 @@ function M.setup_buffer_for_editing()
 	vim.api.nvim_create_autocmd("BufWriteCmd", {
 		buffer = 0,
 		callback = function()
-			M.save_or_create_dispatcher()
+			M.save_or_create_dispatcher({ post_save_ui = false })
 		end,
 	})
 	if config.keymaps.buffer.save and config.keymaps.buffer.save ~= "" then
@@ -524,18 +524,31 @@ function M.setup_buffer_for_editing()
 	end
 end
 
+local function build_memo_buffer_name(memo, content)
+	if not memo or not memo.name or memo.name == "" then
+		return nil
+	end
+	local first_line = ""
+	if type(content) == "string" then
+		first_line = content:match("^[^\n]*") or ""
+	end
+	if first_line == "" then
+		first_line = "memo"
+	end
+	return "memos/"
+		.. memo.name:gsub("memos/", "")
+		.. "/"
+		.. first_line:gsub("[/\\]", "_"):sub(1, 50)
+		.. ".md"
+end
+
 function M.open_memo_for_edit(memo, open_cmd)
 	if not memo or not memo.name or memo.name == "" then
 		vim.notify("Selected memo has no valid identifier.", vim.log.levels.ERROR)
 		return
 	end
 	local content = type(memo.content) == "string" and memo.content or ""
-	local first_line = content:match("^[^\n]*") or "memo"
-	local buffer_name = "memos/"
-		.. memo.name:gsub("memos/", "")
-		.. "/"
-		.. first_line:gsub("[/\\]", "_"):sub(1, 50)
-		.. ".md"
+	local buffer_name = build_memo_buffer_name(memo, content)
 	local existing_bufnr = vim.fn.bufnr(buffer_name)
 
 	if existing_bufnr ~= -1 and vim.api.nvim_buf_is_loaded(existing_bufnr) then
@@ -588,7 +601,9 @@ function M.check_and_auto_save()
 	end
 end
 
-function M.save_or_create_dispatcher()
+function M.save_or_create_dispatcher(opts)
+	opts = opts or {}
+	local post_save_ui = opts.post_save_ui ~= false
 	local bufnr_to_save = vim.api.nvim_get_current_buf()
 	if vim.b[bufnr_to_save].memos_save_inflight then
 		vim.b[bufnr_to_save].memos_save_pending = true
@@ -615,7 +630,7 @@ function M.save_or_create_dispatcher()
 			if vim.b[bufnr_to_save].memos_original_content ~= current_content then
 				vim.schedule(function()
 					if vim.api.nvim_buf_is_valid(bufnr_to_save) then
-						M.save_or_create_dispatcher()
+						M.save_or_create_dispatcher(opts)
 					end
 				end)
 			end
@@ -644,18 +659,27 @@ function M.save_or_create_dispatcher()
 	else
 		api.create_memo(content, function(new_memo)
 			if new_memo and new_memo.name then
+				new_memo.content = new_memo.content or content
 				vim.schedule(function()
 					vim.notify("✅ Memo created successfully!")
 					if vim.api.nvim_buf_is_valid(bufnr_to_save) then
 						vim.b[bufnr_to_save].memos_memo_name = new_memo.name
 						vim.b[bufnr_to_save].memos_original_content = content
 						vim.bo[bufnr_to_save].modified = false
+						local new_name = build_memo_buffer_name(new_memo, content)
+						if new_name then
+							vim.api.nvim_buf_set_name(bufnr_to_save, new_name)
+						end
 					end
-					M.show_memos_list(current_filter)
-					-- 立即重新打开刚刚创建的 memo，进入编辑模式
-					vim.schedule(function()
-						M.open_memo_for_edit(new_memo, "enew")
-					end)
+					if post_save_ui then
+						M.show_memos_list(current_filter)
+						-- 立即重新打开刚刚创建的 memo，进入编辑模式
+						vim.schedule(function()
+							M.open_memo_for_edit(new_memo, "enew")
+						end)
+					else
+						M.refresh_list_silently()
+					end
 					finalize_save()
 				end)
 			else

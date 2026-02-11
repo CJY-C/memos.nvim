@@ -150,7 +150,8 @@ COMMANDS                                            *memos-commands*
   (In the memo buffer) Modify memo metadata. New memo will be created first.
 
 *:w*
-  (In the memo buffer) Same as |:MemosSave|.
+  (In the memo buffer) Save without switching windows; the list refreshes
+  in the background.
 
 Untouched memo buffers are not treated as modified, so Neovim should only
 ask to save when content has actually changed.
