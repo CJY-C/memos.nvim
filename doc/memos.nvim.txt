@@ -24,7 +24,10 @@ leaving Neovim.
 - *Create & Edit*: Create new memos or edit existing ones in a dedicated
   buffer with `markdown` filetype support.
 - *Edit Metadata*: Update memo metadata (visibility, pinned, display time,
-  create time, state) from the list.
+  create time, state, relations) from the list.
+  Relation edits prompt for append/delete/replace and accept multiple memo
+  IDs (comma-separated, defaulting to the clipboard).
+  Metadata prompts include a clipped memo title for context.
   Time fields expect ISO 8601 / RFC3339. If you omit a timezone (for
   example `2025-02-07T12:34:56`), the plugin appends `Z` (UTC).
 - *Delete Memos*: Delete memos directly from the list.
@@ -64,6 +67,8 @@ require("memos").setup({
   -- Default state to request in list (v0.26/v0.21 only)
   list_state_default = "NORMAL",
   auto_save = false,
+  metadata_title_max_len = 50,
+  confirm_copy = false,
   -- Window configuration
   window = {
     enable_float = false, -- Set to true to open the list in a floating window
@@ -83,7 +88,10 @@ require("memos").setup({
       delete_memo = "d",
       delete_memo_visual = "dd",
       edit_memo = "<CR>",
-      vsplit_edit_memo = "<Tab>",
+      vsplit_edit_memo = "<C-v>",
+      split_edit_memo = "<C-s>",
+      toggle_select_next = "<Tab>",
+      toggle_select_prev = "<S-Tab>",
       paste_memo = "p",
       search_memos = { "s", "f" },
       search_fuzzy = "<S-f>",
@@ -158,11 +166,16 @@ DEFAULT KEYMAPS                                     *memos-keymaps*
 | Key                | Action                               |
 |--------------------|--------------------------------------|
 | `a`                | Add a new memo                       |
-| `y`                | Copy selected memo ID to clipboard   |
+| `y`                | Copy selected memo ID(s) to clipboard|
 | `p`                | Paste memo ID from clipboard         |
 | `d` or `dd`        | Delete the selected memo             |
 | `<CR>`             | Edit the selected memo               |
-| `<Tab>`            | Edit the selected memo in a vsplit   |
+| `<S-m>`            | Edit metadata for selected memos     |
+| `<Tab>`            | Toggle selection and move down       |
+| `<S-Tab>`          | Toggle selection and move up         |
+| `c`                | Clear selection                      |
+| `<C-s>`            | Edit the selected memo in a split    |
+| `<C-v>`            | Edit the selected memo in a vsplit   |
 | `m`                | Edit metadata for the selected memo  |
 | `s` or `f`         | Search your memos                    |
 | `<S-f>`            | Fuzzy tag search (CEL only)          |
@@ -224,7 +237,12 @@ require("memos").setup({
       delete_memo = "d",
       delete_memo_visual = "dd",
       edit_memo = "<CR>",
-      vsplit_edit_memo = "<Tab>",
+      vsplit_edit_memo = "<C-v>",
+      split_edit_memo = "<C-s>",
+      toggle_select_next = "<Tab>",
+      toggle_select_prev = "<S-Tab>",
+      multi_edit_metadata = "<S-m>",
+      clear_selection = "c",
       edit_metadata = "m",
       paste_memo = "p",
       search_memos = { "s", "f" },

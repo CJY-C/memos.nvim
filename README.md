@@ -8,7 +8,9 @@ A Neovim plugin to interact with [Memos](https://github.com/usememos/memos) righ
 
 - **List Memos**: View, search, and paginate through your memos (shows pinned/archived indicators).
 - **Create & Edit**: Create new memos or edit existing ones in a dedicated buffer with `markdown` filetype support.
-- **Edit Metadata**: Update memo metadata (visibility, pinned, display time, create time, state) from the list.
+- **Edit Metadata**: Update memo metadata (visibility, pinned, display time, create time, state, relations) from the list.
+  - Relation edits prompt for append/delete/replace and accept multiple memo IDs (comma-separated, defaulting to clipboard).
+  - Metadata prompts include a clipped memo title for context.
   - Time fields expect ISO 8601 / RFC3339. If you omit a timezone (e.g. `2025-02-07T12:34:56`), the plugin appends `Z` (UTC).
 - **Delete Memos**: Delete memos directly from the list.
 - **Customizable**: Configure API endpoints, keymaps, and more.
@@ -55,11 +57,16 @@ Install with [lazy.nvim](https://github.com/folke/lazy.nvim):
 | Key         | Action                             |
 | ----------- | ---------------------------------- |
 | `a`         | Add a new memo                     |
-| `y`         | Copy selected memo ID to clipboard |
+| `y`         | Copy selected memo ID(s) to clipboard |
 | `p`         | Paste memo ID from clipboard       |
 | `d` or `dd` | Delete the selected memo           |
 | `<CR>`      | Edit the selected memo             |
-| `<Tab>`     | Edit the selected memo in a vsplit |
+| `<S-m>`     | Edit metadata for selected memos   |
+| `<Tab>`     | Toggle selection and move down     |
+| `<S-Tab>`   | Toggle selection and move up       |
+| `c`         | Clear selection                    |
+| `<C-s>`     | Edit the selected memo in a split  |
+| `<C-v>`     | Edit the selected memo in a vsplit |
 | `m`         | Edit metadata for the selected memo |
 | `s` or `f`  | Search your memos                  |
 | `<S-f>`     | Fuzzy tag search (CEL only)        |
@@ -117,6 +124,10 @@ require("memos").setup({
 
   -- Auto-save the memo when leaving insert mode or holding the cursor.
   auto_save = false,
+  -- Max length for memo title shown in metadata prompt
+  metadata_title_max_len = 50,
+  -- Confirm before copying memo IDs to clipboard
+  confirm_copy = false,
  -- Window configuration
   window = {
         enable_float = false, -- Set to true to open the list in a floating window
@@ -138,7 +149,12 @@ require("memos").setup({
       delete_memo_visual = "dd",
       -- Assign both <CR> and 'i' to edit a memo
       edit_memo = { "<CR>", "i" },
-      vsplit_edit_memo = "<Tab>",
+      vsplit_edit_memo = "<C-v>",
+      split_edit_memo = "<C-s>",
+      toggle_select_next = "<Tab>",
+      toggle_select_prev = "<S-Tab>",
+      multi_edit_metadata = "<S-m>",
+      clear_selection = "c",
       edit_metadata = "m",
       paste_memo = "p",
       search_memos = { "s", "f" },
@@ -182,7 +198,9 @@ Notes on API versions:
 
 - **列表 Memos**: 查看、搜索和翻页你的 memos（显示置顶/归档标识）。
 - **创建与编辑**: 在专用的、支持 `markdown` 文件类型的缓冲区中创建新 memo 或编辑现有 memo。
-- **编辑元数据**: 在列表中更新 memo 的可见性、置顶、展示时间、创建时间、状态。
+- **编辑元数据**: 在列表中更新 memo 的可见性、置顶、展示时间、创建时间、状态、关系。
+  - 关系编辑会提示 append/delete/replace，并支持多个 memo ID（逗号分隔，默认使用剪贴板）。
+  - 元数据提示会显示裁剪后的 memo 标题，便于确认上下文。
   - 时间字段需 ISO 8601 / RFC3339 格式；若未包含时区（如 `2025-02-07T12:34:56`），插件会自动追加 `Z`（UTC）。
 - **删除 Memos**: 直接从列表中删除 memo。
 - **可定制**: 可配置 API 地址、快捷键等。
@@ -229,11 +247,16 @@ Notes on API versions:
 | 按键        | 功能                        |
 | ----------- | --------------------------- |
 | `a`         | 新增一个 memo               |
-| `y`         | 复制选中 memo 的 ID 到剪贴板 |
+| `y`         | 复制选中 memo 的 ID 到剪贴板（多选逗号分隔） |
 | `p`         | 从剪贴板粘贴 memo ID        |
 | `d` 或 `dd` | 删除所选的 memo             |
 | `<CR>`      | 编辑所选的 memo             |
-| `<Tab>`     | 在垂直分屏中编辑所选的 memo |
+| `<S-m>`     | 编辑所选 memo 的元数据      |
+| `<Tab>`     | 切换选中并向下移动光标       |
+| `<S-Tab>`   | 切换选中并向上移动光标       |
+| `c`         | 清除多选状态                |
+| `<C-s>`     | 在水平分屏中编辑所选的 memo |
+| `<C-v>`     | 在垂直分屏中编辑所选的 memo |
 | `m`         | 编辑所选 memo 的元数据     |
 | `s`         | 搜索你的 memos              |
 | `r`         | 刷新 memo 列表              |
@@ -287,6 +310,10 @@ require("memos").setup({
 
   -- 当离开插入模式或光标静止时，自动保存 memo。
   auto_save = false,
+  -- 元数据提示中显示的 memo 标题长度上限
+  metadata_title_max_len = 50,
+  -- 复制 memo ID 前是否确认
+  confirm_copy = false,
   -- 窗口配置
   window = {
         enable_float = false, -- 设置为 true 以在浮动窗口中打开列表
@@ -308,7 +335,12 @@ require("memos").setup({
       delete_memo_visual = "dd",
       -- 将 <CR> 和 i 键都设置为编辑功能
       edit_memo = { "<CR>", "i" },
-      vsplit_edit_memo = "<Tab>",
+      vsplit_edit_memo = "<C-v>",
+      split_edit_memo = "<C-s>",
+      toggle_select_next = "<Tab>",
+      toggle_select_prev = "<S-Tab>",
+      multi_edit_metadata = "<S-m>",
+      clear_selection = "c",
       edit_metadata = "m",
       paste_memo = "p",
       search_memos = { "s", "f" },
