@@ -11,6 +11,9 @@ A Neovim plugin to interact with [Memos](https://github.com/usememos/memos) righ
 - **Edit Metadata**: Update memo metadata (visibility, pinned, display time, create time, state, relations) from the list.
   - Relation edits prompt for append/delete/replace and accept multiple memo IDs (comma-separated, defaulting to clipboard).
   - Metadata prompts include a clipped memo title for context.
+- **Relations Tree**: Toggle related memos under each item in the list (`gr`) and press `<CR>` on a relation to open it.
+  - Memos with relations show `.. <→X><←Y>` counts (outgoing/incoming); `+` indicates more results.
+  - Relations use `→`/`←` prefixes and show titles only; empty directions are omitted.
   - Time fields expect ISO 8601 / RFC3339. If you omit a timezone (e.g. `2025-02-07T12:34:56`), the plugin appends `Z` (UTC).
 - **Delete Memos**: Delete memos directly from the list.
 - **Customizable**: Configure API endpoints, keymaps, and more.
@@ -57,14 +60,16 @@ Install with [lazy.nvim](https://github.com/folke/lazy.nvim):
 | Key         | Action                             |
 | ----------- | ---------------------------------- |
 | `a`         | Add a new memo                     |
-| `y`         | Copy selected memo ID(s) to clipboard |
+| `y`         | Copy memo ID(s) to clipboard       |
 | `p`         | Paste memo ID from clipboard       |
-| `d` or `dd` | Delete the selected memo           |
+| `d` or `dd` | Delete the selected memo / relation |
+| `D`         | Delete referenced memo (relation line) |
 | `<CR>`      | Edit the selected memo             |
 | `<S-m>`     | Edit metadata for selected memos   |
 | `<Tab>`     | Toggle selection and move down     |
 | `<S-Tab>`   | Toggle selection and move up       |
 | `c`         | Clear selection                    |
+| `gr`        | Toggle relations tree              |
 | `<C-s>`     | Edit the selected memo in a split  |
 | `<C-v>`     | Edit the selected memo in a vsplit |
 | `m`         | Edit metadata for the selected memo |
@@ -126,6 +131,12 @@ require("memos").setup({
   auto_save = false,
   -- Max length for memo title shown in metadata prompt
   metadata_title_max_len = 50,
+  -- Max number of related memos shown per memo in list
+  list_relations_limit = 20,
+  -- Which relation directions to show: "out" | "in" | "both" | "none"
+  list_relations_mode = "both",
+  -- Show relations tree by default in list
+  list_relations_auto_expand = true,
   -- Confirm before copying memo IDs to clipboard
   confirm_copy = false,
  -- Window configuration
@@ -147,6 +158,7 @@ require("memos").setup({
       copy_memo_id = "y",
       delete_memo = "d",
       delete_memo_visual = "dd",
+      delete_relation_source = "D",
       -- Assign both <CR> and 'i' to edit a memo
       edit_memo = { "<CR>", "i" },
       vsplit_edit_memo = "<C-v>",
@@ -155,6 +167,7 @@ require("memos").setup({
       toggle_select_prev = "<S-Tab>",
       multi_edit_metadata = "<S-m>",
       clear_selection = "c",
+      toggle_relations = "gr",
       edit_metadata = "m",
       paste_memo = "p",
       search_memos = { "s", "f" },
@@ -201,6 +214,9 @@ Notes on API versions:
 - **编辑元数据**: 在列表中更新 memo 的可见性、置顶、展示时间、创建时间、状态、关系。
   - 关系编辑会提示 append/delete/replace，并支持多个 memo ID（逗号分隔，默认使用剪贴板）。
   - 元数据提示会显示裁剪后的 memo 标题，便于确认上下文。
+- **关联树**: 在列表中切换显示关联 memo（`gr`），在关联行按 `<CR>` 打开对应 memo。
+  - 有关联的 memo 会显示 `.. <→X><←Y>` 数量（出/入），`+` 表示还有更多。
+  - 树中使用 `→`（引用）和 `←`（被引用）前缀，关联行仅显示标题；空方向会被省略。
   - 时间字段需 ISO 8601 / RFC3339 格式；若未包含时区（如 `2025-02-07T12:34:56`），插件会自动追加 `Z`（UTC）。
 - **删除 Memos**: 直接从列表中删除 memo。
 - **可定制**: 可配置 API 地址、快捷键等。
@@ -255,6 +271,7 @@ Notes on API versions:
 | `<Tab>`     | 切换选中并向下移动光标       |
 | `<S-Tab>`   | 切换选中并向上移动光标       |
 | `c`         | 清除多选状态                |
+| `gr`        | 切换关联树显示              |
 | `<C-s>`     | 在水平分屏中编辑所选的 memo |
 | `<C-v>`     | 在垂直分屏中编辑所选的 memo |
 | `m`         | 编辑所选 memo 的元数据     |
@@ -312,6 +329,10 @@ require("memos").setup({
   auto_save = false,
   -- 元数据提示中显示的 memo 标题长度上限
   metadata_title_max_len = 50,
+  -- 列表中每条 memo 显示的关联数量上限
+  list_relations_limit = 20,
+  list_relations_mode = "both",
+  list_relations_auto_expand = true,
   -- 复制 memo ID 前是否确认
   confirm_copy = false,
   -- 窗口配置
@@ -333,6 +354,7 @@ require("memos").setup({
       copy_memo_id = "y",
       delete_memo = "d",
       delete_memo_visual = "dd",
+      delete_relation_source = "D",
       -- 将 <CR> 和 i 键都设置为编辑功能
       edit_memo = { "<CR>", "i" },
       vsplit_edit_memo = "<C-v>",
@@ -341,6 +363,7 @@ require("memos").setup({
       toggle_select_prev = "<S-Tab>",
       multi_edit_metadata = "<S-m>",
       clear_selection = "c",
+      toggle_relations = "gr",
       edit_metadata = "m",
       paste_memo = "p",
       search_memos = { "s", "f" },

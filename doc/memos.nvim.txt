@@ -28,6 +28,11 @@ leaving Neovim.
   Relation edits prompt for append/delete/replace and accept multiple memo
   IDs (comma-separated, defaulting to the clipboard).
   Metadata prompts include a clipped memo title for context.
+- *Relations Tree*: Toggle related memos under each list item with `gr`
+  and press `<CR>` on a relation to open it. Memos with relations show
+  `.. <→X><←Y>` counts (out/in); `+` indicates more results. Relations use
+  `→` (referenced) and `←` (referencing) prefixes; empty directions are
+  omitted and relation lines display titles only.
   Time fields expect ISO 8601 / RFC3339. If you omit a timezone (for
   example `2025-02-07T12:34:56`), the plugin appends `Z` (UTC).
 - *Delete Memos*: Delete memos directly from the list.
@@ -69,6 +74,9 @@ require("memos").setup({
   auto_save = false,
   metadata_title_max_len = 50,
   confirm_copy = false,
+  list_relations_limit = 20,
+  list_relations_mode = "both",
+  list_relations_auto_expand = true,
   -- Window configuration
   window = {
     enable_float = false, -- Set to true to open the list in a floating window
@@ -92,6 +100,7 @@ require("memos").setup({
       split_edit_memo = "<C-s>",
       toggle_select_next = "<Tab>",
       toggle_select_prev = "<S-Tab>",
+      toggle_relations = "gr",
       paste_memo = "p",
       search_memos = { "s", "f" },
       search_fuzzy = "<S-f>",
@@ -166,14 +175,16 @@ DEFAULT KEYMAPS                                     *memos-keymaps*
 | Key                | Action                               |
 |--------------------|--------------------------------------|
 | `a`                | Add a new memo                       |
-| `y`                | Copy selected memo ID(s) to clipboard|
+| `y`                | Copy memo ID(s) to clipboard         |
 | `p`                | Paste memo ID from clipboard         |
-| `d` or `dd`        | Delete the selected memo             |
+| `d` or `dd`        | Delete the selected memo / relation  |
+| `D`                | Delete referenced memo (relation line)|
 | `<CR>`             | Edit the selected memo               |
 | `<S-m>`            | Edit metadata for selected memos     |
 | `<Tab>`            | Toggle selection and move down       |
 | `<S-Tab>`          | Toggle selection and move up         |
 | `c`                | Clear selection                      |
+| `gr`               | Toggle relations tree                |
 | `<C-s>`            | Edit the selected memo in a split    |
 | `<C-v>`            | Edit the selected memo in a vsplit   |
 | `m`                | Edit metadata for the selected memo  |
@@ -210,6 +221,11 @@ require("memos").setup({
     { username = "work", host = "http://10.0.0.8:5230", token = "token_2" },
   },
   auto_save = false,
+  metadata_title_max_len = 50,
+  confirm_copy = false,
+  list_relations_limit = 20,
+  list_relations_mode = "both",
+  list_relations_auto_expand = true,
   -- Number of memos to fetch per page
   page_size = 50,
   -- API compatibility mode: "auto", "v0.26", "v0.25", "v0.21"
@@ -236,6 +252,7 @@ require("memos").setup({
       copy_memo_id = "y",
       delete_memo = "d",
       delete_memo_visual = "dd",
+      delete_relation_source = "D",
       edit_memo = "<CR>",
       vsplit_edit_memo = "<C-v>",
       split_edit_memo = "<C-s>",
@@ -243,6 +260,7 @@ require("memos").setup({
       toggle_select_prev = "<S-Tab>",
       multi_edit_metadata = "<S-m>",
       clear_selection = "c",
+      toggle_relations = "gr",
       edit_metadata = "m",
       paste_memo = "p",
       search_memos = { "s", "f" },
