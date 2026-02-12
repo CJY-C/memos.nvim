@@ -1576,7 +1576,7 @@ function M.show_memos_list(filter, opts)
 		set_keymap(list_keymaps.paste_memo, '<Cmd>lua require("memos.ui").paste_memo_from_clipboard()<CR>')
 		set_keymap(list_keymaps.delete_memo, '<Cmd>lua require("memos.ui").confirm_delete_memo()<CR>')
 		set_keymap(list_keymaps.delete_memo_visual, '<Cmd>lua require("memos.ui").confirm_delete_memo()<CR>')
-		set_keymap(list_keymaps.delete_relation_source, '<Cmd>lua require("memos.ui").confirm_delete_relation_source()<CR>')
+		set_keymap(list_keymaps.smart_delete, '<Cmd>lua require("memos.ui").confirm_delete_smart()<CR>')
 		set_keymap(list_keymaps.toggle_sort, '<Cmd>lua require("memos.ui").cycle_sort()<CR>')
 		set_keymap(list_keymaps.toggle_state, '<Cmd>lua require("memos.ui").toggle_state()<CR>')
 		set_keymap(list_keymaps.toggle_select_next, '<Cmd>lua require("memos.ui").toggle_select_next()<CR>')
@@ -1921,21 +1921,87 @@ local function delete_relation_edge(item)
 	end)
 end
 
-function M.confirm_delete_relation_source()
-	local item = current_list_item()
+local function delete_memos_sequentially(memo_names, on_done)
+	local names = memo_names or {}
+	local done = on_done or function() end
+	local index = 1
+	local success_count = 0
+	local failed_names = {}
+
+	local function process_next()
+		local memo_name = names[index]
+		if not memo_name then
+			done(success_count, failed_names)
+			return
+		end
+		index = index + 1
+		api.delete_memo(memo_name, function(success)
+			if success then
+				success_count = success_count + 1
+			else
+				table.insert(failed_names, memo_name)
+			end
+			process_next()
+		end)
+	end
+
+	process_next()
+end
+
+local function confirm_delete_selected_memos(selected)
+	local selected_memos_local = selected or {}
+	local memo_names = {}
+	local seen = {}
+	for _, memo in ipairs(selected_memos_local) do
+		if memo and memo.name and memo.name ~= "" and not seen[memo.name] then
+			table.insert(memo_names, memo.name)
+			seen[memo.name] = true
+		end
+	end
+	if #memo_names == 0 then
+		return false
+	end
+
+	local choice = vim.fn.confirm(string.format("Delete %d selected memos?", #memo_names), "&Yes\n&No", 2)
+	if choice ~= 1 then
+		return true
+	end
+
+	delete_memos_sequentially(memo_names, function(success_count, failed_names)
+		vim.schedule(function()
+			clear_selection()
+			if #failed_names == 0 then
+				vim.notify(string.format("✅ Deleted %d memos.", success_count))
+			else
+				local failed_preview = table.concat(failed_names, ", ")
+				if #failed_preview > 120 then
+					failed_preview = failed_preview:sub(1, 117) .. "..."
+				end
+				vim.notify(
+					string.format("⚠️ Deleted %d memos, %d failed: %s", success_count, #failed_names, failed_preview),
+					vim.log.levels.WARN
+				)
+			end
+			M.show_memos_list(current_filter, { force_refresh = true, reason = "delete" })
+		end)
+	end)
+
+	return true
+end
+
+local function delete_referenced_memo_from_relation(item)
 	if not item or item.kind ~= "relation" then
-		vim.notify("Select a relation line to delete the referenced memo.", vim.log.levels.WARN)
-		return
+		return false
 	end
 	local related_name = item.related_name
 	if not related_name or related_name == "" then
 		vim.notify("Related memo ID is missing.", vim.log.levels.WARN)
-		return
+		return true
 	end
 	local preview = relation_title_cache[related_name] or related_name
 	local choice = vim.fn.confirm("Delete referenced memo?\n[" .. preview .. "]", "&Yes\n&No", 2)
 	if choice ~= 1 then
-		return
+		return true
 	end
 	api.delete_memo(related_name, function(success)
 		vim.schedule(function()
@@ -1950,6 +2016,23 @@ function M.confirm_delete_relation_source()
 			end
 		end)
 	end)
+	return true
+end
+
+function M.confirm_delete_smart()
+	local item = current_list_item()
+	if item and item.kind == "relation" then
+		delete_referenced_memo_from_relation(item)
+		return
+	end
+
+	local selected = selected_memo_objects()
+	if #selected > 0 then
+		confirm_delete_selected_memos(selected)
+		return
+	end
+
+	M.confirm_delete_memo()
 end
 
 function M.confirm_delete_memo()

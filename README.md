@@ -69,7 +69,7 @@ Install with [lazy.nvim](https://github.com/folke/lazy.nvim):
 | `y`         | Copy memo ID(s) to clipboard       |
 | `p`         | Paste memo ID from clipboard       |
 | `d` or `dd` | Delete the selected memo / relation |
-| `D`         | Delete referenced memo (relation line) |
+| `D`         | Smart delete: relation line deletes referenced memo; otherwise deletes selected memos, or falls back to `d` |
 | `<CR>`      | Edit the selected memo             |
 | `<S-m>`     | Edit metadata for selected memos   |
 | `<Tab>`     | Toggle selection and move down     |
@@ -170,7 +170,7 @@ require("memos").setup({
       copy_memo_id = "y",
       delete_memo = "d",
       delete_memo_visual = "dd",
-      delete_relation_source = "D",
+      smart_delete = "D",
       -- Assign both <CR> and 'i' to edit a memo
       edit_memo = { "<CR>", "i" },
       vsplit_edit_memo = "<C-v>",
@@ -296,6 +296,7 @@ Template storage:
 | `y`         | 复制选中 memo 的 ID 到剪贴板（多选逗号分隔） |
 | `p`         | 从剪贴板粘贴 memo ID        |
 | `d` 或 `dd` | 删除所选的 memo             |
+| `D`         | 智能删除：relation 行删除被引用 memo；否则删除多选 memo，无多选时回退到 `d` |
 | `<CR>`      | 编辑所选的 memo             |
 | `<S-m>`     | 编辑所选 memo 的元数据      |
 | `<Tab>`     | 切换选中并向下移动光标       |
@@ -390,7 +391,7 @@ require("memos").setup({
       copy_memo_id = "y",
       delete_memo = "d",
       delete_memo_visual = "dd",
-      delete_relation_source = "D",
+      smart_delete = "D",
       -- 将 <CR> 和 i 键都设置为编辑功能
       edit_memo = { "<CR>", "i" },
       vsplit_edit_memo = "<C-v>",

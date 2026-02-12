@@ -98,6 +98,7 @@ require("memos").setup({
       copy_memo_id = "y",
       delete_memo = "d",
       delete_memo_visual = "dd",
+      smart_delete = "D",
       edit_memo = "<CR>",
       vsplit_edit_memo = "<C-v>",
       split_edit_memo = "<C-s>",
@@ -203,7 +204,7 @@ DEFAULT KEYMAPS                                     *memos-keymaps*
 | `y`                | Copy memo ID(s) to clipboard         |
 | `p`                | Paste memo ID from clipboard         |
 | `d` or `dd`        | Delete the selected memo / relation  |
-| `D`                | Delete referenced memo (relation line)|
+| `D`                | Smart delete: relation line deletes referenced memo; otherwise deletes selected memos, or falls back to `d` |
 | `<CR>`             | Edit the selected memo               |
 | `<S-m>`            | Edit metadata for selected memos     |
 | `<Tab>`            | Toggle selection and move down       |
@@ -282,7 +283,7 @@ require("memos").setup({
       copy_memo_id = "y",
       delete_memo = "d",
       delete_memo_visual = "dd",
-      delete_relation_source = "D",
+      smart_delete = "D",
       edit_memo = "<CR>",
       vsplit_edit_memo = "<C-v>",
       split_edit_memo = "<C-s>",
