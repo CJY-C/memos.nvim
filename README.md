@@ -41,6 +41,10 @@ Install with [lazy.nvim](https://github.com/folke/lazy.nvim):
 - `:MemosUserAdd`: Add a new account (`username`, `host`, `token`) interactively.
 - `:MemosUserDelete`: Delete a saved account interactively.
 - `:MemosModifyMeta`: (In memo buffer) Modify memo metadata; new memo will be created first.
+- `:MemosTemplateCreate`: Create a new memo template.
+- `:MemosTemplateEdit`: Select and edit an existing template.
+- `:MemosTemplateDelete`: Select and delete a template.
+- `:MemosCreateFromTemplate`: Create a new memo from a template.
 - `:w`: (In the memo buffer) Save without switching windows; the list refreshes in the background.
 - Untouched memo buffers are not marked as modified, so quitting Neovim will not prompt to save unless you actually edit.
 - If `MEMOS_HOST` or `MEMOS_TOKEN` is set, account switching is disabled for that session.
@@ -54,12 +58,14 @@ Install with [lazy.nvim](https://github.com/folke/lazy.nvim):
 | Key          | Action              |
 | ------------ | ------------------- |
 | `<leader>mm` | Open the Memos list |
+| `<leader>mt` | Create from template |
 
 #### In the Memo List Window
 
 | Key         | Action                             |
 | ----------- | ---------------------------------- |
 | `a`         | Add a new memo                     |
+| `t`         | Create a memo from template        |
 | `y`         | Copy memo ID(s) to clipboard       |
 | `p`         | Paste memo ID from clipboard       |
 | `d` or `dd` | Delete the selected memo / relation |
@@ -116,6 +122,9 @@ require("memos").setup({
   -- "auto" tries v0.26 first, then falls back to v0.25 and v0.21.
   -- "modern"/"legacy" are deprecated aliases for v0.26/v0.25.
   api_version = "auto",
+  -- Template source mode: "online", "local", "both"
+  -- "both" asks each time whether to use online or local templates.
+  template_source = "online",
   -- Default list sort order (v0.26 only)
   list_sort_default = "pinned desc, display_time desc",
   -- Presets used by <S-s> to select sort in list
@@ -151,10 +160,13 @@ require("memos").setup({
   keymaps = {
     -- Keymap to open the memos list. Default: <leader>mm
     start_memos = "<leader>mm",
+    -- Keymap to create memo from template. Default: <leader>mt
+    create_from_template = "<leader>mt",
 
     -- Keymaps for the memo list window
     list = {
       add_memo = "a",
+      create_from_template = "t",
       copy_memo_id = "y",
       delete_memo = "d",
       delete_memo_visual = "dd",
@@ -194,10 +206,22 @@ API 版本说明：
 - v0.21 搜索只支持纯文本 + `#tag`（不支持 CEL 过滤）。
 - v0.21 不支持 displayTime 字段，relations 使用专用接口。
 
+模板存储说明：
+- `template_source = "local"`：模板保存在
+  `~/.local/share/nvim/memos.nvim/memos_templates.json`（与配置同目录）。
+- `template_source = "online"`：模板存为带 `#type/template` 标签且 `ARCHIVED` 状态的 memo。
+- `:MemosCreateFromTemplate` 创建的新 memo 会自动移除 `#type/template` 标签。
+
 Notes on API versions:
 - v0.21 uses offset pagination; list sort is not available.
 - v0.21 search accepts plain text plus `#tag` (no CEL filters).
 - v0.21 metadata does not support display time; relations use relation endpoints.
+
+Template storage:
+- `template_source = "local"` stores templates in
+  `~/.local/share/nvim/memos.nvim/memos_templates.json` (same directory as plugin config).
+- `template_source = "online"` stores templates as archived memos tagged with `#type/template`.
+- `:MemosCreateFromTemplate` removes `#type/template` from the new memo content.
 
 ---
 
@@ -244,6 +268,10 @@ Notes on API versions:
 - `:MemosUserAdd`: 交互式添加新账号（`username`、`host`、`token`）。
 - `:MemosUserDelete`: 交互式删除已保存账号。
 - `:MemosModifyMeta`: （在 memo 编辑缓冲区中可用）修改 memo 元数据；新 memo 会先创建。
+- `:MemosTemplateCreate`: 创建新模板。
+- `:MemosTemplateEdit`: 选择并编辑已有模板。
+- `:MemosTemplateDelete`: 选择并删除模板。
+- `:MemosCreateFromTemplate`: 从模板创建新 memo。
 - `:w`: (在 memo 编辑缓冲区中可用) 保存但不切换窗口；列表会在后台刷新。
 - 未修改的 memo 缓冲区不会被标记为已更改；只有真正编辑后退出时才会提示保存。
 - 如果设置了 `MEMOS_HOST` 或 `MEMOS_TOKEN`，该会话中将禁用账号切换。
@@ -257,12 +285,14 @@ Notes on API versions:
 | 按键         | 功能            |
 | ------------ | --------------- |
 | `<leader>mm` | 打开 Memos 列表 |
+| `<leader>mt` | 从模板创建 memo |
 
 #### 在 Memo 列表窗口中
 
 | 按键        | 功能                        |
 | ----------- | --------------------------- |
 | `a`         | 新增一个 memo               |
+| `t`         | 从模板创建 memo             |
 | `y`         | 复制选中 memo 的 ID 到剪贴板（多选逗号分隔） |
 | `p`         | 从剪贴板粘贴 memo ID        |
 | `d` 或 `dd` | 删除所选的 memo             |
@@ -314,6 +344,9 @@ require("memos").setup({
   -- "auto" 会先尝试 v0.26，再回退到 v0.25 和 v0.21。
   -- "modern"/"legacy" 为 v0.26/v0.25 的废弃别名。
   api_version = "auto",
+  -- 模板来源模式: "online"、"local"、"both"
+  -- "both" 会在每次模板操作前询问来源。
+  template_source = "online",
   -- 默认列表排序（仅 v0.26 支持）
   list_sort_default = "pinned desc, display_time desc",
   -- 列表内 <S-s> 选择的排序预设
@@ -347,10 +380,13 @@ require("memos").setup({
   keymaps = {
     -- 用于打开 Memos 列表的快捷键。默认值: <leader>mm
     start_memos = "<leader>mm",
+    -- 从模板创建 memo 的全局快捷键。默认值: <leader>mt
+    create_from_template = "<leader>mt",
 
     -- memo 列表窗口的快捷键
     list = {
       add_memo = "a",
+      create_from_template = "t",
       copy_memo_id = "y",
       delete_memo = "d",
       delete_memo_visual = "dd",

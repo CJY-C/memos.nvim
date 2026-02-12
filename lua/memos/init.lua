@@ -14,6 +14,7 @@ M.config = {
 	list_relations_auto_expand = true,
 	page_size = 50,
 	api_version = "auto", -- "auto" | "v0.26" | "v0.25" | "v0.21"
+	template_source = "online", -- "online" | "local" | "both"
 	list_sort_default = "pinned desc, display_time desc",
 	list_sort_presets = {
 		"pinned desc, display_time desc",
@@ -29,8 +30,10 @@ M.config = {
 	},
 	keymaps = {
 		start_memos = "<leader>mm",
+		create_from_template = "<leader>mt",
 		list = {
 			add_memo = "a",
+			create_from_template = "t",
 			copy_memo_id = "y",
 			delete_memo = "d",
 			delete_memo_visual = "dd",
@@ -591,6 +594,16 @@ function M.setup(opts)
 		end
 	end
 
+	local template_source = string.lower(tostring(final_config.template_source or "online"))
+	if template_source ~= "online" and template_source ~= "local" and template_source ~= "both" then
+		vim.notify(
+			string.format("Invalid template_source '%s', fallback to 'online'.", tostring(final_config.template_source)),
+			vim.log.levels.WARN
+		)
+		template_source = "online"
+	end
+	final_config.template_source = template_source
+
 	M.config = final_config
 
 	if migrated.migrated then
@@ -625,6 +638,38 @@ function M.modify_meta()
 	ensure_config(function()
 		require("memos.ui").modify_current_memo_metadata()
 	end)
+end
+
+local function run_template_action(action)
+	require("memos.template").resolve_source(function(source)
+		if not source then
+			return
+		end
+		local function run()
+			require("memos.template")[action](source)
+		end
+		if source == "online" then
+			ensure_config(run)
+		else
+			run()
+		end
+	end)
+end
+
+function M.template_create()
+	run_template_action("template_create")
+end
+
+function M.template_edit()
+	run_template_action("template_edit")
+end
+
+function M.template_delete()
+	run_template_action("template_delete")
+end
+
+function M.create_memo_from_template()
+	run_template_action("create_memo_from_template")
 end
 
 return M

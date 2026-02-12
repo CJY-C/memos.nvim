@@ -88,10 +88,13 @@ require("memos").setup({
   keymaps = {
     -- Keymap to open the memos list. Default: <leader>mm
     start_memos = "<leader>mm",
+    -- Keymap to create memo from template. Default: <leader>mt
+    create_from_template = "<leader>mt",
 
     -- Keymaps for the memo list window
     list = {
       add_memo = "a",
+      create_from_template = "t",
       copy_memo_id = "y",
       delete_memo = "d",
       delete_memo_visual = "dd",
@@ -122,6 +125,13 @@ Notes on API versions:
 - v0.21 search accepts plain text plus #tag (no CEL filters).
 - v0.21 metadata does not support display time; relations use relation endpoints.
 
+Template storage:
+- `template_source = "local"` stores templates in
+  `~/.local/share/nvim/memos.nvim/memos_templates.json`.
+- `template_source = "online"` stores templates as archived memos tagged
+  with `#type/template`.
+- `:MemosCreateFromTemplate` removes `#type/template` from new memo content.
+
 ==============================================================================
 4. Usage                                                  *memos-usage*
 
@@ -149,6 +159,18 @@ COMMANDS                                            *memos-commands*
 *:MemosModifyMeta*
   (In the memo buffer) Modify memo metadata. New memo will be created first.
 
+*:MemosTemplateCreate*
+  Create a new memo template.
+
+*:MemosTemplateEdit*
+  Select and edit an existing template.
+
+*:MemosTemplateDelete*
+  Select and delete an existing template.
+
+*:MemosCreateFromTemplate*
+  Create a new memo from a template.
+
 *:w*
   (In the memo buffer) Save without switching windows; the list refreshes
   in the background.
@@ -171,11 +193,13 @@ DEFAULT KEYMAPS                                     *memos-keymaps*
 | Key                | Action                               |
 |--------------------|--------------------------------------|
 | `<leader>mm`       | Open the Memos list                  |
+| `<leader>mt`       | Create a memo from template          |
 
 *In the Memo List Window:*
 | Key                | Action                               |
 |--------------------|--------------------------------------|
 | `a`                | Add a new memo                       |
+| `t`                | Create a memo from template          |
 | `y`                | Copy memo ID(s) to clipboard         |
 | `p`                | Paste memo ID from clipboard         |
 | `d` or `dd`        | Delete the selected memo / relation  |
@@ -231,6 +255,8 @@ require("memos").setup({
   page_size = 50,
   -- API compatibility mode: "auto", "v0.26", "v0.25", "v0.21"
   api_version = "auto",
+  -- Template source mode: "online", "local", "both"
+  template_source = "online",
   -- Default list sort order (v0.26 only)
   list_sort_default = "pinned desc, display_time desc",
   -- Presets used by <S-s> to select sort in list
@@ -246,10 +272,13 @@ require("memos").setup({
   keymaps = {
     -- Keymap to open the memos list. Default: <leader>mm
     start_memos = "<leader>mm",
+    -- Keymap to create memo from template. Default: <leader>mt
+    create_from_template = "<leader>mt",
 
     -- Keymaps for the memo list window
     list = {
       add_memo = "a",
+      create_from_template = "t",
       copy_memo_id = "y",
       delete_memo = "d",
       delete_memo_visual = "dd",

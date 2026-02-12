@@ -42,6 +42,34 @@ end, {
 	desc = "Modify memo metadata",
 })
 
+vim.api.nvim_create_user_command("MemosTemplateCreate", function()
+	require("memos").template_create()
+end, {
+	nargs = 0,
+	desc = "Create a memo template",
+})
+
+vim.api.nvim_create_user_command("MemosTemplateEdit", function()
+	require("memos").template_edit()
+end, {
+	nargs = 0,
+	desc = "Edit a memo template",
+})
+
+vim.api.nvim_create_user_command("MemosTemplateDelete", function()
+	require("memos").template_delete()
+end, {
+	nargs = 0,
+	desc = "Delete a memo template",
+})
+
+vim.api.nvim_create_user_command("MemosCreateFromTemplate", function()
+	require("memos").create_memo_from_template()
+end, {
+	nargs = 0,
+	desc = "Create a memo from template",
+})
+
 -- 【新增】创建启动快捷键
 -- 使用 vim.schedule 确保在所有插件加载后执行，避免 require('memos') 失败
 vim.schedule(function()
@@ -61,6 +89,14 @@ vim.schedule(function()
 			noremap = true,
 			silent = true,
 			desc = "Switch Memos User",
+		})
+	end
+	local key = memos_config.keymaps.create_from_template
+	if key and key ~= "" then
+		vim.keymap.set("n", key, "<Cmd>MemosCreateFromTemplate<CR>", {
+			noremap = true,
+			silent = true,
+			desc = "Create memo from template",
 		})
 	end
 end)

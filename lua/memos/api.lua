@@ -19,6 +19,13 @@ local function url_encode(str)
 	return str
 end
 
+local function cel_escape(str)
+	local value = tostring(str or "")
+	value = value:gsub("\\", "\\\\")
+	value = value:gsub('"', '\\"')
+	return value
+end
+
 local function iso_from_unix(ts)
 	if not ts then
 		return ""
@@ -429,6 +436,40 @@ function M.list_memos(parent, filter, page_size, pageToken, order_by, state, cal
 			callback(nil)
 		end
 	end)
+end
+
+function M.list_template_memos(parent, tag, page_size, pageToken, callback)
+	local template_tag = vim.trim(tag or "type/template")
+	local filter = string.format('"%s" in tags', cel_escape(template_tag))
+	M.list_memos(parent, filter, page_size, pageToken, nil, "ARCHIVED", function(data)
+		callback(data)
+	end)
+end
+
+function M.fetch_all_template_memos(parent, tag, page_size, callback)
+	local out = {}
+	local size = tonumber(page_size) or 50
+
+	local function step(page_token)
+		M.list_template_memos(parent, tag, size, page_token, function(data)
+			if not data then
+				callback(nil, "Failed to fetch template memos.")
+				return
+			end
+			local chunk = data.memos or {}
+			for _, memo in ipairs(chunk) do
+				table.insert(out, memo)
+			end
+			local next_token = data.nextPageToken or ""
+			if next_token ~= "" and tostring(next_token) ~= tostring(page_token or "") then
+				step(next_token)
+				return
+			end
+			callback(out, nil)
+		end)
+	end
+
+	step(nil)
 end
 
 function M.create_memo(content, callback)

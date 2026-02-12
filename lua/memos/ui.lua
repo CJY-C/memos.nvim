@@ -462,7 +462,11 @@ function M.setup_buffer_for_editing()
 		save_key_string = string.format(" or %s", config.keymaps.buffer.save)
 	end
 
-	if vim.b.memos_memo_name then
+	local is_template = vim.b.memos_template_mode == true
+	if is_template then
+		local template_source = vim.b.memos_template_source == "local" and "local" or "online"
+		vim.notify("Editing " .. template_source .. " template. Use :MemosSave" .. save_key_string .. " to save.")
+	elseif vim.b.memos_memo_name then
 		vim.notify("Editing memo. Use :MemosSave" .. save_key_string .. " to save.")
 	else
 		vim.notify("📝 New memo. Use :MemosSave" .. save_key_string .. " to create.")
@@ -495,7 +499,7 @@ function M.setup_buffer_for_editing()
 		end
 	end
 
-	if config.keymaps.buffer.edit_metadata and config.keymaps.buffer.edit_metadata ~= "" then
+	if not is_template and config.keymaps.buffer.edit_metadata and config.keymaps.buffer.edit_metadata ~= "" then
 		vim.api.nvim_buf_set_keymap(
 			0,
 			"n",
@@ -611,6 +615,10 @@ function M.save_or_create_dispatcher(opts)
 	end
 	vim.b[bufnr_to_save].memos_save_inflight = true
 	local memo_name = vim.b.memos_memo_name
+	local template_mode = vim.b[bufnr_to_save].memos_template_mode == true
+	local template_source = vim.b[bufnr_to_save].memos_template_source
+	local had_template_id = vim.b[bufnr_to_save].memos_template_id
+	local had_template_memo_name = vim.b[bufnr_to_save].memos_template_memo_name
 	local content = table.concat(vim.api.nvim_buf_get_lines(bufnr_to_save, 0, -1, false), "\n")
 
 	if content == "" then
@@ -635,6 +643,38 @@ function M.save_or_create_dispatcher(opts)
 				end)
 			end
 		end
+	end
+
+	if template_mode then
+		require("memos.template").save_template_buffer(bufnr_to_save, content, function(success, payload, err)
+			vim.schedule(function()
+				if success and payload then
+					local created = false
+					if payload.source == "local" then
+						created = type(had_template_id) ~= "string" or had_template_id == ""
+					else
+						created = type(had_template_memo_name) ~= "string" or had_template_memo_name == ""
+					end
+					local action = created and "created" or "saved"
+					vim.notify(string.format("✅ %s template %s.", tostring(payload.source), action))
+					if vim.api.nvim_buf_is_valid(bufnr_to_save) then
+						vim.b[bufnr_to_save].memos_template_mode = true
+						vim.b[bufnr_to_save].memos_template_source = template_source or payload.source
+						vim.b[bufnr_to_save].memos_template_id = payload.id
+						vim.b[bufnr_to_save].memos_template_memo_name = payload.memo_name
+						vim.b[bufnr_to_save].memos_original_content = content
+						vim.bo[bufnr_to_save].modified = false
+						if payload.buffer_name and payload.buffer_name ~= "" then
+							pcall(vim.api.nvim_buf_set_name, bufnr_to_save, payload.buffer_name)
+						end
+					end
+				else
+					vim.notify("❌ Failed to save template: " .. tostring(err), vim.log.levels.ERROR)
+				end
+				finalize_save()
+			end)
+		end)
+		return
 	end
 
 	if memo_name then
@@ -720,6 +760,10 @@ function M.create_memo_in_buffer()
 		vim.cmd("enew")
 	end
 	vim.b.memos_memo_name = nil
+	vim.b.memos_template_mode = nil
+	vim.b.memos_template_source = nil
+	vim.b.memos_template_id = nil
+	vim.b.memos_template_memo_name = nil
 	-- 使用一个带时间戳的、独一无二的临时名字，防止冲突
 	vim.api.nvim_buf_set_name(0, "memos/new_memo_" .. vim.fn.strftime("%s"))
 	M.setup_buffer_for_editing()
@@ -733,11 +777,38 @@ function M.create_memo_in_buffer()
 end
 
 function M.create_memo_from_content(content)
-	vim.cmd("enew")
+	local used_float = false
+	if config.window and config.window.enable_float then
+		local float_win = find_memos_float_window()
+		if float_win then
+			vim.api.nvim_set_current_win(float_win)
+			vim.cmd("enew")
+			used_float = true
+		else
+			local new_buf = vim.api.nvim_create_buf(false, true)
+			create_float_window(new_buf)
+			vim.api.nvim_set_current_buf(new_buf)
+			used_float = true
+		end
+	end
+	if not used_float then
+		vim.cmd("enew")
+	end
 	vim.b.memos_memo_name = nil
+	vim.b.memos_template_mode = nil
+	vim.b.memos_template_source = nil
+	vim.b.memos_template_id = nil
+	vim.b.memos_template_memo_name = nil
 	vim.api.nvim_buf_set_name(0, "memos/new_memo_" .. vim.fn.strftime("%s"))
 	vim.api.nvim_buf_set_lines(0, 0, -1, false, vim.split(content or "", "\n"))
 	M.setup_buffer_for_editing()
+	if config.window and config.window.enable_float then
+		local current_win = vim.api.nvim_get_current_win()
+		local ok, is_memos_window = pcall(vim.api.nvim_win_get_var, current_win, "memos_window")
+		if ok and is_memos_window == true then
+			last_float_buf_id = vim.api.nvim_get_current_buf()
+		end
+	end
 end
 
 -- 【新增】创建居中浮动窗口的辅助函数
@@ -1500,6 +1571,7 @@ function M.show_memos_list(filter, opts)
 		)
 		set_keymap(list_keymaps.next_page, '<Cmd>lua require("memos.ui").load_next_page()<CR>')
 		set_keymap(list_keymaps.add_memo, '<Cmd>lua require("memos.ui").create_memo_in_buffer()<CR>')
+		set_keymap(list_keymaps.create_from_template, "<Cmd>MemosCreateFromTemplate<CR>")
 		set_keymap(list_keymaps.copy_memo_id, '<Cmd>lua require("memos.ui").copy_selected_memo_id()<CR>')
 		set_keymap(list_keymaps.paste_memo, '<Cmd>lua require("memos.ui").paste_memo_from_clipboard()<CR>')
 		set_keymap(list_keymaps.delete_memo, '<Cmd>lua require("memos.ui").confirm_delete_memo()<CR>')
@@ -3106,6 +3178,10 @@ function M.edit_selected_memo_metadata_multi()
 end
 
 function M.modify_current_memo_metadata()
+	if vim.b.memos_template_mode == true then
+		vim.notify("Template buffer does not support memo metadata editing.", vim.log.levels.WARN)
+		return
+	end
 	local memo_name = vim.b.memos_memo_name
 	if memo_name and memo_name ~= "" then
 		api.get_memo(memo_name, function(memo, err)
