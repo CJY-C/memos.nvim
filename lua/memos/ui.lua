@@ -1409,6 +1409,32 @@ function M.toggle_relations_tree()
 	render_cached_list()
 end
 
+function M.toggle_relations_tree_all()
+	if not memos_cache or #memos_cache == 0 then
+		return
+	end
+	local memo_list = {}
+	local has_collapsed = false
+	for _, memo in ipairs(memos_cache) do
+		if memo and memo.name and memo.name ~= "" then
+			table.insert(memo_list, memo)
+			if relations_expanded[memo.name] ~= true then
+				has_collapsed = true
+			end
+		end
+	end
+	if #memo_list == 0 then
+		return
+	end
+	for _, memo in ipairs(memo_list) do
+		relations_expanded[memo.name] = has_collapsed
+		if has_collapsed then
+			ensure_relations_loaded(memo)
+		end
+	end
+	render_cached_list()
+end
+
 function M.toggle_memos_list()
 	if config.window and config.window.enable_float then
 		local existing = find_memos_float_window()
@@ -1582,6 +1608,7 @@ function M.show_memos_list(filter, opts)
 		set_keymap(list_keymaps.toggle_select_next, '<Cmd>lua require("memos.ui").toggle_select_next()<CR>')
 		set_keymap(list_keymaps.toggle_select_prev, '<Cmd>lua require("memos.ui").toggle_select_prev()<CR>')
 		set_keymap(list_keymaps.toggle_relations, '<Cmd>lua require("memos.ui").toggle_relations_tree()<CR>')
+		set_keymap(list_keymaps.toggle_relations_all, '<Cmd>lua require("memos.ui").toggle_relations_tree_all()<CR>')
 		vim.b[buf_id].memos_list_keymaps = true
 	end
 end
@@ -3148,21 +3175,35 @@ end
 
 function M.edit_selected_memo_metadata()
 	local item = current_list_item()
-	if not item or item.kind ~= "memo" then
-		vim.notify("Select a memo line to edit metadata.", vim.log.levels.WARN)
+	if not item then
+		vim.notify("Select a memo or relation line to edit metadata.", vim.log.levels.WARN)
 		return
 	end
-	local selected_memo = memos_cache[item.memo_index]
-	if not selected_memo or not selected_memo.name or selected_memo.name == "" then
-		vim.notify("No memo selected.", vim.log.levels.WARN)
+	local selected_memo = nil
+	local target_memo_name = nil
+	if item.kind == "memo" then
+		selected_memo = memos_cache[item.memo_index]
+		if not selected_memo or not selected_memo.name or selected_memo.name == "" then
+			vim.notify("No memo selected.", vim.log.levels.WARN)
+			return
+		end
+		target_memo_name = selected_memo.name
+	elseif item.kind == "relation" then
+		target_memo_name = item.related_name
+		if not target_memo_name or target_memo_name == "" then
+			vim.notify("No referenced memo selected.", vim.log.levels.WARN)
+			return
+		end
+	else
+		vim.notify("Select a memo or relation line to edit metadata.", vim.log.levels.WARN)
 		return
 	end
 	local cap = get_capabilities()
-	if cap and cap.mode == "v0.21" then
+	if cap and cap.mode == "v0.21" and selected_memo then
 		edit_metadata_flow(selected_memo)
 		return
 	end
-	api.get_memo(selected_memo.name, function(memo, err)
+	api.get_memo(target_memo_name, function(memo, err)
 		if not memo then
 			vim.schedule(function()
 				vim.notify("Failed to load memo metadata: " .. tostring(err), vim.log.levels.ERROR)

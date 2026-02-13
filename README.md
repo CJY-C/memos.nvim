@@ -76,9 +76,10 @@ Install with [lazy.nvim](https://github.com/folke/lazy.nvim):
 | `<S-Tab>`   | Toggle selection and move up       |
 | `c`         | Clear selection                    |
 | `gr`        | Toggle relations tree              |
+| `gR`        | Toggle all relations trees         |
 | `<C-s>`     | Edit the selected memo in a split  |
 | `<C-v>`     | Edit the selected memo in a vsplit |
-| `m`         | Edit metadata for the selected memo |
+| `m`         | Edit metadata for selected memo (or referenced memo on relation line) |
 | `s` or `f`  | Search your memos                  |
 | `<S-f>`     | Fuzzy tag search (CEL only)        |
 | `r`         | Refresh the memo list              |
@@ -180,6 +181,7 @@ require("memos").setup({
       multi_edit_metadata = "<S-m>",
       clear_selection = "c",
       toggle_relations = "gr",
+      toggle_relations_all = "gR",
       edit_metadata = "m",
       paste_memo = "p",
       search_memos = { "s", "f" },
@@ -303,9 +305,10 @@ Template storage:
 | `<S-Tab>`   | 切换选中并向上移动光标       |
 | `c`         | 清除多选状态                |
 | `gr`        | 切换关联树显示              |
+| `gR`        | 切换全部关联树显示          |
 | `<C-s>`     | 在水平分屏中编辑所选的 memo |
 | `<C-v>`     | 在垂直分屏中编辑所选的 memo |
-| `m`         | 编辑所选 memo 的元数据     |
+| `m`         | 编辑所选 memo 的元数据（在 relation 行则编辑被引用 memo） |
 | `s`         | 搜索你的 memos              |
 | `r`         | 刷新 memo 列表              |
 | `.`         | 加载下一页 memos            |
@@ -401,6 +404,7 @@ require("memos").setup({
       multi_edit_metadata = "<S-m>",
       clear_selection = "c",
       toggle_relations = "gr",
+      toggle_relations_all = "gR",
       edit_metadata = "m",
       paste_memo = "p",
       search_memos = { "s", "f" },

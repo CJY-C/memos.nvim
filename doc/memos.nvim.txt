@@ -105,6 +105,7 @@ require("memos").setup({
       toggle_select_next = "<Tab>",
       toggle_select_prev = "<S-Tab>",
       toggle_relations = "gr",
+      toggle_relations_all = "gR",
       paste_memo = "p",
       search_memos = { "s", "f" },
       search_fuzzy = "<S-f>",
@@ -211,9 +212,10 @@ DEFAULT KEYMAPS                                     *memos-keymaps*
 | `<S-Tab>`          | Toggle selection and move up         |
 | `c`                | Clear selection                      |
 | `gr`               | Toggle relations tree                |
+| `gR`               | Toggle all relations trees           |
 | `<C-s>`            | Edit the selected memo in a split    |
 | `<C-v>`            | Edit the selected memo in a vsplit   |
-| `m`                | Edit metadata for the selected memo  |
+| `m`                | Edit selected memo metadata (or referenced memo on relation line) |
 | `s` or `f`         | Search your memos                    |
 | `<S-f>`            | Fuzzy tag search (CEL only)          |
 | `r`                | Refresh the memo list                |
@@ -292,6 +294,7 @@ require("memos").setup({
       multi_edit_metadata = "<S-m>",
       clear_selection = "c",
       toggle_relations = "gr",
+      toggle_relations_all = "gR",
       edit_metadata = "m",
       paste_memo = "p",
       search_memos = { "s", "f" },

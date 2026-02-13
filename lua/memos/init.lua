@@ -46,6 +46,7 @@ M.config = {
 			multi_edit_metadata = "<S-m>",
 			clear_selection = "c",
 			toggle_relations = "gr",
+			toggle_relations_all = "gR",
 			edit_metadata = "m",
 			paste_memo = "p",
 			search_memos = { "s", "f" },
