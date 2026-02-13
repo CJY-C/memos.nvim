@@ -472,6 +472,14 @@ function M.setup_buffer_for_editing()
 		vim.notify("📝 New memo. Use :MemosSave" .. save_key_string .. " to create.")
 	end
 
+	if config.window and config.window.enable_float then
+		local current_win = vim.api.nvim_get_current_win()
+		local ok, is_memos_window = pcall(vim.api.nvim_win_get_var, current_win, "memos_window")
+		if ok and is_memos_window == true then
+			last_float_buf_id = vim.api.nvim_get_current_buf()
+		end
+	end
+
 	vim.api.nvim_buf_create_user_command(0, "MemosSave", 'lua require("memos.ui").save_or_create_dispatcher()', {})
 	vim.api.nvim_create_autocmd("BufWriteCmd", {
 		buffer = 0,
@@ -741,7 +749,7 @@ function M.refresh_list_silently()
 	end)
 end
 
-function M.create_memo_in_buffer()
+function M.open_edit_buffer(content, open_cmd)
 	local used_float = false
 	if config.window and config.window.enable_float then
 		local float_win = find_memos_float_window()
@@ -757,8 +765,16 @@ function M.create_memo_in_buffer()
 		end
 	end
 	if not used_float then
-		vim.cmd("enew")
+		vim.cmd(open_cmd or "enew")
 	end
+	if type(content) == "string" then
+		vim.api.nvim_buf_set_lines(0, 0, -1, false, vim.split(content, "\n"))
+	end
+	return vim.api.nvim_get_current_buf()
+end
+
+function M.create_memo_in_buffer()
+	M.open_edit_buffer(nil, "enew")
 	vim.b.memos_memo_name = nil
 	vim.b.memos_template_mode = nil
 	vim.b.memos_template_source = nil
@@ -767,48 +783,17 @@ function M.create_memo_in_buffer()
 	-- 使用一个带时间戳的、独一无二的临时名字，防止冲突
 	vim.api.nvim_buf_set_name(0, "memos/new_memo_" .. vim.fn.strftime("%s"))
 	M.setup_buffer_for_editing()
-	if config.window and config.window.enable_float then
-		local current_win = vim.api.nvim_get_current_win()
-		local ok, is_memos_window = pcall(vim.api.nvim_win_get_var, current_win, "memos_window")
-		if ok and is_memos_window == true then
-			last_float_buf_id = vim.api.nvim_get_current_buf()
-		end
-	end
 end
 
 function M.create_memo_from_content(content)
-	local used_float = false
-	if config.window and config.window.enable_float then
-		local float_win = find_memos_float_window()
-		if float_win then
-			vim.api.nvim_set_current_win(float_win)
-			vim.cmd("enew")
-			used_float = true
-		else
-			local new_buf = vim.api.nvim_create_buf(false, true)
-			create_float_window(new_buf)
-			vim.api.nvim_set_current_buf(new_buf)
-			used_float = true
-		end
-	end
-	if not used_float then
-		vim.cmd("enew")
-	end
+	M.open_edit_buffer(content or "", "enew")
 	vim.b.memos_memo_name = nil
 	vim.b.memos_template_mode = nil
 	vim.b.memos_template_source = nil
 	vim.b.memos_template_id = nil
 	vim.b.memos_template_memo_name = nil
 	vim.api.nvim_buf_set_name(0, "memos/new_memo_" .. vim.fn.strftime("%s"))
-	vim.api.nvim_buf_set_lines(0, 0, -1, false, vim.split(content or "", "\n"))
 	M.setup_buffer_for_editing()
-	if config.window and config.window.enable_float then
-		local current_win = vim.api.nvim_get_current_win()
-		local ok, is_memos_window = pcall(vim.api.nvim_win_get_var, current_win, "memos_window")
-		if ok and is_memos_window == true then
-			last_float_buf_id = vim.api.nvim_get_current_buf()
-		end
-	end
 end
 
 -- 【新增】创建居中浮动窗口的辅助函数

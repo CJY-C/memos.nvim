@@ -48,7 +48,7 @@ Install with [lazy.nvim](https://github.com/folke/lazy.nvim):
 - `:w`: (In the memo buffer) Save without switching windows; the list refreshes in the background.
 - Untouched memo buffers are not marked as modified, so quitting Neovim will not prompt to save unless you actually edit.
 - If `MEMOS_HOST` or `MEMOS_TOKEN` is set, account switching is disabled for that session.
-- When floating window is enabled, memo edits open in the same float and are restored when toggling `:Memos`.
+- When floating window is enabled, memo/template edits open in the same float and are restored when toggling `:Memos`.
 - Search supports plain text, `#tag` shorthand, or raw CEL. Examples: `meeting`, `#work #todo`, `content.contains("foo") && "work" in tags`.
 
 ### Default Keymaps
@@ -277,7 +277,7 @@ Template storage:
 - `:w`: (在 memo 编辑缓冲区中可用) 保存但不切换窗口；列表会在后台刷新。
 - 未修改的 memo 缓冲区不会被标记为已更改；只有真正编辑后退出时才会提示保存。
 - 如果设置了 `MEMOS_HOST` 或 `MEMOS_TOKEN`，该会话中将禁用账号切换。
-- 如果启用了浮动窗口，memo 编辑会在同一个浮动窗口中打开，并在切换 `:Memos` 时保留。
+- 如果启用了浮动窗口，memo/template 编辑会在同一个浮动窗口中打开，并在切换 `:Memos` 时保留。
 - 搜索支持纯文本、`#tag` 简写或原生 CEL。示例：`meeting`、`#work #todo`、`content.contains("foo") && "work" in tags`。
 
 ### 默认快捷键

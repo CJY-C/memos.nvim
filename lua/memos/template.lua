@@ -135,7 +135,7 @@ local function build_template_buffer_name(source, key, content)
 end
 
 local function open_template_buffer(content, meta)
-	vim.cmd("enew")
+	require("memos.ui").open_edit_buffer(content or "", "enew")
 	vim.b.memos_memo_name = nil
 	vim.b.memos_template_mode = true
 	vim.b.memos_template_source = meta.source
@@ -143,7 +143,6 @@ local function open_template_buffer(content, meta)
 	vim.b.memos_template_memo_name = meta.memo_name
 	local buf_name = build_template_buffer_name(meta.source, meta.id or meta.memo_name, content)
 	vim.api.nvim_buf_set_name(0, buf_name)
-	vim.api.nvim_buf_set_lines(0, 0, -1, false, vim.split(content or "", "\n"))
 	require("memos.ui").setup_buffer_for_editing()
 end
 

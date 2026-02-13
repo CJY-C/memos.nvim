@@ -183,7 +183,7 @@ ask to save when content has actually changed.
 If MEMOS_HOST or MEMOS_TOKEN is set, account switching is disabled for
 the current session.
 
-When floating window is enabled, memo edits open in the same float and
+When floating window is enabled, memo/template edits open in the same float and
 are restored when toggling |:Memos|.
 
 Search supports plain text, `#tag` shorthand, or raw CEL. Examples:
