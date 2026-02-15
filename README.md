@@ -126,7 +126,7 @@ require("memos").setup({
   -- Template source mode: "online", "local", "both"
   -- "both" asks each time whether to use online or local templates.
   template_source = "online",
-  -- Default list sort order (v0.26 only)
+  -- Default list sort order (v0.25/v0.26)
   list_sort_default = "pinned desc, display_time desc",
   -- Presets used by <S-s> to select sort in list
   list_sort_presets = {
@@ -134,7 +134,7 @@ require("memos").setup({
     "display_time desc",
     "create_time desc",
   },
-  -- Default state to request in list (v0.26/v0.21 only)
+  -- Default state to request in list (v0.25/v0.26/v0.21)
   list_state_default = "NORMAL",
 
   -- Auto-save the memo when leaving insert mode or holding the cursor.
@@ -204,6 +204,9 @@ require("memos").setup({
 ```
 
 API 版本说明：
+- v0.25.3 使用 `/api/v1/memos` 列表参数（`pageSize`、`pageToken`、`state`、`orderBy`）。
+- v0.25.3 当前会话接口为 `GET /api/v1/auth/sessions/current`。
+- v0.25.3 更新 memo 需要 `updateMask` 参数（插件已兼容）。
 - v0.21 使用 offset 分页，列表不支持排序。
 - v0.21 搜索只支持纯文本 + `#tag`（不支持 CEL 过滤）。
 - v0.21 不支持 displayTime 字段，relations 使用专用接口。
@@ -215,6 +218,9 @@ API 版本说明：
 - `:MemosCreateFromTemplate` 创建的新 memo 会自动移除 `#type/template` 标签。
 
 Notes on API versions:
+- v0.25.3 uses `/api/v1/memos` list params (`pageSize`, `pageToken`, `state`, `orderBy`).
+- v0.25.3 current session endpoint is `GET /api/v1/auth/sessions/current`.
+- v0.25.3 memo updates require `updateMask` (handled by plugin).
 - v0.21 uses offset pagination; list sort is not available.
 - v0.21 search accepts plain text plus `#tag` (no CEL filters).
 - v0.21 metadata does not support display time; relations use relation endpoints.
@@ -351,7 +357,7 @@ require("memos").setup({
   -- 模板来源模式: "online"、"local"、"both"
   -- "both" 会在每次模板操作前询问来源。
   template_source = "online",
-  -- 默认列表排序（仅 v0.26 支持）
+  -- 默认列表排序（v0.25/v0.26）
   list_sort_default = "pinned desc, display_time desc",
   -- 列表内 <S-s> 选择的排序预设
   list_sort_presets = {
@@ -359,7 +365,7 @@ require("memos").setup({
     "display_time desc",
     "create_time desc",
   },
-  -- 列表请求的默认状态（仅 v0.26/v0.21 支持）
+  -- 列表请求的默认状态（v0.25/v0.26/v0.21）
   list_state_default = "NORMAL",
 
   -- 当离开插入模式或光标静止时，自动保存 memo。

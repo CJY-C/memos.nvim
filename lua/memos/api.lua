@@ -317,11 +317,8 @@ end
 local function build_list_url(mode, parent, filter, page_size, pageToken, order_by, state)
 	local cfg = get_config()
 	local params = {}
-	if mode == "v0.25" and parent and parent ~= "" then
-		table.insert(params, "parent=" .. url_encode(parent))
-	end
 
-	if mode == "v0.26" then
+	if mode == "v0.26" or mode == "v0.25" then
 		table.insert(params, "pageSize=" .. tostring(page_size))
 	else
 		table.insert(params, "page_size=" .. tostring(page_size))
@@ -351,10 +348,10 @@ local function build_list_url(mode, parent, filter, page_size, pageToken, order_
 		end
 		table.insert(params, "filter=" .. url_encode(raw_filter))
 	end
-	if mode == "v0.26" and state and state ~= "" then
+	if (mode == "v0.26" or mode == "v0.25") and state and state ~= "" then
 		table.insert(params, "state=" .. url_encode(state))
 	end
-	if mode == "v0.26" and order_by and order_by ~= "" then
+	if (mode == "v0.26" or mode == "v0.25") and order_by and order_by ~= "" then
 		table.insert(params, "orderBy=" .. url_encode(order_by))
 	end
 
@@ -391,7 +388,7 @@ function M.get_current_user(callback)
 			return { "-X", "GET", cfg.host .. "/api/v1/auth/me" }
 		end,
 		["v0.25"] = function()
-			return { "-X", "POST", cfg.host .. "/api/v1/auth/status" }
+			return { "-X", "GET", cfg.host .. "/api/v1/auth/sessions/current" }
 		end,
 		["v0.21"] = function()
 			return { "-X", "GET", cfg.host .. "/api/v1/user/me" }
@@ -548,7 +545,7 @@ function M.update_memo(memo_name, content, callback)
 			return {
 				"-X",
 				"PATCH",
-				cfg.host .. "/api/v1/" .. memo_name,
+				cfg.host .. "/api/v1/" .. memo_name .. "?updateMask=content",
 				"-H",
 				"Content-Type: application/json",
 				"--data",
@@ -638,10 +635,14 @@ function M.update_memo_metadata(memo_name, fields, update_mask, callback)
 			}
 		end,
 		["v0.25"] = function()
+			local url = cfg.host .. "/api/v1/" .. memo_name
+			if update_mask_value ~= "" then
+				url = url .. "?updateMask=" .. url_encode(update_mask_value)
+			end
 			return {
 				"-X",
 				"PATCH",
-				cfg.host .. "/api/v1/" .. memo_name,
+				url,
 				"-H",
 				"Content-Type: application/json",
 				"--data",
