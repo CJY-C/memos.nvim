@@ -205,8 +205,10 @@ require("memos").setup({
 
 API 版本说明：
 - v0.25.3 使用 `/api/v1/memos` 列表参数（`pageSize`、`pageToken`、`state`、`orderBy`）。
+- v0.25.3 排序支持 `pinned`、`display_time`、`create_time`、`update_time`、`name`（`asc`/`desc`）。
 - v0.25.3 当前会话接口为 `GET /api/v1/auth/sessions/current`。
 - v0.25.3 更新 memo 需要 `updateMask` 参数（插件已兼容）。
+- v0.25.3 已支持状态切换过滤；模糊 `#tag` 层级匹配由插件本地执行（可能触发额外分页请求）。
 - v0.21 使用 offset 分页，列表不支持排序。
 - v0.21 搜索只支持纯文本 + `#tag`（不支持 CEL 过滤）。
 - v0.21 不支持 displayTime 字段，relations 使用专用接口。
@@ -219,8 +221,10 @@ API 版本说明：
 
 Notes on API versions:
 - v0.25.3 uses `/api/v1/memos` list params (`pageSize`, `pageToken`, `state`, `orderBy`).
+- v0.25.3 sorting supports `pinned`, `display_time`, `create_time`, `update_time`, `name` (`asc`/`desc`).
 - v0.25.3 current session endpoint is `GET /api/v1/auth/sessions/current`.
 - v0.25.3 memo updates require `updateMask` (handled by plugin).
+- v0.25.3 supports state toggle filtering; fuzzy hierarchical `#tag` matching is applied locally by plugin (may request extra pages).
 - v0.21 uses offset pagination; list sort is not available.
 - v0.21 search accepts plain text plus `#tag` (no CEL filters).
 - v0.21 metadata does not support display time; relations use relation endpoints.

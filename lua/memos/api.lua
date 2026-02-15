@@ -198,7 +198,9 @@ local function normalize_memo(memo, mode)
 	local normalized = vim.deepcopy(memo)
 	normalized.name = normalized.name or normalized.id or ""
 	normalized.content = type(normalized.content) == "string" and normalized.content or ""
-	normalized.displayTime = normalized.displayTime or normalized.updateTime or normalized.createTime or ""
+	normalized.createTime = normalized.createTime or normalized.create_time or ""
+	normalized.updateTime = normalized.updateTime or normalized.update_time or ""
+	normalized.displayTime = normalized.displayTime or normalized.display_time or normalized.updateTime or normalized.createTime or ""
 	return normalized
 end
 
@@ -425,12 +427,12 @@ function M.list_memos(parent, filter, page_size, pageToken, order_by, state, cal
 		return normalize_list_response(decode_json(body), mode, v021_meta)
 	end, function(data, err)
 		if data then
-			callback(data)
+			callback(data, nil)
 		else
 			vim.schedule(function()
 				vim.notify("Failed to fetch memos: " .. tostring(err), vim.log.levels.ERROR)
 			end)
-			callback(nil)
+			callback(nil, err)
 		end
 	end)
 end
@@ -743,8 +745,8 @@ function M.get_capabilities()
 	end
 	return {
 		mode = mode,
-		supports_sort = mode == "v0.26",
-		supports_state = mode == "v0.26" or mode == "v0.21",
+		supports_sort = mode == "v0.26" or mode == "v0.25",
+		supports_state = mode == "v0.26" or mode == "v0.25" or mode == "v0.21",
 		search_mode = mode == "v0.21" and "simple" or "cel",
 		supports_display_time = mode ~= "v0.21",
 		supports_relations_api = mode == "v0.21",

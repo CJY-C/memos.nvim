@@ -15,6 +15,9 @@ local current_filter = nil
 local current_order_by = nil
 local current_sort_index = nil
 local current_state = nil
+local current_local_filter = nil
+local local_filter_notice_shown = false
+local invalid_sort_warned = {}
 local last_float_buf_id = nil
 local selected_memos = {}
 local list_items = {}
@@ -27,6 +30,8 @@ local extract_memo_title
 local clip_title
 local ensure_relations_loaded
 local invalidate_relations_cache
+local resolve_sort_index
+local sanitize_order_by
 
 local function is_selected(memo)
 	return memo and memo.name and selected_memos[memo.name] == true
@@ -72,6 +77,8 @@ function M.on_account_switched()
 	current_order_by = nil
 	current_sort_index = nil
 	current_state = nil
+	current_local_filter = nil
+	local_filter_notice_shown = false
 	clear_selection()
 	reset_relations_state()
 
@@ -740,13 +747,241 @@ function M.save_or_create_dispatcher(opts)
 	end
 end
 
+local function notify_unsupported_filter_hint(err)
+	local message = tostring(err or "")
+	if message == "" then
+		return
+	end
+	if message:find("invalid order_by") then
+		vim.schedule(function()
+			vim.notify(
+				"Backend rejected orderBy. Supported fields: pinned, display_time, create_time, update_time, name.",
+				vim.log.levels.WARN
+			)
+		end)
+		return
+	end
+	if not message:find("unsupported top%-level expression") then
+		return
+	end
+	vim.schedule(function()
+		vim.notify(
+			"Server filter engine does not support tags.exists()/startsWith(). Use fuzzy #tag search; hierarchical matching is applied locally.",
+			vim.log.levels.WARN
+		)
+	end)
+end
+
+local function parse_order_by_terms(order_by)
+	local raw = vim.trim(order_by or "")
+	if raw == "" then
+		return {}
+	end
+	local out = {}
+	local parts = vim.split(raw, ",", { trimempty = true })
+	for _, part in ipairs(parts) do
+		local tokens = vim.split(vim.trim(part), "%s+", { trimempty = true })
+		if #tokens >= 1 then
+			local field = tokens[1]:lower()
+			local direction = "desc"
+			if #tokens >= 2 then
+				direction = tokens[2]:lower() == "asc" and "asc" or "desc"
+			end
+			table.insert(out, { field = field, direction = direction })
+		end
+	end
+	return out
+end
+
+local function parse_iso_for_sort(value)
+	if type(value) ~= "string" then
+		return 0
+	end
+	local text = vim.trim(value)
+	if text == "" then
+		return 0
+	end
+	text = text:gsub("z$", "Z")
+	text = text:gsub("(%d%d:%d%d:%d%d)%.%d+", "%1")
+
+	local candidates = {}
+	local function push(fmt, raw)
+		if type(raw) == "string" and raw ~= "" then
+			table.insert(candidates, { fmt = fmt, raw = raw })
+		end
+	end
+	local compact_tz = text:gsub("([%+%-]%d%d):(%d%d)$", "%1%2")
+	push("%Y-%m-%dT%H:%M:%S%z", compact_tz)
+	push("%Y-%m-%d %H:%M:%S%z", compact_tz:gsub("T", " "))
+	push("%Y-%m-%dT%H:%M:%SZ", text)
+	push("%Y-%m-%dT%H:%M:%S", text)
+	push("%Y-%m-%d %H:%M:%S", text:gsub("T", " "))
+	if text:match("^%d%d%d%d%-%d%d%-%d%d$") then
+		push("%Y-%m-%d", text)
+	elseif text:match("^%d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d$") then
+		push("%Y-%m-%dT%H:%M:%SZ", text .. "Z")
+	end
+
+	for _, candidate in ipairs(candidates) do
+		local ok, ts = pcall(vim.fn.strptime, candidate.fmt, candidate.raw)
+		if ok then
+			local num = tonumber(ts)
+			if num and num ~= 0 then
+				return num
+			end
+		end
+	end
+	return 0
+end
+
+local function memo_sort_value(memo, field)
+	if field == "pinned" then
+		return memo and memo.pinned == true and 1 or 0
+	end
+	if field == "display_time" then
+		return parse_iso_for_sort(memo and memo.displayTime)
+	end
+	if field == "create_time" then
+		return parse_iso_for_sort(memo and memo.createTime)
+	end
+	if field == "update_time" then
+		return parse_iso_for_sort(memo and memo.updateTime)
+	end
+	if field == "name" then
+		return tostring(memo and memo.name or "")
+	end
+	return nil
+end
+
+local function apply_client_order_if_needed(data, order_by, mode)
+	if mode ~= "v0.25" then
+		return data
+	end
+	if type(data) ~= "table" or type(data.memos) ~= "table" then
+		return data
+	end
+	local terms = parse_order_by_terms(order_by)
+	if #terms == 0 then
+		return data
+	end
+	table.sort(data.memos, function(a, b)
+		for _, term in ipairs(terms) do
+			local av = memo_sort_value(a, term.field)
+			local bv = memo_sort_value(b, term.field)
+			if av ~= nil and bv ~= nil and av ~= bv then
+				if term.direction == "asc" then
+					return av < bv
+				end
+				return av > bv
+			end
+		end
+		local an = tostring(a and a.name or "")
+		local bn = tostring(b and b.name or "")
+		return an < bn
+	end)
+	return data
+end
+
+local function fetch_memos_with_optional_local_filter(parent, filter, page_size, page_token, order_by, state, callback)
+	local cap = get_capabilities()
+	local mode = cap and cap.mode or nil
+	local final_order_by = order_by
+	if mode == "v0.25" or mode == "v0.26" then
+		local normalized, changed = sanitize_order_by(order_by)
+		final_order_by = normalized
+		if changed and current_order_by ~= normalized then
+			current_order_by = normalized
+			current_sort_index = resolve_sort_index(current_order_by)
+		end
+	end
+
+	if type(current_local_filter) ~= "function" then
+		api.list_memos(parent, filter, page_size, page_token, final_order_by, state, function(data, err)
+			if not data then
+				notify_unsupported_filter_hint(err)
+			end
+			callback(apply_client_order_if_needed(data, final_order_by, mode))
+		end)
+		return
+	end
+
+	if not local_filter_notice_shown then
+		local_filter_notice_shown = true
+		vim.schedule(function()
+			vim.notify(
+				"Hierarchical tag matching is applied locally for fuzzy #tag search; loading may request additional pages.",
+				vim.log.levels.INFO
+			)
+		end)
+	end
+
+	local target = tonumber(page_size) or 50
+	local out = {}
+	local seen_tokens = {}
+
+	local function apply_local_filter(memo)
+		local ok, matched = pcall(current_local_filter, memo)
+		return ok and matched == true
+	end
+
+	local function append_matches(memos)
+		for _, memo in ipairs(memos or {}) do
+			if apply_local_filter(memo) then
+				table.insert(out, memo)
+			end
+		end
+	end
+
+	local function step(token)
+		local token_key = token or ""
+		if seen_tokens[token_key] then
+			callback({
+				memos = out,
+				nextPageToken = token or "",
+			})
+			return
+		end
+		seen_tokens[token_key] = true
+
+		api.list_memos(parent, filter, page_size, token, final_order_by, state, function(data, err)
+			if not data then
+				notify_unsupported_filter_hint(err)
+				callback(nil)
+				return
+			end
+
+			append_matches(data.memos or {})
+			local next_token = data.nextPageToken or ""
+			if #out >= target or next_token == "" then
+				local sorted = apply_client_order_if_needed({
+					memos = out,
+					nextPageToken = next_token,
+				}, final_order_by, mode)
+				callback(sorted)
+				return
+			end
+			step(next_token)
+		end)
+	end
+
+	step(page_token)
+end
+
 function M.refresh_list_silently()
 	if not current_user or not current_user.name then
 		return
 	end
-	api.list_memos(current_user.name, current_filter, config.page_size, nil, current_order_by, current_state, function(data)
-		M.render_memos(data, false)
-	end)
+	fetch_memos_with_optional_local_filter(
+		current_user.name,
+		current_filter,
+		config.page_size,
+		nil,
+		current_order_by,
+		current_state,
+		function(data)
+			M.render_memos(data, false)
+		end
+	)
 end
 
 function M.open_edit_buffer(content, open_cmd)
@@ -832,7 +1067,76 @@ local function get_sort_presets()
 	return presets
 end
 
-local function resolve_sort_index(order_by)
+local SAFE_ORDER_BY_DEFAULT = "pinned desc, display_time desc"
+local ORDER_BY_FIELD_ALIASES = {
+	pinned = "pinned",
+	display_time = "display_time",
+	displaytime = "display_time",
+	create_time = "create_time",
+	createtime = "create_time",
+	update_time = "update_time",
+	updatetime = "update_time",
+	name = "name",
+}
+
+local function normalize_order_by(order_by)
+	local raw = vim.trim(order_by or "")
+	if raw == "" then
+		return nil
+	end
+	local parts = vim.split(raw, ",", { trimempty = true })
+	if #parts == 0 then
+		return nil
+	end
+	local out = {}
+	for _, part in ipairs(parts) do
+		local tokens = vim.split(vim.trim(part), "%s+", { trimempty = true })
+		if #tokens == 0 then
+			return nil
+		end
+		if #tokens > 2 then
+			return nil
+		end
+		local key = tokens[1]:lower():gsub("_", "")
+		local canonical_field = ORDER_BY_FIELD_ALIASES[key]
+		if not canonical_field then
+			return nil
+		end
+		local direction = "desc"
+		if #tokens == 2 then
+			local normalized_direction = tokens[2]:lower()
+			if normalized_direction ~= "asc" and normalized_direction ~= "desc" then
+				return nil
+			end
+			direction = normalized_direction
+		end
+		table.insert(out, string.format("%s %s", canonical_field, direction))
+	end
+	return table.concat(out, ", ")
+end
+
+sanitize_order_by = function(order_by)
+	local raw = vim.trim(order_by or "")
+	if raw == "" then
+		return SAFE_ORDER_BY_DEFAULT, false
+	end
+	local normalized = normalize_order_by(raw)
+	if normalized then
+		return normalized, normalized ~= raw
+	end
+	if not invalid_sort_warned[raw] then
+		invalid_sort_warned[raw] = true
+		vim.schedule(function()
+			vim.notify(
+				string.format("Invalid sort preset '%s'. Falling back to '%s'.", raw, SAFE_ORDER_BY_DEFAULT),
+				vim.log.levels.WARN
+			)
+		end)
+	end
+	return SAFE_ORDER_BY_DEFAULT, true
+end
+
+resolve_sort_index = function(order_by)
 	local presets = get_sort_presets()
 	for i, preset in ipairs(presets) do
 		if preset == order_by then
@@ -1533,9 +1837,17 @@ function M.show_memos_list(filter, opts)
 				vim.schedule(function()
 					vim.notify("Fetching memos for " .. user.name .. "...")
 				end)
-				api.list_memos(user.name, current_filter, config.page_size, nil, current_order_by, current_state, function(data)
-					M.render_memos(data, false)
-				end)
+				fetch_memos_with_optional_local_filter(
+					user.name,
+					current_filter,
+					config.page_size,
+					nil,
+					current_order_by,
+					current_state,
+					function(data)
+						M.render_memos(data, false)
+					end
+				)
 			else
 				vim.schedule(function()
 					vim.notify("Could not get user, aborting fetch.", vim.log.levels.ERROR)
@@ -1610,7 +1922,7 @@ function M.load_next_page()
 	vim.schedule(function()
 		vim.notify("Loading next page...")
 	end)
-	api.list_memos(
+	fetch_memos_with_optional_local_filter(
 		current_user.name,
 		current_filter,
 		config.page_size,
@@ -1618,8 +1930,9 @@ function M.load_next_page()
 		current_order_by,
 		current_state,
 		function(data)
-		M.render_memos(data, true)
-	end)
+			M.render_memos(data, true)
+		end
+	)
 end
 
 local function open_related_memo(related_name, open_cmd)
@@ -2085,6 +2398,8 @@ function M.search_memos()
 		vim.ui.input({
 			prompt = "Search (text or #tag): ",
 		}, function(input)
+			current_local_filter = nil
+			local_filter_notice_shown = false
 			M.show_memos_list(vim.trim(input or ""), { force_refresh = true })
 		end)
 		return
@@ -2171,6 +2486,8 @@ function M.search_memos()
 	vim.ui.input({
 		prompt = 'Search (text or CEL): foo bar | "foo bar" | #area/work #todo | content.contains("foo") && "work" in tags: ',
 	}, function(input)
+		current_local_filter = nil
+		local_filter_notice_shown = false
 		M.show_memos_list(build_filter_from_input(input), { force_refresh = true })
 	end)
 end
@@ -2270,17 +2587,97 @@ function M.search_memos_fuzzy()
 		return out
 	end
 
-	local function term_to_cel(term)
+	local function starts_with(str, prefix)
+		return str:sub(1, #prefix) == prefix
+	end
+
+	local function ends_with(str, suffix)
+		if #suffix == 0 then
+			return true
+		end
+		if #str < #suffix then
+			return false
+		end
+		return str:sub(-#suffix) == suffix
+	end
+
+	local function build_term(term)
 		local escaped = vim.fn.escape(term.value, '"')
 		if term.kind == "tag" then
-			return string.format(
-				'("%s" in tags || tags.exists(t, t.startsWith("%s/")) || tags.exists(t, t.endsWith("/%s")))',
-				escaped,
-				escaped,
-				escaped
-			)
+			local tag_value = term.value
+			local prefix = tag_value .. "/"
+			local suffix = "/" .. tag_value
+			return {
+				server_expr = "true",
+				has_tag = true,
+				local_match = function(memo)
+					local tags = memo and memo.tags or nil
+					if type(tags) ~= "table" then
+						return false
+					end
+					for _, tag in ipairs(tags) do
+						if type(tag) == "string" then
+							if tag == tag_value or starts_with(tag, prefix) or ends_with(tag, suffix) then
+								return true
+							end
+						end
+					end
+					return false
+				end,
+			}
 		end
-		return string.format('content.contains("%s")', escaped)
+
+		local needle = term.value
+		return {
+			server_expr = string.format('content.contains("%s")', escaped),
+			has_tag = false,
+			local_match = function(memo)
+				local content = type(memo and memo.content) == "string" and memo.content or ""
+				return content:find(needle, 1, true) ~= nil
+			end,
+		}
+	end
+
+	local function combine_server_expr(op, left, right)
+		local l = left or "true"
+		local r = right or "true"
+		if op == "AND" then
+			if l == "true" then
+				return r
+			end
+			if r == "true" then
+				return l
+			end
+			if l == "false" or r == "false" then
+				return "false"
+			end
+			return "(" .. l .. " && " .. r .. ")"
+		end
+		if l == "true" or r == "true" then
+			return "true"
+		end
+		if l == "false" then
+			return r
+		end
+		if r == "false" then
+			return l
+		end
+		return "(" .. l .. " || " .. r .. ")"
+	end
+
+	local function combine_nodes(op, left, right)
+		return {
+			server_expr = combine_server_expr(op, left.server_expr, right.server_expr),
+			has_tag = left.has_tag or right.has_tag,
+			local_match = function(memo)
+				local l = left.local_match(memo)
+				local r = right.local_match(memo)
+				if op == "AND" then
+					return l and r
+				end
+				return l or r
+			end,
+		}
 	end
 
 	local function parse(tokens)
@@ -2294,19 +2691,19 @@ function M.search_memos_fuzzy()
 			end
 			if tok.type == "TERM" then
 				idx = idx + 1
-				return term_to_cel(tok)
+				return build_term(tok)
 			end
 			if tok.type == "LPAREN" then
 				idx = idx + 1
-				local expr, err = parse_or()
-				if not expr then
+				local node, err = parse_or()
+				if not node then
 					return nil, err
 				end
 				if not tokens[idx] or tokens[idx].type ~= "RPAREN" then
 					return nil, "Missing ')'."
 				end
 				idx = idx + 1
-				return "(" .. expr .. ")"
+				return node
 			end
 			return nil, "Unexpected token."
 		end
@@ -2322,7 +2719,7 @@ function M.search_memos_fuzzy()
 				if not right then
 					return nil, err2
 				end
-				left = left .. " && " .. right
+				left = combine_nodes("AND", left, right)
 			end
 			return left
 		end
@@ -2338,19 +2735,19 @@ function M.search_memos_fuzzy()
 				if not right then
 					return nil, err2
 				end
-				left = left .. " || " .. right
+				left = combine_nodes("OR", left, right)
 			end
 			return left
 		end
 
-		local expr, err = parse_or()
-		if not expr then
+		local node, err = parse_or()
+		if not node then
 			return nil, err
 		end
 		if tokens[idx] then
 			return nil, "Unexpected token."
 		end
-		return expr
+		return node
 	end
 
 	vim.ui.input({
@@ -2358,6 +2755,8 @@ function M.search_memos_fuzzy()
 	}, function(input)
 		local raw = vim.trim(input or "")
 		if raw == "" then
+			current_local_filter = nil
+			local_filter_notice_shown = false
 			M.show_memos_list("", { force_refresh = true })
 			return
 		end
@@ -2367,12 +2766,26 @@ function M.search_memos_fuzzy()
 			return
 		end
 		tokens = insert_implicit_and(tokens)
-		local expr, err2 = parse(tokens)
-		if not expr then
+		local node, err2 = parse(tokens)
+		if not node then
 			vim.notify("Fuzzy search parse error: " .. tostring(err2), vim.log.levels.ERROR)
 			return
 		end
-		M.show_memos_list(expr, { force_refresh = true })
+
+		local server_filter = node.server_expr or ""
+		if server_filter == "true" then
+			server_filter = ""
+		end
+
+		if node.has_tag then
+			current_local_filter = node.local_match
+			local_filter_notice_shown = false
+		else
+			current_local_filter = nil
+			local_filter_notice_shown = false
+		end
+
+		M.show_memos_list(server_filter, { force_refresh = true })
 	end)
 end
 
