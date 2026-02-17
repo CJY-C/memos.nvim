@@ -2859,6 +2859,8 @@ local function prompt_select_boolean(prompt, callback)
 	end)
 end
 
+local prompt_iso_time
+
 local function prompt_metadata_value(field, memo, callback)
 	if field == "visibility" then
 		prompt_select_enum("Visibility", { "PRIVATE", "PROTECTED", "PUBLIC" }, callback)
@@ -3022,7 +3024,7 @@ local function format_time_default_for_input(value)
 	return os.date("%Y-%m-%dT%H:%M:%S", ts)
 end
 
-local function prompt_iso_time(prompt, default_value, callback)
+prompt_iso_time = function(prompt, default_value, callback)
 	vim.schedule(function()
 		vim.ui.input({
 			prompt = prompt .. " (ISO 8601, e.g. 2025-02-07T12:34:56+08:00): ",
