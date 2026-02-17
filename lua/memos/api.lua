@@ -45,14 +45,72 @@ local function iso_to_unix(value)
 	if trimmed == "" then
 		return nil
 	end
-	if trimmed:match("^%d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d$") then
-		trimmed = trimmed .. "Z"
+	trimmed = trimmed:gsub("^(%d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d)%.%d+(Z)$", "%1%2")
+	trimmed = trimmed:gsub("^(%d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d)%.%d+([%+%-]%d%d:%d%d)$", "%1%2")
+	trimmed = trimmed:gsub("^(%d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d)%.%d+([%+%-]%d%d%d%d)$", "%1%2")
+	trimmed = trimmed:gsub("^(%d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d)%.%d+$", "%1")
+
+	local function parse_components(raw)
+		local y, mo, d, h, mi, s, z = raw:match("^(%d%d%d%d)%-(%d%d)%-(%d%d)T(%d%d):(%d%d):(%d%d)(.*)$")
+		if not y then
+			return nil
+		end
+		return {
+			year = tonumber(y),
+			month = tonumber(mo),
+			day = tonumber(d),
+			hour = tonumber(h),
+			min = tonumber(mi),
+			sec = tonumber(s),
+			zone = z or "",
+		}
 	end
-	local ok, ts = pcall(vim.fn.strptime, "%Y-%m-%dT%H:%M:%SZ", trimmed)
-	if not ok then
+
+	local function local_utc_offset_seconds(ts)
+		local local_now = os.date("*t", ts)
+		local utc_now = os.date("!*t", ts)
+		return os.difftime(os.time(local_now), os.time(utc_now))
+	end
+
+	local parts = parse_components(trimmed)
+	if not parts then
 		return nil
 	end
-	local num = tonumber(ts)
+	local local_ts = os.time({
+		year = parts.year,
+		month = parts.month,
+		day = parts.day,
+		hour = parts.hour,
+		min = parts.min,
+		sec = parts.sec,
+	})
+	if not local_ts then
+		return nil
+	end
+	local zone = parts.zone
+	if zone == "" then
+		local num = tonumber(local_ts)
+		if not num or num <= 0 then
+			return nil
+		end
+		return num
+	end
+	local target_offset = nil
+	if zone == "Z" then
+		target_offset = 0
+	elseif zone:match("^[%+%-]%d%d:%d%d$") then
+		local sign_char, zh, zm = zone:match("^([%+%-])(%d%d):(%d%d)$")
+		local sign = sign_char == "-" and -1 or 1
+		target_offset = sign * (tonumber(zh) * 3600 + tonumber(zm) * 60)
+	elseif zone:match("^[%+%-]%d%d%d%d$") then
+		local sign_char, zh, zm = zone:match("^([%+%-])(%d%d)(%d%d)$")
+		local sign = sign_char == "-" and -1 or 1
+		target_offset = sign * (tonumber(zh) * 3600 + tonumber(zm) * 60)
+	else
+		return nil
+	end
+	local local_offset = local_utc_offset_seconds(local_ts)
+	local num = tonumber(local_ts + (local_offset - target_offset))
 	if not num or num <= 0 then
 		return nil
 	end

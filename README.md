@@ -14,7 +14,7 @@ A Neovim plugin to interact with [Memos](https://github.com/usememos/memos) righ
 - **Relations Tree**: Toggle related memos under each item in the list (`gr`) and press `<CR>` on a relation to open it.
   - Memos with relations show `.. <→X><←Y>` counts (outgoing/incoming); `+` indicates more results.
   - Relations use `→`/`←` prefixes and show titles only; empty directions are omitted.
-  - Time fields expect ISO 8601 / RFC3339. If you omit a timezone (e.g. `2025-02-07T12:34:56`), the plugin appends `Z` (UTC).
+  - Time fields expect ISO 8601 / RFC3339. If you omit a timezone (e.g. `2025-02-07T12:34:56`), the plugin assumes your local timezone.
 - **Delete Memos**: Delete memos directly from the list.
 - **Customizable**: Configure API endpoints, keymaps, and more.
 - **First-time Setup**: On first launch, you will be prompted to enter your Memos host and token. You can choose to save these permanently.
@@ -253,7 +253,7 @@ Template storage:
 - **关联树**: 在列表中切换显示关联 memo（`gr`），在关联行按 `<CR>` 打开对应 memo。
   - 有关联的 memo 会显示 `.. <→X><←Y>` 数量（出/入），`+` 表示还有更多。
   - 树中使用 `→`（引用）和 `←`（被引用）前缀，关联行仅显示标题；空方向会被省略。
-  - 时间字段需 ISO 8601 / RFC3339 格式；若未包含时区（如 `2025-02-07T12:34:56`），插件会自动追加 `Z`（UTC）。
+  - 时间字段需 ISO 8601 / RFC3339 格式；若未包含时区（如 `2025-02-07T12:34:56`），插件会按本地时区解释。
 - **删除 Memos**: 直接从列表中删除 memo。
 - **可定制**: 可配置 API 地址、快捷键等。
 - **首次启动引导**: 首次启动时会提示输入 Memos 的 host 和 token，并询问是否永久保存。

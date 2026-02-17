@@ -34,7 +34,7 @@ leaving Neovim.
   `→` (referenced) and `←` (referencing) prefixes; empty directions are
   omitted and relation lines display titles only.
   Time fields expect ISO 8601 / RFC3339. If you omit a timezone (for
-  example `2025-02-07T12:34:56`), the plugin appends `Z` (UTC).
+  example `2025-02-07T12:34:56`), the plugin assumes your local timezone.
 - *Delete Memos*: Delete memos directly from the list.
 - *Customizable*: Configure API endpoints, keymaps, and more.
 - *First-time Setup*: On first launch, you will be prompted to enter your Memos host and token. You can choose to save these permanently.
