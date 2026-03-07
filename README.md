@@ -13,6 +13,8 @@ A Neovim plugin to interact with [Memos](https://github.com/usememos/memos) righ
   - Metadata prompts include a clipped memo title for context.
 - **Relations Tree**: Toggle related memos under each item in the list (`gr`) and press `<CR>` on a relation to open it.
   - Memos with relations show `.. <→X><←Y>` counts (outgoing/incoming); `+` indicates more results.
+- **Attachments in List (v0.25+)**: Show attachment count on memo lines and toggle attachment trees (`ga`/`gA`).
+  - Press `<CR>` on an attachment line to open an action menu (open URL / copy URL / copy filename).
   - Relations use `→`/`←` prefixes and show titles only; empty directions are omitted.
   - Time fields expect ISO 8601 / RFC3339. If you omit a timezone (e.g. `2025-02-07T12:34:56`), the plugin assumes your local timezone.
 - **Delete Memos**: Delete memos directly from the list.
@@ -70,13 +72,15 @@ Install with [lazy.nvim](https://github.com/folke/lazy.nvim):
 | `p`         | Paste memo ID from clipboard       |
 | `d` or `dd` | Delete the selected memo / relation |
 | `D`         | Smart delete: relation line deletes referenced memo; otherwise deletes selected memos, or falls back to `d` |
-| `<CR>`      | Edit the selected memo             |
+| `<CR>`      | Edit selected memo; relation opens target; attachment opens action menu |
 | `<S-m>`     | Edit metadata for selected memos   |
 | `<Tab>`     | Toggle selection and move down     |
 | `<S-Tab>`   | Toggle selection and move up       |
 | `c`         | Clear selection                    |
 | `gr`        | Toggle relations tree              |
 | `gR`        | Toggle all relations trees         |
+| `ga`        | Toggle attachments tree            |
+| `gA`        | Toggle all attachments trees       |
 | `<C-s>`     | Edit the selected memo in a split  |
 | `<C-v>`     | Edit the selected memo in a vsplit |
 | `m`         | Edit metadata for selected memo (or referenced memo on relation line) |
@@ -147,6 +151,10 @@ require("memos").setup({
   list_relations_mode = "both",
   -- Show relations tree by default in list
   list_relations_auto_expand = true,
+  -- Max number of attachments shown per memo in list
+  list_attachments_limit = 20,
+  -- Show attachments tree by default in list
+  list_attachments_auto_expand = false,
   -- Confirm before copying memo IDs to clipboard
   confirm_copy = false,
  -- Window configuration
@@ -182,6 +190,8 @@ require("memos").setup({
       clear_selection = "c",
       toggle_relations = "gr",
       toggle_relations_all = "gR",
+      toggle_attachments = "ga",
+      toggle_attachments_all = "gA",
       edit_metadata = "m",
       paste_memo = "p",
       search_memos = { "s", "f" },
@@ -209,9 +219,11 @@ API 版本说明：
 - v0.25.3 当前会话接口为 `GET /api/v1/auth/sessions/current`。
 - v0.25.3 更新 memo 需要 `updateMask` 参数（插件已兼容）。
 - v0.25.3 已支持状态切换过滤；模糊 `#tag` 层级匹配由插件本地执行（可能触发额外分页请求）。
+- v0.25.3 已支持列表中的 memo 附件展示（摘要 + 可展开树）。
 - v0.21 使用 offset 分页，列表不支持排序。
 - v0.21 搜索只支持纯文本 + `#tag`（不支持 CEL 过滤）。
 - v0.21 不支持 displayTime 字段，relations 使用专用接口。
+- v0.21 列表不支持 memo 附件展示。
 
 模板存储说明：
 - `template_source = "local"`：模板保存在
@@ -225,9 +237,11 @@ Notes on API versions:
 - v0.25.3 current session endpoint is `GET /api/v1/auth/sessions/current`.
 - v0.25.3 memo updates require `updateMask` (handled by plugin).
 - v0.25.3 supports state toggle filtering; fuzzy hierarchical `#tag` matching is applied locally by plugin (may request extra pages).
+- v0.25.3 supports memo attachments in list view (summary + expandable tree).
 - v0.21 uses offset pagination; list sort is not available.
 - v0.21 search accepts plain text plus `#tag` (no CEL filters).
 - v0.21 metadata does not support display time; relations use relation endpoints.
+- v0.21 does not support memo attachments in list view.
 
 Template storage:
 - `template_source = "local"` stores templates in
@@ -252,6 +266,8 @@ Template storage:
   - 元数据提示会显示裁剪后的 memo 标题，便于确认上下文。
 - **关联树**: 在列表中切换显示关联 memo（`gr`），在关联行按 `<CR>` 打开对应 memo。
   - 有关联的 memo 会显示 `.. <→X><←Y>` 数量（出/入），`+` 表示还有更多。
+- **列表附件展示（v0.25+）**: 在主行显示附件数量，并可用 `ga`/`gA` 展开附件树。
+  - 在附件行按 `<CR>` 可打开动作菜单（打开链接 / 复制链接 / 复制文件名）。
   - 树中使用 `→`（引用）和 `←`（被引用）前缀，关联行仅显示标题；空方向会被省略。
   - 时间字段需 ISO 8601 / RFC3339 格式；若未包含时区（如 `2025-02-07T12:34:56`），插件会按本地时区解释。
 - **删除 Memos**: 直接从列表中删除 memo。
@@ -309,13 +325,15 @@ Template storage:
 | `p`         | 从剪贴板粘贴 memo ID        |
 | `d` 或 `dd` | 删除所选的 memo             |
 | `D`         | 智能删除：relation 行删除被引用 memo；否则删除多选 memo，无多选时回退到 `d` |
-| `<CR>`      | 编辑所选的 memo             |
+| `<CR>`      | 编辑所选 memo；relation 行打开目标；attachment 行打开动作菜单 |
 | `<S-m>`     | 编辑所选 memo 的元数据      |
 | `<Tab>`     | 切换选中并向下移动光标       |
 | `<S-Tab>`   | 切换选中并向上移动光标       |
 | `c`         | 清除多选状态                |
 | `gr`        | 切换关联树显示              |
 | `gR`        | 切换全部关联树显示          |
+| `ga`        | 切换附件树显示              |
+| `gA`        | 切换全部附件树显示          |
 | `<C-s>`     | 在水平分屏中编辑所选的 memo |
 | `<C-v>`     | 在垂直分屏中编辑所选的 memo |
 | `m`         | 编辑所选 memo 的元数据（在 relation 行则编辑被引用 memo） |
@@ -380,6 +398,10 @@ require("memos").setup({
   list_relations_limit = 20,
   list_relations_mode = "both",
   list_relations_auto_expand = true,
+  -- 列表中每条 memo 显示的附件数量上限
+  list_attachments_limit = 20,
+  -- 列表中是否默认展开附件树
+  list_attachments_auto_expand = false,
   -- 复制 memo ID 前是否确认
   confirm_copy = false,
   -- 窗口配置
@@ -415,6 +437,8 @@ require("memos").setup({
       clear_selection = "c",
       toggle_relations = "gr",
       toggle_relations_all = "gR",
+      toggle_attachments = "ga",
+      toggle_attachments_all = "gA",
       edit_metadata = "m",
       paste_memo = "p",
       search_memos = { "s", "f" },

@@ -26,10 +26,13 @@ local relations_cache = {}
 local relations_expanded = {}
 local relation_title_cache = {}
 local relation_title_inflight = {}
+local attachments_cache = {}
+local attachments_expanded = {}
 local extract_memo_title
 local clip_title
 local ensure_relations_loaded
 local invalidate_relations_cache
+local ensure_attachments_loaded
 local resolve_sort_index
 local sanitize_order_by
 
@@ -58,6 +61,8 @@ local function reset_relations_state()
 	relations_expanded = {}
 	relation_title_cache = {}
 	relation_title_inflight = {}
+	attachments_cache = {}
+	attachments_expanded = {}
 end
 
 local function selected_list()
@@ -175,6 +180,8 @@ function M.render_memos(data, append)
 			return
 		end
 		local new_memos = data.memos or {}
+		local cap = get_capabilities()
+		local supports_attachments = cap and cap.supports_attachments == true
 		current_page_token = data.nextPageToken or ""
 		if append then
 			memos_cache = vim.list_extend(memos_cache, new_memos)
@@ -240,6 +247,19 @@ function M.render_memos(data, append)
 				end
 				local selected_marker = is_selected(memo) and "[x] " or "[ ] "
 				local ref_suffix = ""
+				local attach_suffix = ""
+				local attachment_count = 0
+				if supports_attachments then
+					local attachment_cache = memo.name and attachments_cache[memo.name] or nil
+					if type(memo.attachments) == "table" then
+						attachment_count = #memo.attachments
+					elseif attachment_cache and attachment_cache.total ~= nil then
+						attachment_count = tonumber(attachment_cache.total) or 0
+					end
+					if attachment_count > 0 then
+						attach_suffix = string.format(" .. [F%d]", attachment_count)
+					end
+				end
 				local rel_cache = memo.name and relations_cache[memo.name] or nil
 				local out_count = 0
 				local in_count = 0
@@ -278,7 +298,7 @@ function M.render_memos(data, append)
 					ref_suffix = string.format(" .. <\226\134\146%s><\226\134\144%s>", out_mark, in_mark)
 				end
 				add_line(
-					string.format("%s%d. [%s] %s%s%s", selected_marker, i, display_time, badge_text, first_line, ref_suffix),
+					string.format("%s%d. [%s] %s%s%s%s", selected_marker, i, display_time, badge_text, first_line, attach_suffix, ref_suffix),
 					{ kind = "memo", memo_index = i }
 				)
 
@@ -407,6 +427,47 @@ function M.render_memos(data, append)
 						end
 					end
 				end
+
+				local attachment_expanded = attachments_expanded[memo.name]
+				if attachment_expanded == nil and supports_attachments and config.list_attachments_auto_expand then
+					if attachment_count > 0 then
+						attachments_expanded[memo.name] = true
+						attachment_expanded = true
+					end
+				end
+				if attachment_expanded and supports_attachments then
+					local attachment_cache = attachments_cache[memo.name]
+					if not attachment_cache then
+						ensure_attachments_loaded(memo)
+						add_line("   `-- (loading attachments...)", { kind = "attachment_status", parent_index = i })
+					elseif attachment_cache.status == "error" then
+						add_line("   `-- (failed to load attachments)", { kind = "attachment_status", parent_index = i })
+					elseif attachment_cache.status == "loading" then
+						add_line("   `-- (loading attachments...)", { kind = "attachment_status", parent_index = i })
+					else
+						local items = attachment_cache.items or {}
+						if #items > 0 then
+							for _, attachment in ipairs(items) do
+								local filename = attachment.filename or "(unnamed)"
+								local mime = attachment.mime or "unknown"
+								local size_text = attachment.size_text or "-"
+								add_line(string.format("   - [ATT] %s (%s, %s)", filename, mime, size_text), {
+									kind = "attachment",
+									parent_index = i,
+									attachment_name = attachment.name,
+									attachment_filename = attachment.filename,
+									attachment_external_link = attachment.external_link,
+								})
+							end
+						end
+						if (attachment_cache.truncated or 0) > 0 then
+							add_line(
+								string.format("   - [ATT] ... +%d more", attachment_cache.truncated),
+								{ kind = "attachment_truncated", parent_index = i }
+							)
+						end
+					end
+				end
 			end
 		end
 		if current_page_token ~= "" then
@@ -420,6 +481,11 @@ function M.render_memos(data, append)
 		if show_any then
 			for _, memo in ipairs(memos_cache) do
 				ensure_relations_loaded(memo)
+			end
+		end
+		if supports_attachments then
+			for _, memo in ipairs(memos_cache) do
+				ensure_attachments_loaded(memo)
 			end
 		end
 	end)
@@ -1267,6 +1333,147 @@ local function build_relation_entries(relations, mode)
 	return entries
 end
 
+local function format_attachment_size(size)
+	local num = tonumber(size) or 0
+	if num <= 0 then
+		return "0 B"
+	end
+	local units = { "B", "KB", "MB", "GB", "TB" }
+	local idx = 1
+	local value = num
+	while value >= 1024 and idx < #units do
+		value = value / 1024
+		idx = idx + 1
+	end
+	if idx == 1 then
+		return string.format("%d %s", math.floor(value), units[idx])
+	end
+	return string.format("%.1f %s", value, units[idx])
+end
+
+local function url_encode_component(str)
+	local value = tostring(str or "")
+	value = value:gsub("\n", "\r\n")
+	value = value:gsub("([^%w %-%_%.%~])", function(c)
+		return string.format("%%%02X", string.byte(c))
+	end)
+	return value:gsub(" ", "%%20")
+end
+
+local function encode_path_preserve_slash(path)
+	local value = tostring(path or "")
+	if value == "" then
+		return value
+	end
+	local parts = vim.split(value, "/", { plain = true, trimempty = false })
+	for i, part in ipairs(parts) do
+		parts[i] = url_encode_component(part)
+	end
+	return table.concat(parts, "/")
+end
+
+local function build_attachment_url(attachment)
+	if type(attachment) ~= "table" then
+		return nil
+	end
+	local external_link = attachment.external_link or attachment.externalLink
+	if type(external_link) == "string" and external_link ~= "" then
+		return external_link
+	end
+	local name = attachment.name
+	local filename = attachment.filename
+	if type(config.host) ~= "string" or config.host == "" then
+		return nil
+	end
+	if type(name) ~= "string" or name == "" or type(filename) ~= "string" or filename == "" then
+		return nil
+	end
+	return string.format("%s/file/%s/%s", config.host, encode_path_preserve_slash(name), url_encode_component(filename))
+end
+
+local function normalize_attachment(attachment)
+	if type(attachment) ~= "table" then
+		return nil
+	end
+	local filename = attachment.filename or attachment.fileName or ""
+	local mime = attachment.type or attachment.mimeType or attachment.mime_type or "unknown"
+	local size = tonumber(attachment.size) or 0
+	local external_link = attachment.external_link or attachment.externalLink or ""
+	local name = attachment.name or ""
+	return {
+		name = name,
+		filename = filename ~= "" and filename or "(unnamed)",
+		mime = mime ~= "" and mime or "unknown",
+		size = size,
+		size_text = format_attachment_size(size),
+		external_link = external_link,
+	}
+end
+
+ensure_attachments_loaded = function(memo)
+	if not memo or not memo.name or memo.name == "" then
+		return
+	end
+	local cap = get_capabilities()
+	if not (cap and cap.supports_attachments) then
+		return
+	end
+	local existing = attachments_cache[memo.name]
+	if existing and (existing.status == "loading" or existing.status == "loaded" or existing.status == "error") then
+		return
+	end
+	attachments_cache[memo.name] = {
+		status = "loading",
+		items = {},
+		total = 0,
+		truncated = 0,
+		next_page_token = "",
+		error = nil,
+	}
+	local cache = attachments_cache[memo.name]
+	local list_limit = tonumber(config.list_attachments_limit) or 20
+	api.list_memo_attachments(memo.name, list_limit > 0 and list_limit + 1 or nil, nil, function(resp, err)
+		if not resp then
+			cache.status = "error"
+			cache.error = err
+			cache.items = {}
+			cache.total = 0
+			cache.truncated = 0
+			attachments_cache[memo.name] = cache
+			render_cached_list()
+			return
+		end
+		local raw = type(resp.attachments) == "table" and resp.attachments or {}
+		local items = {}
+		for _, attachment in ipairs(raw) do
+			local normalized = normalize_attachment(attachment)
+			if normalized then
+				table.insert(items, normalized)
+			end
+		end
+		local total = #items
+		local truncated = 0
+		if list_limit > 0 and #items > list_limit then
+			truncated = #items - list_limit
+			local sliced = {}
+			for i = 1, list_limit do
+				table.insert(sliced, items[i])
+			end
+			items = sliced
+		end
+		cache.status = "loaded"
+		cache.items = items
+		cache.total = total
+		cache.truncated = truncated
+		cache.next_page_token = resp.nextPageToken or ""
+		if cache.next_page_token ~= "" then
+			cache.truncated = math.max(cache.truncated, 1)
+		end
+		attachments_cache[memo.name] = cache
+		render_cached_list()
+	end)
+end
+
 ensure_relations_loaded = function(memo)
 	if not memo or not memo.name or memo.name == "" then
 		return
@@ -1724,6 +1931,58 @@ function M.toggle_relations_tree_all()
 	render_cached_list()
 end
 
+function M.toggle_attachments_tree()
+	local cap = get_capabilities()
+	if not (cap and cap.supports_attachments) then
+		vim.notify("Attachments are supported in v0.25+ only.", vim.log.levels.WARN)
+		return
+	end
+	local item = current_list_item()
+	if not item then
+		return
+	end
+	local memo = memo_from_item(item)
+	if not memo or not memo.name then
+		return
+	end
+	attachments_expanded[memo.name] = not attachments_expanded[memo.name]
+	if attachments_expanded[memo.name] then
+		ensure_attachments_loaded(memo)
+	end
+	render_cached_list()
+end
+
+function M.toggle_attachments_tree_all()
+	local cap = get_capabilities()
+	if not (cap and cap.supports_attachments) then
+		vim.notify("Attachments are supported in v0.25+ only.", vim.log.levels.WARN)
+		return
+	end
+	if not memos_cache or #memos_cache == 0 then
+		return
+	end
+	local memo_list = {}
+	local has_collapsed = false
+	for _, memo in ipairs(memos_cache) do
+		if memo and memo.name and memo.name ~= "" then
+			table.insert(memo_list, memo)
+			if attachments_expanded[memo.name] ~= true then
+				has_collapsed = true
+			end
+		end
+	end
+	if #memo_list == 0 then
+		return
+	end
+	for _, memo in ipairs(memo_list) do
+		attachments_expanded[memo.name] = has_collapsed
+		if has_collapsed then
+			ensure_attachments_loaded(memo)
+		end
+	end
+	render_cached_list()
+end
+
 function M.toggle_memos_list()
 	if config.window and config.window.enable_float then
 		local existing = find_memos_float_window()
@@ -1906,6 +2165,8 @@ function M.show_memos_list(filter, opts)
 		set_keymap(list_keymaps.toggle_select_prev, '<Cmd>lua require("memos.ui").toggle_select_prev()<CR>')
 		set_keymap(list_keymaps.toggle_relations, '<Cmd>lua require("memos.ui").toggle_relations_tree()<CR>')
 		set_keymap(list_keymaps.toggle_relations_all, '<Cmd>lua require("memos.ui").toggle_relations_tree_all()<CR>')
+		set_keymap(list_keymaps.toggle_attachments, '<Cmd>lua require("memos.ui").toggle_attachments_tree()<CR>')
+		set_keymap(list_keymaps.toggle_attachments_all, '<Cmd>lua require("memos.ui").toggle_attachments_tree_all()<CR>')
 		vim.b[buf_id].memos_list_keymaps = true
 	end
 end
@@ -1953,6 +2214,88 @@ local function open_related_memo(related_name, open_cmd)
 	end)
 end
 
+local function open_url(url)
+	if type(url) ~= "string" or url == "" then
+		return false
+	end
+	if vim.ui and type(vim.ui.open) == "function" then
+		local ok, err = pcall(vim.ui.open, url)
+		if ok and not err then
+			return true
+		end
+	end
+	local cmd
+	if vim.fn.has("win32") == 1 then
+		cmd = { "cmd.exe", "/c", "start", "", url }
+	elseif vim.fn.has("macunix") == 1 then
+		cmd = { "open", url }
+	else
+		cmd = { "xdg-open", url }
+	end
+	local ok = vim.fn.jobstart(cmd, { detach = true }) > 0
+	return ok
+end
+
+local function attachment_from_item(item)
+	if not item or item.kind ~= "attachment" then
+		return nil
+	end
+	return {
+		name = item.attachment_name,
+		filename = item.attachment_filename,
+		external_link = item.attachment_external_link,
+	}
+end
+
+local function handle_attachment_action(item)
+	local attachment = attachment_from_item(item)
+	if not attachment then
+		return
+	end
+	local url = build_attachment_url(attachment)
+	local filename = attachment.filename or "(unnamed)"
+	local options = {
+		{ key = "open", label = "Open URL" },
+		{ key = "copy_url", label = "Copy URL" },
+		{ key = "copy_filename", label = "Copy filename" },
+	}
+	vim.ui.select(options, {
+		prompt = string.format("Attachment: %s", filename),
+		format_item = function(choice)
+			return choice.label
+		end,
+	}, function(choice)
+		if not choice then
+			return
+		end
+		if choice.key == "open" then
+			if not url or url == "" then
+				vim.notify("No URL available for this attachment.", vim.log.levels.WARN)
+				return
+			end
+			if open_url(url) then
+				vim.notify("Opened attachment URL.")
+			else
+				vim.notify("Failed to open attachment URL.", vim.log.levels.ERROR)
+			end
+			return
+		end
+		if choice.key == "copy_url" then
+			if not url or url == "" then
+				vim.notify("No URL available for this attachment.", vim.log.levels.WARN)
+				return
+			end
+			vim.fn.setreg("+", url)
+			vim.notify("Attachment URL copied to clipboard.")
+			return
+		end
+		if choice.key == "copy_filename" then
+			vim.fn.setreg("+", filename)
+			vim.notify("Attachment filename copied to clipboard.")
+		end
+	end)
+end
+
 function M.edit_selected_memo()
 	local item = current_list_item()
 	if not item then
@@ -1960,6 +2303,10 @@ function M.edit_selected_memo()
 	end
 	if item.kind == "relation" then
 		open_related_memo(item.related_name, "enew")
+		return
+	end
+	if item.kind == "attachment" then
+		handle_attachment_action(item)
 		return
 	end
 	local selected_memo = item.kind == "memo" and memos_cache[item.memo_index] or nil
@@ -1982,6 +2329,10 @@ function M.edit_selected_memo_in_vsplit()
 		open_related_memo(item.related_name, "vsplit | enew")
 		return
 	end
+	if item.kind == "attachment" then
+		handle_attachment_action(item)
+		return
+	end
 	local selected_memo = item.kind == "memo" and memos_cache[item.memo_index] or nil
 	if selected_memo then
 		M.open_memo_for_edit(selected_memo, "vsplit | enew")
@@ -2000,6 +2351,10 @@ function M.edit_selected_memo_in_split()
 	end
 	if item.kind == "relation" then
 		open_related_memo(item.related_name, "split | enew")
+		return
+	end
+	if item.kind == "attachment" then
+		handle_attachment_action(item)
 		return
 	end
 	local selected_memo = item.kind == "memo" and memos_cache[item.memo_index] or nil

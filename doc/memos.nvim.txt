@@ -33,6 +33,9 @@ leaving Neovim.
   `.. <→X><←Y>` counts (out/in); `+` indicates more results. Relations use
   `→` (referenced) and `←` (referencing) prefixes; empty directions are
   omitted and relation lines display titles only.
+- *Attachments in List (v0.25+)*: Show attachment counts on memo lines and
+  toggle attachment trees with `ga`/`gA`. Press `<CR>` on an attachment line
+  to open an action menu (open URL / copy URL / copy filename).
   Time fields expect ISO 8601 / RFC3339. If you omit a timezone (for
   example `2025-02-07T12:34:56`), the plugin assumes your local timezone.
 - *Delete Memos*: Delete memos directly from the list.
@@ -77,6 +80,8 @@ require("memos").setup({
   list_relations_limit = 20,
   list_relations_mode = "both",
   list_relations_auto_expand = true,
+  list_attachments_limit = 20,
+  list_attachments_auto_expand = false,
   -- Window configuration
   window = {
     enable_float = false, -- Set to true to open the list in a floating window
@@ -106,6 +111,8 @@ require("memos").setup({
       toggle_select_prev = "<S-Tab>",
       toggle_relations = "gr",
       toggle_relations_all = "gR",
+      toggle_attachments = "ga",
+      toggle_attachments_all = "gA",
       paste_memo = "p",
       search_memos = { "s", "f" },
       search_fuzzy = "<S-f>",
@@ -130,9 +137,11 @@ Notes on API versions:
 - v0.25.3 memo updates require `updateMask` (handled by plugin).
 - v0.25.3 supports state toggle filtering; fuzzy hierarchical `#tag`
   matching is applied locally by plugin (may request extra pages).
+- v0.25.3 supports memo attachments in list view (summary + expandable tree).
 - v0.21 uses offset pagination; list sort is not available.
 - v0.21 search accepts plain text plus #tag (no CEL filters).
 - v0.21 metadata does not support display time; relations use relation endpoints.
+- v0.21 does not support memo attachments in list view.
 
 Template storage:
 - `template_source = "local"` stores templates in
@@ -213,13 +222,15 @@ DEFAULT KEYMAPS                                     *memos-keymaps*
 | `p`                | Paste memo ID from clipboard         |
 | `d` or `dd`        | Delete the selected memo / relation  |
 | `D`                | Smart delete: relation line deletes referenced memo; otherwise deletes selected memos, or falls back to `d` |
-| `<CR>`             | Edit the selected memo               |
+| `<CR>`             | Edit memo; relation opens target; attachment opens action menu |
 | `<S-m>`            | Edit metadata for selected memos     |
 | `<Tab>`            | Toggle selection and move down       |
 | `<S-Tab>`          | Toggle selection and move up         |
 | `c`                | Clear selection                      |
 | `gr`               | Toggle relations tree                |
 | `gR`               | Toggle all relations trees           |
+| `ga`               | Toggle attachments tree              |
+| `gA`               | Toggle all attachments trees         |
 | `<C-s>`            | Edit the selected memo in a split    |
 | `<C-v>`            | Edit the selected memo in a vsplit   |
 | `m`                | Edit selected memo metadata (or referenced memo on relation line) |
@@ -261,6 +272,8 @@ require("memos").setup({
   list_relations_limit = 20,
   list_relations_mode = "both",
   list_relations_auto_expand = true,
+  list_attachments_limit = 20,
+  list_attachments_auto_expand = false,
   -- Number of memos to fetch per page
   page_size = 50,
   -- API compatibility mode: "auto", "v0.26", "v0.25", "v0.21"
@@ -302,6 +315,8 @@ require("memos").setup({
       clear_selection = "c",
       toggle_relations = "gr",
       toggle_relations_all = "gR",
+      toggle_attachments = "ga",
+      toggle_attachments_all = "gA",
       edit_metadata = "m",
       paste_memo = "p",
       search_memos = { "s", "f" },

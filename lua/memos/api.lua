@@ -798,6 +798,7 @@ function M.get_capabilities()
 				search_mode = "simple",
 				supports_display_time = false,
 				supports_relations_api = false,
+				supports_attachments = false,
 			}
 		end
 	end
@@ -808,6 +809,7 @@ function M.get_capabilities()
 		search_mode = mode == "v0.21" and "simple" or "cel",
 		supports_display_time = mode ~= "v0.21",
 		supports_relations_api = mode == "v0.21",
+		supports_attachments = mode == "v0.26" or mode == "v0.25",
 	}
 end
 
@@ -896,6 +898,86 @@ function M.list_memo_relations_v1(memo_name, page_size, page_token, callback)
 		local url = candidates[index]
 		if not url then
 			callback(nil, last_err or "Failed to list memo relations.")
+			return
+		end
+		run_curl({ "-X", "GET", url }, function(response)
+			if response.ok then
+				callback(decode_response(response.body), nil)
+				return
+			end
+			local err = parse_api_error(response)
+			local status = response.status or 0
+			if (status == 400 or status == 404 or status == 405 or status == 422) and index < #candidates then
+				try_url(index + 1, err)
+				return
+			end
+			callback(nil, err)
+		end)
+	end
+
+	try_url(1, nil)
+end
+
+function M.list_memo_attachments(memo_name, page_size, page_token, callback)
+	if not memo_name or memo_name == "" then
+		callback(nil, "Missing memo id")
+		return
+	end
+	local mode = M.get_active_version() or (get_config().api_version or "auto")
+	if mode == "v0.21" then
+		callback(nil, "Attachments are not supported in v0.21 mode.")
+		return
+	end
+	local cfg = get_config()
+	local params = {}
+	if page_size and tonumber(page_size) then
+		table.insert(params, "pageSize=" .. tostring(tonumber(page_size)))
+	end
+	if page_token and page_token ~= "" then
+		table.insert(params, "pageToken=" .. url_encode(page_token))
+	end
+	local function build_url(name)
+		local url = cfg.host .. "/api/v1/" .. name .. "/attachments"
+		if #params > 0 then
+			url = url .. "?" .. table.concat(params, "&")
+		end
+		return url
+	end
+
+	local raw_name = memo_name
+	local encoded_name = url_encode(memo_name)
+	local id_only = parse_memo_id(memo_name)
+	local normalized = memo_name
+	if not memo_name:match("^memos/") and id_only then
+		normalized = "memos/" .. tostring(id_only)
+	end
+	local candidates = {
+		build_url(raw_name),
+		build_url(encoded_name),
+	}
+	if normalized ~= raw_name then
+		table.insert(candidates, build_url(normalized))
+		table.insert(candidates, build_url(url_encode(normalized)))
+	end
+	if id_only and tostring(id_only) ~= raw_name then
+		table.insert(candidates, build_url("memos/" .. tostring(id_only)))
+	end
+
+	local function decode_response(body)
+		local decoded = decode_json(body)
+		if type(decoded) ~= "table" then
+			return { attachments = {}, nextPageToken = "" }
+		end
+		return {
+			attachments = decoded.attachments or {},
+			nextPageToken = decoded.nextPageToken or "",
+		}
+	end
+
+	local function try_url(index, last_err)
+		local url = candidates[index]
+		if not url then
+			callback(nil, last_err or "Failed to list memo attachments.")
 			return
 		end
 		run_curl({ "-X", "GET", url }, function(response)
