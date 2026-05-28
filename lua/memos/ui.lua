@@ -821,7 +821,7 @@ local function notify_unsupported_filter_hint(err)
 	if message:find("invalid order_by") then
 		vim.schedule(function()
 			vim.notify(
-				"Backend rejected orderBy. Supported fields: pinned, display_time, create_time, update_time, name.",
+				"Backend rejected orderBy. Supported fields: pinned, create_time, update_time, name.",
 				vim.log.levels.WARN
 			)
 		end)
@@ -1133,15 +1133,15 @@ local function get_sort_presets()
 	return presets
 end
 
-local SAFE_ORDER_BY_DEFAULT = "pinned desc, display_time desc"
+local SAFE_ORDER_BY_DEFAULT = "pinned desc, update_time desc"
 local ORDER_BY_FIELD_ALIASES = {
 	pinned = "pinned",
-	display_time = "display_time",
-	displaytime = "display_time",
-	create_time = "create_time",
-	createtime = "create_time",
 	update_time = "update_time",
 	updatetime = "update_time",
+	display_time = "update_time",
+	displaytime = "update_time",
+	create_time = "create_time",
+	createtime = "create_time",
 	name = "name",
 }
 

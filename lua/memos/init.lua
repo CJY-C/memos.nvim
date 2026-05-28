@@ -17,10 +17,10 @@ M.config = {
 	page_size = 50,
 	api_version = "auto", -- "auto" | "v0.26" | "v0.25" | "v0.21"
 	template_source = "online", -- "online" | "local" | "both"
-	list_sort_default = "pinned desc, display_time desc",
+	list_sort_default = "pinned desc, update_time desc",
 	list_sort_presets = {
-		"pinned desc, display_time desc",
-		"display_time desc",
+		"pinned desc, update_time desc",
+		"update_time desc",
 		"create_time desc",
 	},
 	list_state_default = "NORMAL",

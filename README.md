@@ -131,11 +131,11 @@ require("memos").setup({
   -- "both" asks each time whether to use online or local templates.
   template_source = "online",
   -- Default list sort order (v0.25/v0.26)
-  list_sort_default = "pinned desc, display_time desc",
+  list_sort_default = "pinned desc, update_time desc",
   -- Presets used by <S-s> to select sort in list
   list_sort_presets = {
-    "pinned desc, display_time desc",
-    "display_time desc",
+    "pinned desc, update_time desc",
+    "update_time desc",
     "create_time desc",
   },
   -- Default state to request in list (v0.25/v0.26/v0.21)
@@ -215,7 +215,7 @@ require("memos").setup({
 
 API 版本说明：
 - v0.25.3 使用 `/api/v1/memos` 列表参数（`pageSize`、`pageToken`、`state`、`orderBy`）。
-- v0.25.3 排序支持 `pinned`、`display_time`、`create_time`、`update_time`、`name`（`asc`/`desc`）。
+- v0.25.3 排序支持 `pinned`、`create_time`、`update_time`、`name`（`asc`/`desc`）。注：较新的 API 版本已移除对 `display_time` 的支持。
 - v0.25.3 当前会话接口为 `GET /api/v1/auth/sessions/current`。
 - v0.25.3 更新 memo 需要 `updateMask` 参数（插件已兼容）。
 - v0.25.3 已支持状态切换过滤；模糊 `#tag` 层级匹配由插件本地执行（可能触发额外分页请求）。
@@ -233,7 +233,7 @@ API 版本说明：
 
 Notes on API versions:
 - v0.25.3 uses `/api/v1/memos` list params (`pageSize`, `pageToken`, `state`, `orderBy`).
-- v0.25.3 sorting supports `pinned`, `display_time`, `create_time`, `update_time`, `name` (`asc`/`desc`).
+- v0.25.3 sorting supports `pinned`, `create_time`, `update_time`, `name` (`asc`/`desc`). Note: newer API versions have removed support for `display_time`.
 - v0.25.3 current session endpoint is `GET /api/v1/auth/sessions/current`.
 - v0.25.3 memo updates require `updateMask` (handled by plugin).
 - v0.25.3 supports state toggle filtering; fuzzy hierarchical `#tag` matching is applied locally by plugin (may request extra pages).
@@ -380,11 +380,11 @@ require("memos").setup({
   -- "both" 会在每次模板操作前询问来源。
   template_source = "online",
   -- 默认列表排序（v0.25/v0.26）
-  list_sort_default = "pinned desc, display_time desc",
+  list_sort_default = "pinned desc, update_time desc",
   -- 列表内 <S-s> 选择的排序预设
   list_sort_presets = {
-    "pinned desc, display_time desc",
-    "display_time desc",
+    "pinned desc, update_time desc",
+    "update_time desc",
     "create_time desc",
   },
   -- 列表请求的默认状态（v0.25/v0.26/v0.21）
