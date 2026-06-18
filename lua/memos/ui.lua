@@ -353,9 +353,18 @@ end
 
 function M.open_edit_buffer(content, open_cmd)
 	if open_cmd == "split" or open_cmd == "vsplit" then
+		local source_win = vim.api.nvim_get_current_win()
+		local close_source_float = false
+		local ok, is_memos_window = pcall(vim.api.nvim_win_get_var, source_win, "memos_window")
+		if ok and is_memos_window == true and is_float_window(source_win) then
+			close_source_float = true
+		end
 		local alternate_win = vim.fn.win_getid(vim.fn.winnr("#"))
 		if alternate_win ~= 0 and vim.api.nvim_win_is_valid(alternate_win) and not is_float_window(alternate_win) then
 			vim.api.nvim_set_current_win(alternate_win)
+		end
+		if close_source_float and vim.api.nvim_win_is_valid(source_win) then
+			pcall(vim.api.nvim_win_close, source_win, true)
 		end
 		vim.cmd(open_cmd)
 		local buf = vim.api.nvim_create_buf(false, true)
