@@ -146,5 +146,40 @@ high while connect is low, inspect Memos server or database work.
 and sleeps 30 minutes between them by default. Use `--sleep-seconds N` for a
 shorter local check.
 
+Server-side list keepalive~
+
+If connect time is low but time to first byte is high, the slow part is likely
+the Memos server or database handling the list request. In that case, keep the
+real list path warm from systemd or the server, not from the plugin.
+>
+  curl -fsS \
+    -H "Authorization: Bearer $MEMOS_TOKEN" \
+    "$MEMOS_HOST/api/v1/memos?pageSize=1&state=NORMAL&orderBy=update_time%20desc" \
+    >/dev/null
+<
+
+For NixOS/systemd, run the keepalive from a service using the same secret env
+file:
+>
+  systemd.services.memos-list-keepalive = {
+    serviceConfig = {
+      Type = "oneshot";
+      EnvironmentFile = config.sops.templates."memos.env".path;
+      ExecStart = "${pkgs.curl}/bin/curl -fsS -H \"Authorization: Bearer $MEMOS_TOKEN\" \"$MEMOS_HOST/api/v1/memos?pageSize=1&state=NORMAL&orderBy=update_time%20desc\"";
+    };
+  };
+
+  systemd.timers.memos-list-keepalive = {
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      OnBootSec = "2min";
+      OnUnitActiveSec = "25min";
+    };
+  };
+<
+
+`pageSize=1` is enough to exercise the list path. The plugin does not run this
+keepalive itself, so the default request model stays explicit and minimal.
+
 ==============================================================================
  vim:tw=78:ts=8:ft=help:norl:

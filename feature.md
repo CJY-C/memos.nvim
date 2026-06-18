@@ -8,6 +8,7 @@ The core plugin now prioritizes a fast path: one request for list, one request f
 - Copy memo ID.
 - Local-only list formatting options.
 - Basic filter input that maps directly to one server-side CEL query.
+- Stale list cache that renders the last successful list immediately while a background refresh runs.
 
 ## Request-Heavy Features
 
@@ -26,3 +27,4 @@ The core plugin now prioritizes a fast path: one request for list, one request f
 - Request-heavy features should be opt-in and disabled by default.
 - `scripts/latency-test.sh` should be extended when a feature claims to improve or preserve speed.
 - README and `doc/memos.nvim.txt` must be updated with any restored command, keymap, or config field.
+- Stale cache must define freshness indicators and edit synchronization behavior before implementation.

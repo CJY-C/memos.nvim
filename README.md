@@ -152,6 +152,41 @@ If `connect` is high, inspect network/proxy path. If `ttfb` is high while connec
 
 `scripts/cold-order-by-test.sh` runs list-only tests for several `orderBy` values and sleeps 30 minutes between them by default. Override the pause with `--sleep-seconds N` when you need a shorter local check.
 
+### Server-side list keepalive
+
+If latency output shows low `connect` time but high `ttfb`, the slow part is likely the Memos server or database handling the list request. In that case, a server-side keepalive is more appropriate than adding plugin background traffic.
+
+Keep the real list path warm, not just `auth/me`:
+
+```sh
+curl -fsS \
+  -H "Authorization: Bearer $MEMOS_TOKEN" \
+  "$MEMOS_HOST/api/v1/memos?pageSize=1&state=NORMAL&orderBy=update_time%20desc" \
+  >/dev/null
+```
+
+For NixOS/systemd, run the keepalive from a service with the same secret env file:
+
+```nix
+systemd.services.memos-list-keepalive = {
+  serviceConfig = {
+    Type = "oneshot";
+    EnvironmentFile = config.sops.templates."memos.env".path;
+    ExecStart = "${pkgs.curl}/bin/curl -fsS -H \"Authorization: Bearer $MEMOS_TOKEN\" \"$MEMOS_HOST/api/v1/memos?pageSize=1&state=NORMAL&orderBy=update_time%20desc\"";
+  };
+};
+
+systemd.timers.memos-list-keepalive = {
+  wantedBy = [ "timers.target" ];
+  timerConfig = {
+    OnBootSec = "2min";
+    OnUnitActiveSec = "25min";
+  };
+};
+```
+
+`pageSize=1` is enough to exercise the list path. The plugin does not run this keepalive itself so the default request model stays explicit and minimal.
+
 ## Development
 
 Smoke check:
