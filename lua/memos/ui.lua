@@ -8,6 +8,7 @@ local last_float_buf = nil
 local memos_cache = {}
 local list_items = {}
 local current_page_token = nil
+local current_filter = ""
 
 local function is_float_window(win)
 	local cfg = vim.api.nvim_win_get_config(win)
@@ -105,6 +106,53 @@ local function first_line(content)
 	return vim.trim(content:match("^[^\n]*") or "")
 end
 
+local function cel_string(value)
+	value = tostring(value or "")
+	value = value:gsub("\\", "\\\\")
+	value = value:gsub('"', '\\"')
+	value = value:gsub("\n", "\\n")
+	return '"' .. value .. '"'
+end
+
+local function looks_like_cel_filter(input)
+	return input:match("content%.contains%s*%(")
+		or input:match("%f[%w]tags%f[%W]")
+		or input:match("%s+in%s+tags")
+		or input:match("&&")
+		or input:match("%|%|")
+		or input:match("[<>=!]=")
+end
+
+function M.build_search_filter(input)
+	local trimmed = vim.trim(input or "")
+	if trimmed == "" then
+		return ""
+	end
+	if looks_like_cel_filter(trimmed) then
+		return trimmed
+	end
+
+	local tags = {}
+	local text_terms = {}
+	for token in trimmed:gmatch("%S+") do
+		if token:sub(1, 1) == "#" and #token > 1 then
+			table.insert(tags, token:sub(2))
+		else
+			table.insert(text_terms, token)
+		end
+	end
+
+	local parts = {}
+	local text = table.concat(text_terms, " ")
+	if text ~= "" then
+		table.insert(parts, "content.contains(" .. cel_string(text) .. ")")
+	end
+	for _, tag in ipairs(tags) do
+		table.insert(parts, cel_string(tag) .. " in tags")
+	end
+	return table.concat(parts, " && ")
+end
+
 local function display_date(memo)
 	local value = memo.update_time or memo.create_time or ""
 	if value == "" then
@@ -147,9 +195,14 @@ function M.render_memos(data, append)
 
 		local lines = {}
 		local keys = config.keymaps.list
+		if current_filter ~= "" then
+			table.insert(lines, "Filter: " .. current_filter)
+			list_items[#lines] = { kind = "filter" }
+		end
 		if #memos_cache == 0 then
-			table.insert(lines, string.format("No memos. Press '%s' to refresh, '%s' to add, '%s' to quit.", keys.refresh_list, keys.add_memo, keys.quit))
-			list_items[1] = { kind = "empty" }
+			local message = current_filter == "" and "No memos." or "No memos match the current filter."
+			table.insert(lines, string.format("%s Press '%s' to refresh, '%s' to add, '%s' to quit.", message, keys.refresh_list, keys.add_memo, keys.quit))
+			list_items[#lines] = { kind = "empty" }
 		else
 			for index, memo in ipairs(memos_cache) do
 				local badges = {}
@@ -185,6 +238,7 @@ local function fetch_memos(opts)
 		page_token = opts.page_token,
 		state = config.list_state,
 		order_by = config.list_order_by,
+		filter = current_filter,
 	}, function(data, err)
 		if not data then
 			vim.schedule(function()
@@ -211,11 +265,33 @@ function M.show_memos_list(opts)
 		local keys = config.keymaps.list
 		set_keymap(buf, keys.edit_memo, '<Cmd>lua require("memos.ui").edit_selected_memo()<CR>')
 		set_keymap(buf, keys.add_memo, '<Cmd>lua require("memos.ui").create_memo_in_buffer()<CR>')
+		set_keymap(buf, keys.search_memos, '<Cmd>lua require("memos.ui").search_memos()<CR>')
 		set_keymap(buf, keys.refresh_list, '<Cmd>lua require("memos.ui").show_memos_list({ force_refresh = true })<CR>')
 		set_keymap(buf, keys.next_page, '<Cmd>lua require("memos.ui").load_next_page()<CR>')
 		set_keymap(buf, keys.quit, '<Cmd>lua require("memos.ui").quit_memos_list()<CR>')
 		vim.b[buf].memos_list_keymaps = true
 	end
+end
+
+function M.search_memos()
+	vim.ui.input({ prompt = "Search memos (empty clears): " }, function(input)
+		if input == nil then
+			return
+		end
+		local next_filter = M.build_search_filter(input)
+		current_filter = next_filter
+		memos_cache = {}
+		list_items = {}
+		current_page_token = nil
+		focus_list_buf()
+		set_list_lines({ next_filter == "" and "Loading memos..." or "Loading filtered memos..." })
+		if next_filter == "" then
+			vim.notify("Memos search cleared.")
+		else
+			vim.notify("Memos search filter applied.")
+		end
+		fetch_memos({ append = false })
+	end)
 end
 
 function M.toggle_memos_list()
@@ -481,6 +557,7 @@ function M.on_account_switched()
 	memos_cache = {}
 	list_items = {}
 	current_page_token = nil
+	current_filter = ""
 	if list_buf and vim.api.nvim_buf_is_valid(list_buf) and vim.fn.bufwinid(list_buf) ~= -1 then
 		M.show_memos_list({ force_refresh = true })
 	end

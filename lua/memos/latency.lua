@@ -112,6 +112,7 @@ local function run_once(opts, run_index)
 	local failures = 0
 	local page_size = tonumber(opts.page_size) or require("memos").config.page_size or 50
 	local order_by = opts.order_by or require("memos").config.list_order_by
+	local filter = opts.filter or ""
 
 	if opts.runs > 1 then
 		print(string.format("run %d/%d", run_index, opts.runs))
@@ -122,6 +123,7 @@ local function run_once(opts, run_index)
 			page_size = page_size,
 			state = require("memos").config.list_state,
 			order_by = order_by,
+			filter = filter,
 		}, done)
 	end)
 	print_step(
@@ -176,6 +178,7 @@ function M.run(opts)
 	opts.runs = tonumber(opts.runs or os.getenv("MEMOS_LATENCY_RUNS")) or 1
 	opts.page_size = tonumber(opts.page_size or os.getenv("MEMOS_LATENCY_PAGE_SIZE"))
 	opts.order_by = opts.order_by or os.getenv("MEMOS_LATENCY_ORDER_BY")
+	opts.filter = opts.filter or os.getenv("MEMOS_LATENCY_FILTER") or ""
 	opts.skip_write = opts.skip_write == true or env_bool("MEMOS_LATENCY_SKIP_WRITE")
 	opts.warmup = opts.warmup == true or env_bool("MEMOS_LATENCY_WARMUP")
 	opts.samples = {}
@@ -192,6 +195,9 @@ function M.run(opts)
 	print("host: " .. cfg.host)
 	print("page_size: " .. tostring(opts.page_size or cfg.page_size or 50))
 	print("order_by: " .. tostring(opts.order_by or cfg.list_order_by or ""))
+	if opts.filter ~= "" then
+		print("filter: " .. opts.filter)
+	end
 	print("runs: " .. tostring(opts.runs))
 	if opts.skip_write then
 		print("write: skipped")

@@ -41,6 +41,7 @@ List buffer:
 >
   <CR>           Edit selected memo
   a              Create memo
+  s              Search/filter memos on the server
   r              Refresh list
   .              Load next page
   q              Quit list
@@ -71,8 +72,27 @@ Example:
       height = 0.85,
       border = "rounded",
     },
+    keymaps = {
+      list = {
+        add_memo = "a",
+        edit_memo = "<CR>",
+        search_memos = "s",
+        refresh_list = "r",
+        next_page = ".",
+        quit = "q",
+      },
+      buffer = {
+        save = "<leader>ms",
+        back_to_list = "<Esc>",
+      },
+    },
   })
 <
+
+List search uses the Memos server-side filter parameter and issues one list
+request per search. Plain text becomes content.contains("..."), #tag becomes a
+tag filter, and raw CEL filter expressions are passed through. Empty search
+input clears the filter. It does not fetch extra pages for local fuzzy search.
 
 Credentials may also come from a systemd-style env file:
 >
@@ -141,6 +161,7 @@ Run:
   ./scripts/latency-test.sh --env-file /run/secrets-rendered/memos.env --skip-write --runs 5
   ./scripts/latency-test.sh --env-file /run/secrets-rendered/memos.env --page-size 1 --warmup
   ./scripts/latency-test.sh --env-file /run/secrets-rendered/memos.env --skip-write --order-by "create_time desc"
+  ./scripts/latency-test.sh --env-file /run/secrets-rendered/memos.env --skip-write --filter 'content.contains("todo")'
   ./scripts/cold-order-by-test.sh --env-file /run/secrets-rendered/memos.env
 <
 
@@ -154,6 +175,7 @@ Useful flags:
   --runs N        Run multiple rounds
   --page-size N   Compare list latency for different page sizes
   --order-by V    Compare list latency for different server-side sorting
+  --filter V      Compare list latency with a Memos CEL server-side filter
   --skip-write    Only measure list requests
   --warmup        Run a lightweight auth request before measured requests
 <

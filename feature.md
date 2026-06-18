@@ -7,7 +7,6 @@ The core plugin now prioritizes a fast path: one request for list, one request f
 - Split and vertical split edit commands.
 - Copy memo ID.
 - Local-only list formatting options.
-- Basic filter input that maps directly to one server-side CEL query.
 - Stale list cache that renders the last successful list immediately while a background refresh runs.
 
 ## Request-Heavy Features

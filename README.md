@@ -92,6 +92,7 @@ List buffer:
 | --- | --- |
 | `<CR>` | Edit selected memo |
 | `a` | Create memo |
+| `s` | Search/filter memos on the server |
 | `r` | Refresh list |
 | `.` | Load next page |
 | `q` | Quit list |
@@ -120,10 +121,26 @@ require("memos").setup({
     height = 0.85,
     border = "rounded",
   },
+  keymaps = {
+    list = {
+      add_memo = "a",
+      edit_memo = "<CR>",
+      search_memos = "s",
+      refresh_list = "r",
+      next_page = ".",
+      quit = "q",
+    },
+    buffer = {
+      save = "<leader>ms",
+      back_to_list = "<Esc>",
+    },
+  },
 })
 ```
 
 Credential priority is explicit `host`/`token`, then `env_file`, then `MEMOS_HOST`/`MEMOS_TOKEN`. The plugin does not persist accounts; configure credentials declaratively through nixvim, `env_file`, or process env.
+
+List search uses the Memos server-side `filter` parameter and still issues one list request per search. Plain text becomes `content.contains("...")`, `#tag` becomes a tag filter, and raw CEL filter expressions are passed through. Empty search input clears the filter. It does not fetch extra pages for local fuzzy search.
 
 With Nix/sops, keep the token scoped to the program that needs it:
 
@@ -151,6 +168,7 @@ MEMOS_ENV_FILE=/run/secrets-rendered/memos.env ./scripts/latency-test.sh
 ./scripts/latency-test.sh --env-file /run/secrets-rendered/memos.env --skip-write --runs 5
 ./scripts/latency-test.sh --env-file /run/secrets-rendered/memos.env --page-size 1 --warmup
 ./scripts/latency-test.sh --env-file /run/secrets-rendered/memos.env --skip-write --order-by "create_time desc"
+./scripts/latency-test.sh --env-file /run/secrets-rendered/memos.env --skip-write --filter 'content.contains("todo")'
 ./scripts/cold-order-by-test.sh --env-file /run/secrets-rendered/memos.env
 ```
 
@@ -163,6 +181,7 @@ Useful flags:
 - `--runs N`: run multiple benchmark rounds and print min/avg/max.
 - `--page-size N`: compare list latency for different page sizes.
 - `--order-by VALUE`: compare list latency for different server-side sorting.
+- `--filter VALUE`: compare list latency with a Memos CEL server-side filter.
 - `--skip-write`: only measure list requests.
 - `--warmup`: run a lightweight auth request before measured requests.
 

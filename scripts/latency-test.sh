@@ -6,6 +6,7 @@ ENV_FILE="${MEMOS_ENV_FILE:-}"
 RUNS="${MEMOS_LATENCY_RUNS:-}"
 PAGE_SIZE="${MEMOS_LATENCY_PAGE_SIZE:-}"
 ORDER_BY="${MEMOS_LATENCY_ORDER_BY:-}"
+FILTER="${MEMOS_LATENCY_FILTER:-}"
 SKIP_WRITE="${MEMOS_LATENCY_SKIP_WRITE:-}"
 WARMUP="${MEMOS_LATENCY_WARMUP:-}"
 
@@ -43,6 +44,14 @@ while [[ $# -gt 0 ]]; do
       ORDER_BY="$2"
       shift 2
       ;;
+    --filter)
+      if [[ $# -lt 2 ]]; then
+        echo "error: --filter requires a value" >&2
+        exit 1
+      fi
+      FILTER="$2"
+      shift 2
+      ;;
     --skip-write)
       SKIP_WRITE="1"
       shift
@@ -52,15 +61,16 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     -h|--help)
-      echo "usage: $0 [--env-file /path/to/memos.env] [--runs N] [--page-size N] [--order-by VALUE] [--skip-write] [--warmup]"
+      echo "usage: $0 [--env-file /path/to/memos.env] [--runs N] [--page-size N] [--order-by VALUE] [--filter VALUE] [--skip-write] [--warmup]"
       echo
-      echo "Credentials can come from saved memos.nvim accounts, MEMOS_HOST/MEMOS_TOKEN,"
-      echo "or a systemd EnvironmentFile passed with --env-file or MEMOS_ENV_FILE."
+      echo "Credentials can come from MEMOS_HOST/MEMOS_TOKEN or a systemd EnvironmentFile"
+      echo "passed with --env-file or MEMOS_ENV_FILE."
       echo
       echo "Options:"
       echo "  --runs N        run the benchmark N times"
       echo "  --page-size N   list N memos per request"
       echo "  --order-by V    override list orderBy, for example 'create_time desc'"
+      echo "  --filter V      pass a Memos CEL list filter, for example 'content.contains(\"todo\")'"
       echo "  --skip-write    only test list requests"
       echo "  --warmup        run a lightweight auth request before measuring"
       exit 0
@@ -88,6 +98,9 @@ if [[ -n "${PAGE_SIZE}" ]]; then
 fi
 if [[ -n "${ORDER_BY}" ]]; then
   export MEMOS_LATENCY_ORDER_BY="${ORDER_BY}"
+fi
+if [[ -n "${FILTER}" ]]; then
+  export MEMOS_LATENCY_FILTER="${FILTER}"
 fi
 if [[ -n "${SKIP_WRITE}" ]]; then
   export MEMOS_LATENCY_SKIP_WRITE="${SKIP_WRITE}"

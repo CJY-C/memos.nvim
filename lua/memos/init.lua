@@ -18,6 +18,7 @@ M.config = {
 		list = {
 			add_memo = "a",
 			edit_memo = "<CR>",
+			search_memos = "s",
 			refresh_list = "r",
 			next_page = ".",
 			quit = "q",
