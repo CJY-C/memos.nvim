@@ -275,6 +275,8 @@ function M.show_memos_list(opts)
 	if not vim.b[buf].memos_list_keymaps then
 		local keys = config.keymaps.list
 		set_keymap(buf, keys.edit_memo, '<Cmd>lua require("memos.ui").edit_selected_memo()<CR>')
+		set_keymap(buf, keys.edit_memo_split, '<Cmd>lua require("memos.ui").edit_selected_memo_split()<CR>')
+		set_keymap(buf, keys.edit_memo_vsplit, '<Cmd>lua require("memos.ui").edit_selected_memo_vsplit()<CR>')
 		set_keymap(buf, keys.add_memo, '<Cmd>lua require("memos.ui").create_memo_in_buffer()<CR>')
 		set_keymap(buf, keys.search_memos, '<Cmd>lua require("memos.ui").search_memos()<CR>')
 		set_keymap(buf, keys.copy_memo_id, '<Cmd>lua require("memos.ui").copy_selected_memo_id()<CR>')
@@ -350,6 +352,20 @@ function M.load_next_page()
 end
 
 function M.open_edit_buffer(content, open_cmd)
+	if open_cmd == "split" or open_cmd == "vsplit" then
+		local alternate_win = vim.fn.win_getid(vim.fn.winnr("#"))
+		if alternate_win ~= 0 and vim.api.nvim_win_is_valid(alternate_win) and not is_float_window(alternate_win) then
+			vim.api.nvim_set_current_win(alternate_win)
+		end
+		vim.cmd(open_cmd)
+		local buf = vim.api.nvim_create_buf(false, true)
+		vim.api.nvim_set_current_buf(buf)
+		if type(content) == "string" then
+			vim.api.nvim_buf_set_lines(0, 0, -1, false, vim.split(content, "\n"))
+		end
+		return vim.api.nvim_get_current_buf()
+	end
+
 	local used_float = false
 	if config.window and config.window.enable_float then
 		local float_win = find_memos_float_window()
@@ -448,7 +464,7 @@ local function current_list_item()
 	return list_items[line]
 end
 
-function M.edit_selected_memo()
+local function edit_selected_memo_with(open_cmd)
 	local item = current_list_item()
 	if not item then
 		return
@@ -459,8 +475,20 @@ function M.edit_selected_memo()
 	end
 	local memo = item.kind == "memo" and memos_cache[item.index] or nil
 	if memo then
-		M.open_memo_for_edit(memo, "enew")
+		M.open_memo_for_edit(memo, open_cmd)
 	end
+end
+
+function M.edit_selected_memo()
+	edit_selected_memo_with("enew")
+end
+
+function M.edit_selected_memo_split()
+	edit_selected_memo_with("split")
+end
+
+function M.edit_selected_memo_vsplit()
+	edit_selected_memo_with("vsplit")
 end
 
 function M.copy_selected_memo_id()

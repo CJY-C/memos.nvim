@@ -91,6 +91,8 @@ List buffer:
 | Key | Description |
 | --- | --- |
 | `<CR>` | Edit selected memo |
+| `o` | Edit selected memo in a horizontal split |
+| `v` | Edit selected memo in a vertical split |
 | `a` | Create memo |
 | `s` | Search/filter memos on the server |
 | `y` | Copy selected memo ID |
@@ -126,6 +128,8 @@ require("memos").setup({
     list = {
       add_memo = "a",
       edit_memo = "<CR>",
+      edit_memo_split = "o",
+      edit_memo_vsplit = "v",
       search_memos = "s",
       copy_memo_id = "y",
       refresh_list = "r",
@@ -145,6 +149,8 @@ Credential priority is explicit `host`/`token`, then `env_file`, then `MEMOS_HOS
 List search uses the Memos server-side `filter` parameter and still issues one list request per search. Plain text becomes `content.contains("...")`, `#tag` becomes a tag filter, and raw CEL filter expressions are passed through. Empty search input clears the filter. It does not fetch extra pages for local fuzzy search.
 
 Copying a memo ID uses the memo resource name already present in the list response, such as `memos/abc123`. It does not issue any API request.
+
+Split editing also uses the memo content already present in the list response. It does not issue any extra API request.
 
 With Nix/sops, keep the token scoped to the program that needs it:
 

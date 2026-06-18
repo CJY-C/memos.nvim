@@ -40,6 +40,8 @@ your plugin manager or nixvim, for example `<leader>mm` -> `:Memos`.
 List buffer:
 >
   <CR>           Edit selected memo
+  o              Edit selected memo in a horizontal split
+  v              Edit selected memo in a vertical split
   a              Create memo
   s              Search/filter memos on the server
   y              Copy selected memo ID
@@ -77,6 +79,8 @@ Example:
       list = {
         add_memo = "a",
         edit_memo = "<CR>",
+        edit_memo_split = "o",
+        edit_memo_vsplit = "v",
         search_memos = "s",
         copy_memo_id = "y",
         refresh_list = "r",
@@ -98,6 +102,9 @@ input clears the filter. It does not fetch extra pages for local fuzzy search.
 
 Copying a memo ID uses the memo resource name already present in the list
 response, such as memos/abc123. It does not issue any API request.
+
+Split editing also uses the memo content already present in the list response.
+It does not issue any extra API request.
 
 Credentials may also come from a systemd-style env file:
 >

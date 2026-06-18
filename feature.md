@@ -4,7 +4,6 @@ The core plugin now prioritizes a fast path: one request for list, one request f
 
 ## Request-Light Features
 
-- Split and vertical split edit commands.
 - Local-only list formatting options.
 - Stale list cache that renders the last successful list immediately while a background refresh runs.
 
