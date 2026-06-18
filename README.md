@@ -93,6 +93,7 @@ List buffer:
 | `<CR>` | Edit selected memo |
 | `a` | Create memo |
 | `s` | Search/filter memos on the server |
+| `y` | Copy selected memo ID |
 | `r` | Refresh list |
 | `.` | Load next page |
 | `q` | Quit list |
@@ -126,6 +127,7 @@ require("memos").setup({
       add_memo = "a",
       edit_memo = "<CR>",
       search_memos = "s",
+      copy_memo_id = "y",
       refresh_list = "r",
       next_page = ".",
       quit = "q",
@@ -141,6 +143,8 @@ require("memos").setup({
 Credential priority is explicit `host`/`token`, then `env_file`, then `MEMOS_HOST`/`MEMOS_TOKEN`. The plugin does not persist accounts; configure credentials declaratively through nixvim, `env_file`, or process env.
 
 List search uses the Memos server-side `filter` parameter and still issues one list request per search. Plain text becomes `content.contains("...")`, `#tag` becomes a tag filter, and raw CEL filter expressions are passed through. Empty search input clears the filter. It does not fetch extra pages for local fuzzy search.
+
+Copying a memo ID uses the memo resource name already present in the list response, such as `memos/abc123`. It does not issue any API request.
 
 With Nix/sops, keep the token scoped to the program that needs it:
 

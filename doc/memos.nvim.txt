@@ -42,6 +42,7 @@ List buffer:
   <CR>           Edit selected memo
   a              Create memo
   s              Search/filter memos on the server
+  y              Copy selected memo ID
   r              Refresh list
   .              Load next page
   q              Quit list
@@ -77,6 +78,7 @@ Example:
         add_memo = "a",
         edit_memo = "<CR>",
         search_memos = "s",
+        copy_memo_id = "y",
         refresh_list = "r",
         next_page = ".",
         quit = "q",
@@ -93,6 +95,9 @@ List search uses the Memos server-side filter parameter and issues one list
 request per search. Plain text becomes content.contains("..."), #tag becomes a
 tag filter, and raw CEL filter expressions are passed through. Empty search
 input clears the filter. It does not fetch extra pages for local fuzzy search.
+
+Copying a memo ID uses the memo resource name already present in the list
+response, such as memos/abc123. It does not issue any API request.
 
 Credentials may also come from a systemd-style env file:
 >

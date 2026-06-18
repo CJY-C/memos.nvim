@@ -179,6 +179,17 @@ local function set_keymap(buf, key, rhs)
 	vim.api.nvim_buf_set_keymap(buf, "n", key, rhs, { noremap = true, silent = true })
 end
 
+local function copy_text(text)
+	if vim.fn.has("clipboard") == 1 then
+		local ok = pcall(vim.fn.setreg, "+", text)
+		if ok then
+			return "+"
+		end
+	end
+	vim.fn.setreg('"', text)
+	return '"'
+end
+
 function M.render_memos(data, append)
 	vim.schedule(function()
 		if not data then
@@ -266,6 +277,7 @@ function M.show_memos_list(opts)
 		set_keymap(buf, keys.edit_memo, '<Cmd>lua require("memos.ui").edit_selected_memo()<CR>')
 		set_keymap(buf, keys.add_memo, '<Cmd>lua require("memos.ui").create_memo_in_buffer()<CR>')
 		set_keymap(buf, keys.search_memos, '<Cmd>lua require("memos.ui").search_memos()<CR>')
+		set_keymap(buf, keys.copy_memo_id, '<Cmd>lua require("memos.ui").copy_selected_memo_id()<CR>')
 		set_keymap(buf, keys.refresh_list, '<Cmd>lua require("memos.ui").show_memos_list({ force_refresh = true })<CR>')
 		set_keymap(buf, keys.next_page, '<Cmd>lua require("memos.ui").load_next_page()<CR>')
 		set_keymap(buf, keys.quit, '<Cmd>lua require("memos.ui").quit_memos_list()<CR>')
@@ -449,6 +461,17 @@ function M.edit_selected_memo()
 	if memo then
 		M.open_memo_for_edit(memo, "enew")
 	end
+end
+
+function M.copy_selected_memo_id()
+	local item = current_list_item()
+	local memo = item and item.kind == "memo" and memos_cache[item.index] or nil
+	if not memo or not memo.name or memo.name == "" then
+		vim.notify("No memo ID on the current line.", vim.log.levels.INFO)
+		return
+	end
+	local register = copy_text(memo.name)
+	vim.notify("Copied memo ID to " .. register .. ": " .. memo.name)
 end
 
 function M.refresh_list_silently()
