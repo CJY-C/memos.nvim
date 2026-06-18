@@ -1,340 +1,150 @@
-*memos.nvim.txt*      For Neovim | English and 简体中文
+*memos.nvim.txt*        Fast Memos client for Neovim
 
 ==============================================================================
-CONTENTS                                      *memos.nvim-contents*
+CONTENTS                                                   *memos.nvim-contents*
 
-  1. About....................................|memos-about|
-  2. Features.................................|memos-features|
-  3. Installation.............................|memos-installation|
-  4. Usage....................................|memos-usage|
-  5. Configuration............................|memos-configuration|
-
-==============================================================================
-1. About                                                *memos-about*
-
-A Neovim plugin to interact with Memos (https://github.com/usememos/memos)
-right inside the editor. List, create, edit, and delete your memos without
-leaving Neovim.
+1. Introduction                                      |memos.nvim-introduction|
+2. Commands                                          |memos.nvim-commands|
+3. Keymaps                                           |memos.nvim-keymaps|
+4. Configuration                                     |memos.nvim-configuration|
+5. Latency Test                                      |memos.nvim-latency|
 
 ==============================================================================
-2. Features                                           *memos-features*
+INTRODUCTION                                           *memos.nvim-introduction*
 
-- *List Memos*: View, search, and paginate through your memos in a floating
-  window (with pinned/archived indicators).
-- *Create & Edit*: Create new memos or edit existing ones in a dedicated
-  buffer with `markdown` filetype support.
-- *Edit Metadata*: Update memo metadata (visibility, pinned, display time,
-  create time, state, relations) from the list.
-  Relation edits prompt for append/delete/replace and accept multiple memo
-  IDs (comma-separated, defaulting to the clipboard).
-  Metadata prompts include a clipped memo title for context.
-- *Relations Tree*: Toggle related memos under each list item with `gr`
-  and press `<CR>` on a relation to open it. Memos with relations show
-  `.. <→X><←Y>` counts (out/in); `+` indicates more results. Relations use
-  `→` (referenced) and `←` (referencing) prefixes; empty directions are
-  omitted and relation lines display titles only.
-- *Attachments in List (v0.25+)*: Show attachment counts on memo lines and
-  toggle attachment trees with `ga`/`gA`. Press `<CR>` on an attachment line
-  to open an action menu (open URL / copy URL / copy filename).
-  Time fields expect ISO 8601 / RFC3339. If you omit a timezone (for
-  example `2025-02-07T12:34:56`), the plugin assumes your local timezone.
-- *Delete Memos*: Delete memos directly from the list.
-- *Customizable*: Configure API endpoints, keymaps, and more.
-- *First-time Setup*: On first launch, you will be prompted to enter your Memos host and token. You can choose to save these permanently.
+memos.nvim is a small Neovim client for Memos. It keeps the core path focused
+on listing memos, creating memos, editing memos, and saving memo content.
+
+Only the latest Memos /api/v1 API shape is supported. Older API compatibility,
+templates, metadata editing, relations, attachments, delete flows, and fuzzy
+search are intentionally outside the core implementation.
 
 ==============================================================================
-3. Installation                                   *memos-installation*
-
-Requires |plenary.nvim|.
-
-Install with |lazy.nvim|:
->lua
--- lua/plugins/memos.lua
-require("memos").setup({
-  active_user = "default@http://127.0.0.1:5230",
-  users = {
-    { username = "default", host = "http://127.0.0.1:5230", token = "token_1" },
-  },
-
-  -- Number of memos to fetch per page
-  page_size = 50,
-  -- API compatibility mode: "auto", "v0.26", "v0.25", "v0.21"
-  -- "auto" tries v0.26 first, then falls back to v0.25 and v0.21.
-  -- "modern"/"legacy" are deprecated aliases for v0.26/v0.25.
-  -- "auto" tries v0.26 first, then falls back to v0.25 and v0.21.
-  -- "modern"/"legacy" are deprecated aliases for v0.26/v0.25.
-  api_version = "auto",
-  -- Default list sort order (v0.25/v0.26)
-  list_sort_default = "pinned desc, display_time desc",
-  -- Presets used by <S-s> to select sort in list
-  list_sort_presets = {
-    "pinned desc, display_time desc",
-    "display_time desc",
-    "create_time desc",
-  },
-  -- Default state to request in list (v0.25/v0.26/v0.21)
-  list_state_default = "NORMAL",
-  auto_save = false,
-  metadata_title_max_len = 50,
-  confirm_copy = false,
-  list_relations_limit = 20,
-  list_relations_mode = "both",
-  list_relations_auto_expand = true,
-  list_attachments_limit = 20,
-  list_attachments_auto_expand = false,
-  -- Window configuration
-  window = {
-    enable_float = false, -- Set to true to open the list in a floating window
-    width = 0.85,         -- Width ratio (0.0 to 1.0)
-    height = 0.85,        -- Height ratio (0.0 to 1.0)
-    border = "rounded",   -- Border style: "single", "double", "rounded", "solid", "shadow"
-  },
-  -- Set to false or nil to disable a keymap
-  keymaps = {
-    -- Keymap to open the memos list. Default: <leader>mm
-    start_memos = "<leader>mm",
-    -- Keymap to create memo from template. Default: <leader>mt
-    create_from_template = "<leader>mt",
-
-    -- Keymaps for the memo list window
-    list = {
-      add_memo = "a",
-      create_from_template = "t",
-      copy_memo_id = "y",
-      delete_memo = "d",
-      delete_memo_visual = "dd",
-      smart_delete = "D",
-      edit_memo = "<CR>",
-      vsplit_edit_memo = "<C-v>",
-      split_edit_memo = "<C-s>",
-      toggle_select_next = "<Tab>",
-      toggle_select_prev = "<S-Tab>",
-      toggle_relations = "gr",
-      toggle_relations_all = "gR",
-      toggle_attachments = "ga",
-      toggle_attachments_all = "gA",
-      paste_memo = "p",
-      search_memos = { "s", "f" },
-      search_fuzzy = "<S-f>",
-      refresh_list = "r",
-      next_page = ".",
-      toggle_sort = "<S-s>",
-      toggle_state = "<S-a>",
-      quit = "q",
-    },
-    -- Keymaps for the editing/creating buffer
-    buffer = {
-      save = "<leader>ms",
-    },
-  },
-})
-<
-Notes on API versions:
-- v0.25.3 uses `/api/v1/memos` list params (`pageSize`, `pageToken`, `state`, `orderBy`).
-- v0.25.3 sorting supports `pinned`, `display_time`, `create_time`,
-  `update_time`, `name` (`asc`/`desc`).
-- v0.25.3 current session endpoint is `GET /api/v1/auth/sessions/current`.
-- v0.25.3 memo updates require `updateMask` (handled by plugin).
-- v0.25.3 supports state toggle filtering; fuzzy hierarchical `#tag`
-  matching is applied locally by plugin (may request extra pages).
-- v0.25.3 supports memo attachments in list view (summary + expandable tree).
-- v0.21 uses offset pagination; list sort is not available.
-- v0.21 search accepts plain text plus #tag (no CEL filters).
-- v0.21 metadata does not support display time; relations use relation endpoints.
-- v0.21 does not support memo attachments in list view.
-
-Template storage:
-- `template_source = "local"` stores templates in
-  `~/.local/share/nvim/memos.nvim/memos_templates.json`.
-- `template_source = "online"` stores templates as archived memos tagged
-  with `#type/template`.
-- `:MemosCreateFromTemplate` removes `#type/template` from new memo content.
-
-==============================================================================
-4. Usage                                                  *memos-usage*
-
-COMMANDS                                            *memos-commands*
+COMMANDS                                                   *memos.nvim-commands*
 
 *:Memos*
-  Toggles the list window (float or non-float); cached content is kept until a manual refresh.
+  Toggle the memo list.
 
 *:MemosCreate*
-  Opens a new buffer to create a new memo.
+  Open a new memo buffer.
 
 *:MemosSave*
-  (Available in the memo buffer) Saves the memo you are currently
-  creating or editing.
+  Save the current memo buffer. This command is available in memo buffers.
 
 *:MemosSwitch*
-  Select and switch to another saved account.
+  Switch the active saved Memos account.
 
 *:MemosUserAdd*
-  Add a new account (username, host, token) interactively.
+  Add a saved Memos account.
 
 *:MemosUserDelete*
-  Delete a saved account interactively.
-
-*:MemosModifyMeta*
-  (In the memo buffer) Modify memo metadata. New memo will be created first.
-
-*:MemosTemplateCreate*
-  Create a new memo template.
-
-*:MemosTemplateEdit*
-  Select and edit an existing template.
-
-*:MemosTemplateDelete*
-  Select and delete an existing template.
-
-*:MemosCreateFromTemplate*
-  Create a new memo from a template.
-
-*:w*
-  (In the memo buffer) Save without switching windows; the list refreshes
-  in the background.
-
-Untouched memo buffers are not treated as modified, so Neovim should only
-ask to save when content has actually changed.
-
-If MEMOS_HOST or MEMOS_TOKEN is set, account switching is disabled for
-the current session.
-
-When floating window is enabled, memo/template edits open in the same float and
-are restored when toggling |:Memos|.
-
-Search supports plain text, `#tag` shorthand, or raw CEL. Examples:
-`meeting`, `#work #todo`, `content.contains("foo") && "work" in tags`.
-
-DEFAULT KEYMAPS                                     *memos-keymaps*
-
-*Global Keymap:*
-| Key                | Action                               |
-|--------------------|--------------------------------------|
-| `<leader>mm`       | Open the Memos list                  |
-| `<leader>mt`       | Create a memo from template          |
-
-*In the Memo List Window:*
-| Key                | Action                               |
-|--------------------|--------------------------------------|
-| `a`                | Add a new memo                       |
-| `t`                | Create a memo from template          |
-| `y`                | Copy memo ID(s) to clipboard         |
-| `p`                | Paste memo ID from clipboard         |
-| `d` or `dd`        | Delete the selected memo / relation  |
-| `D`                | Smart delete: relation line deletes referenced memo; otherwise deletes selected memos, or falls back to `d` |
-| `<CR>`             | Edit memo; relation opens target; attachment opens action menu |
-| `<S-m>`            | Edit metadata for selected memos     |
-| `<Tab>`            | Toggle selection and move down       |
-| `<S-Tab>`          | Toggle selection and move up         |
-| `c`                | Clear selection                      |
-| `gr`               | Toggle relations tree                |
-| `gR`               | Toggle all relations trees           |
-| `ga`               | Toggle attachments tree              |
-| `gA`               | Toggle all attachments trees         |
-| `<C-s>`            | Edit the selected memo in a split    |
-| `<C-v>`            | Edit the selected memo in a vsplit   |
-| `m`                | Edit selected memo metadata (or referenced memo on relation line) |
-| `s` or `f`         | Search your memos                    |
-| `<S-f>`            | Fuzzy tag search (CEL only)          |
-| `r`                | Refresh the memo list                |
-| `.`                | Load the next page of memos          |
-| `<S-s>`            | Select list sort order               |
-| `<S-a>`            | Toggle memo state (NORMAL/ARCHIVED)  |
-| `q`                | Quit the list window                 |
-
-Note: `f` overrides Neovim's built-in find-char motion in the Memos list
-buffer only.
-
-*In the Edit/Create Buffer:*
-| Key                | Action                               |
-|--------------------|--------------------------------------|
-| `<leader>ms`       | Save the current memo                |
-| `<leader>me`       | Edit memo metadata                   |
+  Delete a saved Memos account.
 
 ==============================================================================
-5. Configuration                                *memos-configuration*
+KEYMAPS                                                     *memos.nvim-keymaps*
 
-You can override the default settings by passing a table to the `setup()`
-function.
-
-Default configuration:
->lua
--- lua/plugins/memos.lua
-require("memos").setup({
-  active_user = "default@http://127.0.0.1:5230",
-  users = {
-    { username = "default", host = "http://127.0.0.1:5230", token = "token_1" },
-    { username = "work", host = "http://10.0.0.8:5230", token = "token_2" },
-  },
-  auto_save = false,
-  metadata_title_max_len = 50,
-  confirm_copy = false,
-  list_relations_limit = 20,
-  list_relations_mode = "both",
-  list_relations_auto_expand = true,
-  list_attachments_limit = 20,
-  list_attachments_auto_expand = false,
-  -- Number of memos to fetch per page
-  page_size = 50,
-  -- API compatibility mode: "auto", "v0.26", "v0.25", "v0.21"
-  api_version = "auto",
-  -- Template source mode: "online", "local", "both"
-  template_source = "online",
-  -- Default list sort order (v0.25/v0.26)
-  list_sort_default = "pinned desc, display_time desc",
-  -- Presets used by <S-s> to select sort in list
-  list_sort_presets = {
-    "pinned desc, display_time desc",
-    "display_time desc",
-    "create_time desc",
-  },
-  -- Default state to request in list (v0.25/v0.26/v0.21)
-  list_state_default = "NORMAL",
-
-  -- Set to false or nil to disable a keymap
-  keymaps = {
-    -- Keymap to open the memos list. Default: <leader>mm
-    start_memos = "<leader>mm",
-    -- Keymap to create memo from template. Default: <leader>mt
-    create_from_template = "<leader>mt",
-
-    -- Keymaps for the memo list window
-    list = {
-      add_memo = "a",
-      create_from_template = "t",
-      copy_memo_id = "y",
-      delete_memo = "d",
-      delete_memo_visual = "dd",
-      smart_delete = "D",
-      edit_memo = "<CR>",
-      vsplit_edit_memo = "<C-v>",
-      split_edit_memo = "<C-s>",
-      toggle_select_next = "<Tab>",
-      toggle_select_prev = "<S-Tab>",
-      multi_edit_metadata = "<S-m>",
-      clear_selection = "c",
-      toggle_relations = "gr",
-      toggle_relations_all = "gR",
-      toggle_attachments = "ga",
-      toggle_attachments_all = "gA",
-      edit_metadata = "m",
-      paste_memo = "p",
-      search_memos = { "s", "f" },
-      search_fuzzy = "<S-f>",
-      refresh_list = "r",
-      next_page = ".",
-      toggle_sort = "<S-s>",
-      toggle_state = "<S-a>",
-      quit = "q",
-    },
-    -- Keymaps for the editing/creating buffer
-    buffer = {
-      save = "<leader>ms",
-      edit_metadata = "<leader>me",
-      -- Back to list from a memo
-      back_to_list = '<Esc>'
-    },
-  },
-})
+Global:
+>
+  <leader>mm     Toggle memo list
 <
-vim:tw=78:ts=8:ft=help:norl:
+
+List buffer:
+>
+  <CR>           Edit selected memo
+  a              Create memo
+  r              Refresh list
+  .              Load next page
+  q              Quit list
+<
+
+Memo buffer:
+>
+  <leader>ms     Save memo
+  <Esc>          Return to list
+<
+
+==============================================================================
+CONFIGURATION                                       *memos.nvim-configuration*
+
+Example:
+>
+  require("memos").setup({
+    host = "http://127.0.0.1:5230",
+    token = "your-token",
+    env_file = nil,
+    page_size = 50,
+    list_state = "NORMAL",
+    list_order_by = "pinned desc, update_time desc",
+    auto_save = false,
+    window = {
+      enable_float = true,
+      width = 0.85,
+      height = 0.85,
+      border = "rounded",
+    },
+  })
+<
+
+Credentials may also come from a systemd-style env file:
+>
+  require("memos").setup({
+    env_file = "/run/secrets-rendered/memos.env",
+  })
+<
+
+The file should contain:
+>
+  MEMOS_HOST=http://127.0.0.1:5230
+  MEMOS_TOKEN=your-token
+<
+
+MEMOS_HOST must include http:// or https://.
+
+Credential priority is explicit host/token, then env_file, then MEMOS_HOST and
+MEMOS_TOKEN, then saved accounts. Global shell environment variables work for
+temporary debugging, but are not recommended for long-lived use.
+
+With Nix/sops, a template such as `sops.templates."memos.env"` only generates a
+secret env file. It does not enter your interactive shell automatically. Use it
+from a service with:
+>
+  systemd.services.<service>.serviceConfig.EnvironmentFile =
+    config.sops.templates."memos.env".path;
+<
+
+==============================================================================
+LATENCY TEST                                             *memos.nvim-latency*
+
+Run:
+>
+  MEMOS_ENV_FILE=/run/secrets-rendered/memos.env ./scripts/latency-test.sh
+  ./scripts/latency-test.sh --env-file /run/secrets-rendered/memos.env
+  ./scripts/latency-test.sh --env-file /run/secrets-rendered/memos.env --skip-write --runs 5
+  ./scripts/latency-test.sh --env-file /run/secrets-rendered/memos.env --page-size 1 --warmup
+  ./scripts/latency-test.sh --env-file /run/secrets-rendered/memos.env --skip-write --order-by "create_time desc"
+  ./scripts/cold-order-by-test.sh --env-file /run/secrets-rendered/memos.env
+<
+
+The latency script uses a real Memos API and records list/create/update timing
+plus request count and curl timing details. It can also use saved accounts or
+credentials injected by a systemd service. It creates and updates a test memo
+unless --skip-write is used.
+
+Useful flags:
+>
+  --runs N        Run multiple rounds
+  --page-size N   Compare list latency for different page sizes
+  --order-by V    Compare list latency for different server-side sorting
+  --skip-write    Only measure list requests
+  --warmup        Run a lightweight auth request before measured requests
+<
+
+If connect time is high, inspect network/proxy path. If time to first byte is
+high while connect is low, inspect Memos server or database work.
+
+`scripts/cold-order-by-test.sh` runs list-only tests for several orderBy values
+and sleeps 30 minutes between them by default. Use `--sleep-seconds N` for a
+shorter local check.
+
+==============================================================================
+ vim:tw=78:ts=8:ft=help:norl:

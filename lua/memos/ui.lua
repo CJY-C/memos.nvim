@@ -3,96 +3,11 @@ local config = require("memos").config
 
 local M = {}
 
-local function get_capabilities()
-	return api.get_capabilities()
-end
-
+local list_buf = nil
+local last_float_buf = nil
 local memos_cache = {}
-local buf_id = nil
-local current_page_token = nil
-local current_user = nil
-local current_filter = nil
-local current_order_by = nil
-local current_sort_index = nil
-local current_state = nil
-local current_local_filter = nil
-local local_filter_notice_shown = false
-local invalid_sort_warned = {}
-local last_float_buf_id = nil
-local selected_memos = {}
 local list_items = {}
-local list_line_count = 0
-local relations_cache = {}
-local relations_expanded = {}
-local relation_title_cache = {}
-local relation_title_inflight = {}
-local attachments_cache = {}
-local attachments_expanded = {}
-local extract_memo_title
-local clip_title
-local ensure_relations_loaded
-local invalidate_relations_cache
-local ensure_attachments_loaded
-local resolve_sort_index
-local sanitize_order_by
-
-local function is_selected(memo)
-	return memo and memo.name and selected_memos[memo.name] == true
-end
-
-local function toggle_selected(memo)
-	if not memo or not memo.name then
-		return false
-	end
-	if selected_memos[memo.name] then
-		selected_memos[memo.name] = nil
-		return false
-	end
-	selected_memos[memo.name] = true
-	return true
-end
-
-local function clear_selection()
-	selected_memos = {}
-end
-
-local function reset_relations_state()
-	relations_cache = {}
-	relations_expanded = {}
-	relation_title_cache = {}
-	relation_title_inflight = {}
-	attachments_cache = {}
-	attachments_expanded = {}
-end
-
-local function selected_list()
-	local out = {}
-	for _, memo in ipairs(memos_cache) do
-		if memo and memo.name and selected_memos[memo.name] then
-			table.insert(out, memo.name)
-		end
-	end
-	return out
-end
-
-function M.on_account_switched()
-	current_user = nil
-	current_page_token = nil
-	memos_cache = {}
-	current_order_by = nil
-	current_sort_index = nil
-	current_state = nil
-	current_local_filter = nil
-	local_filter_notice_shown = false
-	clear_selection()
-	reset_relations_state()
-
-	if buf_id and vim.api.nvim_buf_is_valid(buf_id) and vim.fn.bufwinid(buf_id) ~= -1 then
-		M.show_memos_list(current_filter)
-	end
-end
-
-local create_float_window
+local current_page_token = nil
 
 local function is_float_window(win)
 	local cfg = vim.api.nvim_win_get_config(win)
@@ -100,13 +15,70 @@ local function is_float_window(win)
 end
 
 local function find_memos_float_window()
-	for _, w in ipairs(vim.api.nvim_list_wins()) do
-		local ok, v = pcall(vim.api.nvim_win_get_var, w, "memos_window")
-		if ok and v == true and vim.api.nvim_win_is_valid(w) then
-			return w
+	for _, win in ipairs(vim.api.nvim_list_wins()) do
+		local ok, value = pcall(vim.api.nvim_win_get_var, win, "memos_window")
+		if ok and value == true and vim.api.nvim_win_is_valid(win) then
+			return win
 		end
 	end
 	return nil
+end
+
+local function create_float_window(buf)
+	local width = math.floor(vim.o.columns * (config.window.width or 0.85))
+	local height = math.floor(vim.o.lines * (config.window.height or 0.85))
+	local row = math.floor((vim.o.lines - height) / 2)
+	local col = math.floor((vim.o.columns - width) / 2)
+
+	local win = vim.api.nvim_open_win(buf, true, {
+		relative = "editor",
+		row = row,
+		col = col,
+		width = width,
+		height = height,
+		style = "minimal",
+		border = config.window.border or "rounded",
+		title = " Memos ",
+		title_pos = "center",
+	})
+	vim.api.nvim_win_set_var(win, "memos_window", true)
+	last_float_buf = buf
+	return win
+end
+
+local function ensure_list_buf()
+	if list_buf and vim.api.nvim_buf_is_valid(list_buf) then
+		return list_buf
+	end
+	list_buf = vim.api.nvim_create_buf(false, true)
+	vim.api.nvim_buf_set_name(list_buf, "MemosList")
+	vim.bo[list_buf].buftype = "nofile"
+	vim.bo[list_buf].bufhidden = "hide"
+	vim.bo[list_buf].buflisted = false
+	vim.bo[list_buf].filetype = "memos_list"
+	vim.bo[list_buf].modifiable = false
+	vim.bo[list_buf].swapfile = false
+	return list_buf
+end
+
+local function focus_list_buf()
+	local buf = ensure_list_buf()
+	local win = vim.fn.bufwinid(buf)
+	if win ~= -1 then
+		vim.api.nvim_set_current_win(win)
+		return
+	end
+	if config.window and config.window.enable_float then
+		local float_win = find_memos_float_window()
+		if float_win then
+			vim.api.nvim_set_current_win(float_win)
+			vim.api.nvim_set_current_buf(buf)
+		else
+			create_float_window(buf)
+		end
+	else
+		vim.api.nvim_set_current_buf(buf)
+	end
 end
 
 local function count_normal_windows()
@@ -119,935 +91,174 @@ local function count_normal_windows()
 	return count
 end
 
-local function switch_away_and_wipe(current_buf)
-	local alt = vim.fn.bufnr("#")
-	if alt > 0 and vim.api.nvim_buf_is_valid(alt) and alt ~= current_buf then
-		vim.api.nvim_set_current_buf(alt)
-	else
-		vim.cmd("enew")
-	end
-
-	if vim.api.nvim_buf_is_valid(current_buf) then
-		vim.api.nvim_buf_delete(current_buf, { force = true })
-	end
-	if buf_id == current_buf then
-		buf_id = nil
-	end
+local function set_list_lines(lines)
+	local buf = ensure_list_buf()
+	vim.bo[buf].modifiable = true
+	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+	vim.bo[buf].modifiable = false
 end
 
-function M.quit_memos_list()
-	local current_win = vim.api.nvim_get_current_win()
-	local current_buf = vim.api.nvim_get_current_buf()
-	local is_memos_float = false
-
-	local ok, win_var = pcall(vim.api.nvim_win_get_var, current_win, "memos_window")
-	if ok and win_var == true then
-		is_memos_float = true
+local function first_line(content)
+	if type(content) ~= "string" then
+		return ""
 	end
-
-	-- Floating mode should close the float window itself.
-	if is_memos_float then
-		local ok_close = pcall(vim.api.nvim_win_close, current_win, true)
-		if not ok_close then
-			switch_away_and_wipe(current_buf)
-		end
-		return
-	end
-
-	-- In non-floating mode, only close this window when there are multiple normal windows.
-	if count_normal_windows() > 1 then
-		local ok_close = pcall(vim.api.nvim_win_close, current_win, true)
-		if not ok_close then
-			switch_away_and_wipe(current_buf)
-		end
-		return
-	end
-
-	-- Last normal window: switch away first, then wipe the memos buffer.
-	switch_away_and_wipe(current_buf)
-	current_order_by = nil
-	current_sort_index = nil
-	current_state = nil
+	return vim.trim(content:match("^[^\n]*") or "")
 end
 
-function M.render_memos(data, append)
-	vim.schedule(function()
-		if not buf_id or not vim.api.nvim_buf_is_valid(buf_id) then
-			return
-		end
-		if not data then
-			vim.notify("API returned no data.", vim.log.levels.WARN)
-			return
-		end
-		local new_memos = data.memos or {}
-		local cap = get_capabilities()
-		local supports_attachments = cap and cap.supports_attachments == true
-		current_page_token = data.nextPageToken or ""
-		if append then
-			memos_cache = vim.list_extend(memos_cache, new_memos)
-		else
-			memos_cache = new_memos
-		end
-		local lines = {}
-		list_items = {}
-		list_line_count = 0
-		local function add_line(text, item)
-			table.insert(lines, text)
-			list_line_count = list_line_count + 1
-			if item then
-				list_items[list_line_count] = item
-			end
-		end
-		local incoming_map = {}
-		local relations_mode = (config.list_relations_mode or "both"):lower()
-		local show_out = relations_mode == "both" or relations_mode == "out"
-		local show_in = relations_mode == "both" or relations_mode == "in"
-		local show_any = show_out or show_in
-		for idx, memo in ipairs(memos_cache) do
-			local rel_cache = memo and memo.name and relations_cache[memo.name] or nil
-			if rel_cache and rel_cache.status == "loaded" and rel_cache.source ~= "v1" and type(rel_cache.out_items) == "table" then
-				for _, entry in ipairs(rel_cache.out_items) do
-					if entry and entry.id then
-						local bucket = incoming_map[entry.id] or {}
-						table.insert(bucket, { memo_index = idx, type = entry.type or "TYPE_UNSPECIFIED" })
-						incoming_map[entry.id] = bucket
-					end
-				end
-			end
-		end
-		local k = config.keymaps.list
-		if #memos_cache == 0 then
-			local help = string.format(
-				"No memos found. Press '%s' to refresh, '%s' to add, or '%s' to quit.",
-				k.refresh_list,
-				k.add_memo,
-				k.quit
-			)
-			add_line(help, { kind = "empty" })
-		else
-			for i, memo in ipairs(memos_cache) do
-				local content = type(memo.content) == "string" and memo.content or ""
-				local first_line = content:match("^[^\n]*") or ""
-				local display_time = type(memo.displayTime) == "string" and memo.displayTime or ""
-				if display_time == "" then
-					display_time = "unknown"
-				else
-					display_time = display_time:sub(1, 10)
-				end
-				local badges = {}
-				if memo.pinned == true then
-					table.insert(badges, "P")
-				end
-				if memo.state == "ARCHIVED" then
-					table.insert(badges, "A")
-				end
-				local badge_text = ""
-				if #badges > 0 then
-					badge_text = "[" .. table.concat(badges, "") .. "] "
-				end
-				local selected_marker = is_selected(memo) and "[x] " or "[ ] "
-				local ref_suffix = ""
-				local attach_suffix = ""
-				local attachment_count = 0
-				if supports_attachments then
-					local attachment_cache = memo.name and attachments_cache[memo.name] or nil
-					if type(memo.attachments) == "table" then
-						attachment_count = #memo.attachments
-					elseif attachment_cache and attachment_cache.total ~= nil then
-						attachment_count = tonumber(attachment_cache.total) or 0
-					end
-					if attachment_count > 0 then
-						attach_suffix = string.format(" .. [F%d]", attachment_count)
-					end
-				end
-				local rel_cache = memo.name and relations_cache[memo.name] or nil
-				local out_count = 0
-				local in_count = 0
-				local out_more = false
-				local in_more = false
-				if rel_cache and rel_cache.out_total ~= nil then
-					out_count = rel_cache.out_total
-					local out_trunc = tonumber(rel_cache.truncated_out) or 0
-					local in_trunc = tonumber(rel_cache.truncated_in) or 0
-					out_more = rel_cache.out_more == true or out_trunc > 0
-					in_more = rel_cache.in_more == true or in_trunc > 0
-					if rel_cache.source == "v1" then
-						in_count = rel_cache.in_total or 0
-					else
-						local incoming = memo.name and incoming_map[memo.name] or nil
-						in_count = incoming and #incoming or 0
-					end
-				else
-					if type(memo.relations) == "table" then
-						out_count = #memo.relations
-					end
-					local incoming = memo.name and incoming_map[memo.name] or nil
-					in_count = incoming and #incoming or 0
-				end
-				if not show_out then
-					out_count = 0
-					out_more = false
-				end
-				if not show_in then
-					in_count = 0
-					in_more = false
-				end
-				if out_count > 0 or in_count > 0 or out_more or in_more then
-					local out_mark = out_more and (tostring(out_count) .. "+") or tostring(out_count)
-					local in_mark = in_more and (tostring(in_count) .. "+") or tostring(in_count)
-					ref_suffix = string.format(" .. <\226\134\146%s><\226\134\144%s>", out_mark, in_mark)
-				end
-				add_line(
-					string.format("%s%d. [%s] %s%s%s%s", selected_marker, i, display_time, badge_text, first_line, attach_suffix, ref_suffix),
-					{ kind = "memo", memo_index = i }
-				)
-
-				local expanded = relations_expanded[memo.name]
-				if expanded == nil and show_any and config.list_relations_auto_expand then
-					if out_count > 0 or in_count > 0 or out_more or in_more then
-						relations_expanded[memo.name] = true
-						expanded = true
-					end
-				end
-
-				if expanded and show_any then
-					local cache = relations_cache[memo.name]
-					if not cache then
-						ensure_relations_loaded(memo)
-						add_line("   `-- (loading relations...)", { kind = "relation_status", parent_index = i })
-					elseif cache.status == "error" then
-						add_line("   `-- (failed to load relations)", { kind = "relation_status", parent_index = i })
-					else
-						if cache.source ~= "v1" then
-							local incoming = memo.name and incoming_map[memo.name] or nil
-							cache.in_items = {}
-							cache.in_total = incoming and #incoming or 0
-							cache.truncated_in = 0
-							cache.in_more = false
-							local in_limit = tonumber(config.list_relations_limit) or 20
-							if incoming and #incoming > 0 then
-								local total = #incoming
-								local take = in_limit > 0 and math.min(in_limit, total) or total
-								for idx = 1, take do
-									local ref = incoming[idx]
-									local ref_memo = ref and memos_cache[ref.memo_index] or nil
-									local title = ref_memo and clip_title(extract_memo_title(ref_memo), config.metadata_title_max_len) or "(missing)"
-									table.insert(cache.in_items, {
-										id = ref_memo and ref_memo.name or "",
-										title = title,
-										type = ref.type or "REFERENCE",
-									})
-								end
-								if in_limit > 0 and total > in_limit then
-									cache.truncated_in = total - in_limit
-								end
-							end
-						end
-
-						local out_more = cache.out_more == true or (tonumber(cache.truncated_out) or 0) > 0
-						local in_more = cache.in_more == true or (tonumber(cache.truncated_in) or 0) > 0
-						local out_status = cache.out_status or cache.status
-						local in_status = cache.in_status or cache.status
-						local show_type = cache.source ~= "v1"
-
-						local lines_added = 0
-						local function add_simple_lines(direction, items, status, more, truncated)
-							local arrow = direction == "out" and "\226\134\146" or "\226\134\144"
-							if status == "error" then
-								add_line(
-									string.format("   %s (failed to load relations)", arrow),
-									{ kind = "relation_status", parent_index = i }
-								)
-								lines_added = lines_added + 1
-								return
-							end
-							if not items or #items == 0 then
-								if status == "loading" then
-									add_line(string.format("   %s (loading...)", arrow), {
-										kind = "relation_status",
-										parent_index = i,
-									})
-									lines_added = lines_added + 1
-								end
-								return
-							end
-
-							local unresolved = 0
-							local visible = {}
-							for _, entry in ipairs(items) do
-								if entry.title == "(loading...)" then
-									unresolved = unresolved + 1
-								else
-									table.insert(visible, entry)
-								end
-							end
-							if #visible == 0 and unresolved > 0 then
-								add_line(string.format("   %s (loading...)", arrow), {
-									kind = "relation_status",
-									parent_index = i,
-								})
-								lines_added = lines_added + 1
-								return
-							end
-
-							local has_more = more or unresolved > 0
-							for _, entry in ipairs(visible) do
-								local title = entry.title or ""
-								add_line(string.format("   %s %s", arrow, title), {
-									kind = "relation",
-									parent_index = i,
-									related_name = entry.id,
-									rel_type = entry.type,
-									direction = direction,
-								})
-								lines_added = lines_added + 1
-							end
-							if unresolved > 0 then
-								add_line(string.format("   %s (loading...)", arrow), {
-									kind = "relation_status",
-									parent_index = i,
-								})
-								lines_added = lines_added + 1
-							end
-							if truncated and truncated > 0 then
-								add_line(string.format("   %s ... +%d more", arrow, truncated), {
-									kind = "relation_truncated",
-									parent_index = i,
-									section = direction,
-								})
-								lines_added = lines_added + 1
-							end
-						end
-
-						if show_out then
-							add_simple_lines("out", cache.out_items, out_status, out_more, cache.truncated_out)
-						end
-						if show_in then
-							add_simple_lines("in", cache.in_items, in_status, in_more, cache.truncated_in)
-						end
-					end
-				end
-
-				local attachment_expanded = attachments_expanded[memo.name]
-				if attachment_expanded == nil and supports_attachments and config.list_attachments_auto_expand then
-					if attachment_count > 0 then
-						attachments_expanded[memo.name] = true
-						attachment_expanded = true
-					end
-				end
-				if attachment_expanded and supports_attachments then
-					local attachment_cache = attachments_cache[memo.name]
-					if not attachment_cache then
-						ensure_attachments_loaded(memo)
-						add_line("   `-- (loading attachments...)", { kind = "attachment_status", parent_index = i })
-					elseif attachment_cache.status == "error" then
-						add_line("   `-- (failed to load attachments)", { kind = "attachment_status", parent_index = i })
-					elseif attachment_cache.status == "loading" then
-						add_line("   `-- (loading attachments...)", { kind = "attachment_status", parent_index = i })
-					else
-						local items = attachment_cache.items or {}
-						if #items > 0 then
-							for _, attachment in ipairs(items) do
-								local filename = attachment.filename or "(unnamed)"
-								local mime = attachment.mime or "unknown"
-								local size_text = attachment.size_text or "-"
-								add_line(string.format("   - [ATT] %s (%s, %s)", filename, mime, size_text), {
-									kind = "attachment",
-									parent_index = i,
-									attachment_name = attachment.name,
-									attachment_filename = attachment.filename,
-									attachment_external_link = attachment.external_link,
-								})
-							end
-						end
-						if (attachment_cache.truncated or 0) > 0 then
-							add_line(
-								string.format("   - [ATT] ... +%d more", attachment_cache.truncated),
-								{ kind = "attachment_truncated", parent_index = i }
-							)
-						end
-					end
-				end
-			end
-		end
-		if current_page_token ~= "" then
-			add_line("...", { kind = "load_more" })
-			add_line(string.format("(Press '%s' to load more)", k.next_page), { kind = "load_more_hint" })
-		end
-		vim.api.nvim_buf_set_option(buf_id, "modifiable", true)
-		vim.api.nvim_buf_set_lines(buf_id, 0, -1, false, lines)
-		vim.api.nvim_buf_set_option(buf_id, "modifiable", false)
-
-		if show_any then
-			for _, memo in ipairs(memos_cache) do
-				ensure_relations_loaded(memo)
-			end
-		end
-		if supports_attachments then
-			for _, memo in ipairs(memos_cache) do
-				ensure_attachments_loaded(memo)
-			end
-		end
-	end)
-end
-
-function M.return_to_list()
-	local current_edit_buf = vim.api.nvim_get_current_buf()
-
-	-- Try switching first; this respects user 'hidden' policy.
-	local ok, err = pcall(M.show_memos_list, current_filter, { force_refresh = true, reason = "return" })
-	if not ok then
-		vim.notify("Could not leave memo buffer: " .. tostring(err), vim.log.levels.WARN)
-		return
+local function display_date(memo)
+	local value = memo.update_time or memo.create_time or ""
+	if value == "" then
+		return "unknown"
 	end
-
-	if not vim.api.nvim_buf_is_valid(current_edit_buf) then
-		return
-	end
-
-	-- Never force-delete a modified memo buffer.
-	if vim.bo[current_edit_buf].modified then
-		return
-	end
-
-	-- Clean up unchanged transient buffers.
-	pcall(vim.api.nvim_buf_delete, current_edit_buf, { force = false })
-	if buf_id == current_edit_buf then
-		buf_id = nil
-	end
-end
-
-function M.setup_buffer_for_editing()
-	vim.bo.buftype = "acwrite"
-	vim.bo.bufhidden = "hide"
-	vim.bo.swapfile = false
-	vim.bo.buflisted = false
-	vim.bo.filetype = "markdown"
-
-	vim.b.memos_original_content = table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), "\n")
-	-- Initial content load should not be treated as an unsaved user edit.
-	vim.bo.modified = false
-	vim.b.memos_save_inflight = false
-	vim.b.memos_save_pending = false
-
-	local save_key_string = ""
-	if config.keymaps.buffer.save and config.keymaps.buffer.save ~= "" then
-		save_key_string = string.format(" or %s", config.keymaps.buffer.save)
-	end
-
-	local is_template = vim.b.memos_template_mode == true
-	if is_template then
-		local template_source = vim.b.memos_template_source == "local" and "local" or "online"
-		vim.notify("Editing " .. template_source .. " template. Use :MemosSave" .. save_key_string .. " to save.")
-	elseif vim.b.memos_memo_name then
-		vim.notify("Editing memo. Use :MemosSave" .. save_key_string .. " to save.")
-	else
-		vim.notify("📝 New memo. Use :MemosSave" .. save_key_string .. " to create.")
-	end
-
-	if config.window and config.window.enable_float then
-		local current_win = vim.api.nvim_get_current_win()
-		local ok, is_memos_window = pcall(vim.api.nvim_win_get_var, current_win, "memos_window")
-		if ok and is_memos_window == true then
-			last_float_buf_id = vim.api.nvim_get_current_buf()
-		end
-	end
-
-	vim.api.nvim_buf_create_user_command(0, "MemosSave", 'lua require("memos.ui").save_or_create_dispatcher()', {})
-	vim.api.nvim_create_autocmd("BufWriteCmd", {
-		buffer = 0,
-		callback = function()
-			M.save_or_create_dispatcher({ post_save_ui = false })
-		end,
-	})
-	if config.keymaps.buffer.save and config.keymaps.buffer.save ~= "" then
-		vim.api.nvim_buf_set_keymap(
-			0,
-			"n",
-			config.keymaps.buffer.save,
-			"<Cmd>MemosSave<CR>",
-			{ noremap = true, silent = true }
-		)
-		-- 【新增】绑定返回列表快捷键
-		if config.keymaps.buffer.back_to_list and config.keymaps.buffer.back_to_list ~= "" then
-			vim.api.nvim_buf_set_keymap(
-				0,
-				"n",
-				config.keymaps.buffer.back_to_list,
-				'<Cmd>lua require("memos.ui").return_to_list()<CR>',
-				{ noremap = true, silent = true }
-			)
-		end
-	end
-
-	if not is_template and config.keymaps.buffer.edit_metadata and config.keymaps.buffer.edit_metadata ~= "" then
-		vim.api.nvim_buf_set_keymap(
-			0,
-			"n",
-			config.keymaps.buffer.edit_metadata,
-			'<Cmd>lua require("memos.ui").modify_current_memo_metadata()<CR>',
-			{ noremap = true, silent = true }
-		)
-	end
-
-	if config.auto_save then
-		local group = vim.api.nvim_create_augroup("MemosAutoSave", { clear = true })
-		vim.api.nvim_create_autocmd("InsertLeave", {
-			group = group,
-			buffer = 0,
-			callback = function()
-				M.check_and_auto_save()
-			end,
-		})
-		vim.api.nvim_create_autocmd("CursorHold", {
-			group = group,
-			buffer = 0,
-			callback = function()
-				M.check_and_auto_save()
-			end,
-		})
-	end
+	return value:sub(1, 10)
 end
 
 local function build_memo_buffer_name(memo, content)
 	if not memo or not memo.name or memo.name == "" then
 		return nil
 	end
-	local first_line = ""
-	if type(content) == "string" then
-		first_line = content:match("^[^\n]*") or ""
+	local title = first_line(content)
+	if title == "" then
+		title = "memo"
 	end
-	if first_line == "" then
-		first_line = "memo"
-	end
-	return "memos/"
-		.. memo.name:gsub("memos/", "")
-		.. "/"
-		.. first_line:gsub("[/\\]", "_"):sub(1, 50)
-		.. ".md"
+	return "memos/" .. memo.name:gsub("^memos/", "") .. "/" .. title:gsub("[/\\]", "_"):sub(1, 50) .. ".md"
 end
 
-function M.open_memo_for_edit(memo, open_cmd)
-	if not memo or not memo.name or memo.name == "" then
-		vim.notify("Selected memo has no valid identifier.", vim.log.levels.ERROR)
+local function set_keymap(buf, key, rhs)
+	if type(key) ~= "string" or key == "" then
 		return
 	end
-	local content = type(memo.content) == "string" and memo.content or ""
-	local buffer_name = build_memo_buffer_name(memo, content)
-	local existing_bufnr = vim.fn.bufnr(buffer_name)
-
-	if existing_bufnr ~= -1 and vim.api.nvim_buf_is_loaded(existing_bufnr) then
-		local win_id = vim.fn.bufwinid(existing_bufnr)
-		if win_id ~= -1 then
-			vim.api.nvim_set_current_win(win_id)
-		else
-			if config.window and config.window.enable_float then
-				local float_win = find_memos_float_window()
-				if float_win then
-					vim.api.nvim_set_current_win(float_win)
-				end
-			end
-			vim.api.nvim_set_current_buf(existing_bufnr)
-		end
-	else
-		local used_float = false
-		if config.window and config.window.enable_float then
-			local float_win = find_memos_float_window()
-			if float_win then
-				vim.api.nvim_set_current_win(float_win)
-				vim.cmd("enew")
-				used_float = true
-			end
-		end
-		if not used_float then
-			vim.cmd(open_cmd)
-		end
-		vim.api.nvim_buf_set_name(0, buffer_name)
-		vim.api.nvim_buf_set_lines(0, 0, -1, false, vim.split(content, "\n"))
-		vim.b.memos_memo_name = memo.name
-		M.setup_buffer_for_editing()
-	end
-	if config.window and config.window.enable_float then
-		local current_win = vim.api.nvim_get_current_win()
-		local ok, is_memos_window = pcall(vim.api.nvim_win_get_var, current_win, "memos_window")
-		if ok and is_memos_window == true then
-			last_float_buf_id = vim.api.nvim_get_current_buf()
-		end
-	end
+	vim.api.nvim_buf_set_keymap(buf, "n", key, rhs, { noremap = true, silent = true })
 end
 
-function M.check_and_auto_save()
-	if vim.b.memos_original_content == nil then
-		return
-	end
-	local current_content = table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), "\n")
-	if vim.b.memos_original_content ~= current_content then
-		M.save_or_create_dispatcher()
-	end
-end
-
-function M.save_or_create_dispatcher(opts)
-	opts = opts or {}
-	local post_save_ui = opts.post_save_ui ~= false
-	local bufnr_to_save = vim.api.nvim_get_current_buf()
-	if vim.b[bufnr_to_save].memos_save_inflight then
-		vim.b[bufnr_to_save].memos_save_pending = true
-		return
-	end
-	vim.b[bufnr_to_save].memos_save_inflight = true
-	local memo_name = vim.b.memos_memo_name
-	local template_mode = vim.b[bufnr_to_save].memos_template_mode == true
-	local template_source = vim.b[bufnr_to_save].memos_template_source
-	local had_template_id = vim.b[bufnr_to_save].memos_template_id
-	local had_template_memo_name = vim.b[bufnr_to_save].memos_template_memo_name
-	local content = table.concat(vim.api.nvim_buf_get_lines(bufnr_to_save, 0, -1, false), "\n")
-
-	if content == "" then
-		vim.notify("Memo is empty, not sending.", vim.log.levels.WARN)
-		vim.b[bufnr_to_save].memos_save_inflight = false
-		return
-	end
-
-	local function finalize_save()
-		if not vim.api.nvim_buf_is_valid(bufnr_to_save) then
-			return
-		end
-		vim.b[bufnr_to_save].memos_save_inflight = false
-		if vim.b[bufnr_to_save].memos_save_pending then
-			vim.b[bufnr_to_save].memos_save_pending = false
-			local current_content = table.concat(vim.api.nvim_buf_get_lines(bufnr_to_save, 0, -1, false), "\n")
-			if vim.b[bufnr_to_save].memos_original_content ~= current_content then
-				vim.schedule(function()
-					if vim.api.nvim_buf_is_valid(bufnr_to_save) then
-						M.save_or_create_dispatcher(opts)
-					end
-				end)
-			end
-		end
-	end
-
-	if template_mode then
-		require("memos.template").save_template_buffer(bufnr_to_save, content, function(success, payload, err)
-			vim.schedule(function()
-				if success and payload then
-					local created = false
-					if payload.source == "local" then
-						created = type(had_template_id) ~= "string" or had_template_id == ""
-					else
-						created = type(had_template_memo_name) ~= "string" or had_template_memo_name == ""
-					end
-					local action = created and "created" or "saved"
-					vim.notify(string.format("✅ %s template %s.", tostring(payload.source), action))
-					if vim.api.nvim_buf_is_valid(bufnr_to_save) then
-						vim.b[bufnr_to_save].memos_template_mode = true
-						vim.b[bufnr_to_save].memos_template_source = template_source or payload.source
-						vim.b[bufnr_to_save].memos_template_id = payload.id
-						vim.b[bufnr_to_save].memos_template_memo_name = payload.memo_name
-						vim.b[bufnr_to_save].memos_original_content = content
-						vim.bo[bufnr_to_save].modified = false
-						if payload.buffer_name and payload.buffer_name ~= "" then
-							pcall(vim.api.nvim_buf_set_name, bufnr_to_save, payload.buffer_name)
-						end
-					end
-				else
-					vim.notify("❌ Failed to save template: " .. tostring(err), vim.log.levels.ERROR)
-				end
-				finalize_save()
-			end)
-		end)
-		return
-	end
-
-	if memo_name then
-		-- 更新逻辑 (保持不变，工作正常)
-		api.update_memo(memo_name, content, function(success)
-			if success then
-				vim.schedule(function()
-					vim.notify("✅ Memo updated successfully!")
-					if vim.api.nvim_buf_is_valid(bufnr_to_save) then
-						vim.b[bufnr_to_save].memos_original_content = content
-						vim.bo[bufnr_to_save].modified = false
-					end
-					finalize_save()
-				end)
-				M.refresh_list_silently()
-			else
-				vim.schedule(function()
-					finalize_save()
-				end)
-			end
-		end)
-	else
-		api.create_memo(content, function(new_memo)
-			if new_memo and new_memo.name then
-				new_memo.content = new_memo.content or content
-				vim.schedule(function()
-					vim.notify("✅ Memo created successfully!")
-					if vim.api.nvim_buf_is_valid(bufnr_to_save) then
-						vim.b[bufnr_to_save].memos_memo_name = new_memo.name
-						vim.b[bufnr_to_save].memos_original_content = content
-						vim.bo[bufnr_to_save].modified = false
-						local new_name = build_memo_buffer_name(new_memo, content)
-						if new_name then
-							vim.api.nvim_buf_set_name(bufnr_to_save, new_name)
-						end
-					end
-					if post_save_ui then
-						M.show_memos_list(current_filter)
-						-- 立即重新打开刚刚创建的 memo，进入编辑模式
-						vim.schedule(function()
-							M.open_memo_for_edit(new_memo, "enew")
-						end)
-					else
-						M.refresh_list_silently()
-					end
-					finalize_save()
-				end)
-			else
-				vim.schedule(function()
-					vim.notify("❌ Failed to create memo.", vim.log.levels.ERROR)
-					finalize_save()
-				end)
-			end
-		end)
-	end
-end
-
-local function notify_unsupported_filter_hint(err)
-	local message = tostring(err or "")
-	if message == "" then
-		return
-	end
-	if message:find("invalid order_by") then
-		vim.schedule(function()
-			vim.notify(
-				"Backend rejected orderBy. Supported fields: pinned, create_time, update_time, name.",
-				vim.log.levels.WARN
-			)
-		end)
-		return
-	end
-	if not message:find("unsupported top%-level expression") then
-		return
-	end
+function M.render_memos(data, append)
 	vim.schedule(function()
-		vim.notify(
-			"Server filter engine does not support tags.exists()/startsWith(). Use fuzzy #tag search; hierarchical matching is applied locally.",
-			vim.log.levels.WARN
-		)
-	end)
-end
-
-local function parse_order_by_terms(order_by)
-	local raw = vim.trim(order_by or "")
-	if raw == "" then
-		return {}
-	end
-	local out = {}
-	local parts = vim.split(raw, ",", { trimempty = true })
-	for _, part in ipairs(parts) do
-		local tokens = vim.split(vim.trim(part), "%s+", { trimempty = true })
-		if #tokens >= 1 then
-			local field = tokens[1]:lower()
-			local direction = "desc"
-			if #tokens >= 2 then
-				direction = tokens[2]:lower() == "asc" and "asc" or "desc"
-			end
-			table.insert(out, { field = field, direction = direction })
-		end
-	end
-	return out
-end
-
-local function parse_iso_for_sort(value)
-	if type(value) ~= "string" then
-		return 0
-	end
-	local text = vim.trim(value)
-	if text == "" then
-		return 0
-	end
-	text = text:gsub("z$", "Z")
-	text = text:gsub("(%d%d:%d%d:%d%d)%.%d+", "%1")
-
-	local candidates = {}
-	local function push(fmt, raw)
-		if type(raw) == "string" and raw ~= "" then
-			table.insert(candidates, { fmt = fmt, raw = raw })
-		end
-	end
-	local compact_tz = text:gsub("([%+%-]%d%d):(%d%d)$", "%1%2")
-	push("%Y-%m-%dT%H:%M:%S%z", compact_tz)
-	push("%Y-%m-%d %H:%M:%S%z", compact_tz:gsub("T", " "))
-	push("%Y-%m-%dT%H:%M:%SZ", text)
-	push("%Y-%m-%dT%H:%M:%S", text)
-	push("%Y-%m-%d %H:%M:%S", text:gsub("T", " "))
-	if text:match("^%d%d%d%d%-%d%d%-%d%d$") then
-		push("%Y-%m-%d", text)
-	elseif text:match("^%d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d$") then
-		push("%Y-%m-%dT%H:%M:%SZ", text .. "Z")
-	end
-
-	for _, candidate in ipairs(candidates) do
-		local ok, ts = pcall(vim.fn.strptime, candidate.fmt, candidate.raw)
-		if ok then
-			local num = tonumber(ts)
-			if num and num ~= 0 then
-				return num
-			end
-		end
-	end
-	return 0
-end
-
-local function memo_sort_value(memo, field)
-	if field == "pinned" then
-		return memo and memo.pinned == true and 1 or 0
-	end
-	if field == "display_time" then
-		return parse_iso_for_sort(memo and memo.displayTime)
-	end
-	if field == "create_time" then
-		return parse_iso_for_sort(memo and memo.createTime)
-	end
-	if field == "update_time" then
-		return parse_iso_for_sort(memo and memo.updateTime)
-	end
-	if field == "name" then
-		return tostring(memo and memo.name or "")
-	end
-	return nil
-end
-
-local function apply_client_order_if_needed(data, order_by, mode)
-	if mode ~= "v0.25" then
-		return data
-	end
-	if type(data) ~= "table" or type(data.memos) ~= "table" then
-		return data
-	end
-	local terms = parse_order_by_terms(order_by)
-	if #terms == 0 then
-		return data
-	end
-	table.sort(data.memos, function(a, b)
-		for _, term in ipairs(terms) do
-			local av = memo_sort_value(a, term.field)
-			local bv = memo_sort_value(b, term.field)
-			if av ~= nil and bv ~= nil and av ~= bv then
-				if term.direction == "asc" then
-					return av < bv
-				end
-				return av > bv
-			end
-		end
-		local an = tostring(a and a.name or "")
-		local bn = tostring(b and b.name or "")
-		return an < bn
-	end)
-	return data
-end
-
-local function fetch_memos_with_optional_local_filter(parent, filter, page_size, page_token, order_by, state, callback)
-	local cap = get_capabilities()
-	local mode = cap and cap.mode or nil
-	local final_order_by = order_by
-	if mode == "v0.25" or mode == "v0.26" then
-		local normalized, changed = sanitize_order_by(order_by)
-		final_order_by = normalized
-		if changed and current_order_by ~= normalized then
-			current_order_by = normalized
-			current_sort_index = resolve_sort_index(current_order_by)
-		end
-	end
-
-	if type(current_local_filter) ~= "function" then
-		api.list_memos(parent, filter, page_size, page_token, final_order_by, state, function(data, err)
-			if not data then
-				notify_unsupported_filter_hint(err)
-			end
-			callback(apply_client_order_if_needed(data, final_order_by, mode))
-		end)
-		return
-	end
-
-	if not local_filter_notice_shown then
-		local_filter_notice_shown = true
-		vim.schedule(function()
-			vim.notify(
-				"Hierarchical tag matching is applied locally for fuzzy #tag search; loading may request additional pages.",
-				vim.log.levels.INFO
-			)
-		end)
-	end
-
-	local target = tonumber(page_size) or 50
-	local out = {}
-	local seen_tokens = {}
-
-	local function apply_local_filter(memo)
-		local ok, matched = pcall(current_local_filter, memo)
-		return ok and matched == true
-	end
-
-	local function append_matches(memos)
-		for _, memo in ipairs(memos or {}) do
-			if apply_local_filter(memo) then
-				table.insert(out, memo)
-			end
-		end
-	end
-
-	local function step(token)
-		local token_key = token or ""
-		if seen_tokens[token_key] then
-			callback({
-				memos = out,
-				nextPageToken = token or "",
-			})
+		if not data then
+			vim.notify("API returned no data.", vim.log.levels.WARN)
 			return
 		end
-		seen_tokens[token_key] = true
+		if append then
+			vim.list_extend(memos_cache, data.memos or {})
+		else
+			memos_cache = data.memos or {}
+		end
+		current_page_token = data.next_page_token or ""
+		list_items = {}
 
-		api.list_memos(parent, filter, page_size, token, final_order_by, state, function(data, err)
-			if not data then
-				notify_unsupported_filter_hint(err)
-				callback(nil)
-				return
+		local lines = {}
+		local keys = config.keymaps.list
+		if #memos_cache == 0 then
+			table.insert(lines, string.format("No memos. Press '%s' to refresh, '%s' to add, '%s' to quit.", keys.refresh_list, keys.add_memo, keys.quit))
+			list_items[1] = { kind = "empty" }
+		else
+			for index, memo in ipairs(memos_cache) do
+				local badges = {}
+				if memo.pinned then
+					table.insert(badges, "P")
+				end
+				if memo.state == "ARCHIVED" then
+					table.insert(badges, "A")
+				end
+				local badge_text = #badges > 0 and ("[" .. table.concat(badges, "") .. "] ") or ""
+				local title = first_line(memo.content)
+				if title == "" then
+					title = memo.snippet ~= "" and memo.snippet or "(empty)"
+				end
+				table.insert(lines, string.format("%d. [%s] %s%s", index, display_date(memo), badge_text, title))
+				list_items[#lines] = { kind = "memo", index = index }
 			end
-
-			append_matches(data.memos or {})
-			local next_token = data.nextPageToken or ""
-			if #out >= target or next_token == "" then
-				local sorted = apply_client_order_if_needed({
-					memos = out,
-					nextPageToken = next_token,
-				}, final_order_by, mode)
-				callback(sorted)
-				return
-			end
-			step(next_token)
-		end)
-	end
-
-	step(page_token)
+		end
+		if current_page_token ~= "" then
+			table.insert(lines, "...")
+			list_items[#lines] = { kind = "load_more" }
+			table.insert(lines, string.format("Press '%s' to load more", keys.next_page))
+			list_items[#lines] = { kind = "load_more" }
+		end
+		set_list_lines(lines)
+	end)
 end
 
-function M.refresh_list_silently()
-	if not current_user or not current_user.name then
+local function fetch_memos(opts)
+	opts = opts or {}
+	api.list_memos({
+		page_size = config.page_size,
+		page_token = opts.page_token,
+		state = config.list_state,
+		order_by = config.list_order_by,
+	}, function(data, err)
+		if not data then
+			vim.schedule(function()
+				vim.notify("Failed to fetch memos: " .. tostring(err), vim.log.levels.ERROR)
+			end)
+			return
+		end
+		M.render_memos(data, opts.append == true)
+	end)
+end
+
+function M.show_memos_list(opts)
+	opts = opts or {}
+	focus_list_buf()
+	if opts.force_refresh or #memos_cache == 0 then
+		set_list_lines({ "Loading memos..." })
+		fetch_memos({ append = false })
+	else
+		M.render_memos({ memos = memos_cache, next_page_token = current_page_token }, false)
+	end
+
+	local buf = ensure_list_buf()
+	if not vim.b[buf].memos_list_keymaps then
+		local keys = config.keymaps.list
+		set_keymap(buf, keys.edit_memo, '<Cmd>lua require("memos.ui").edit_selected_memo()<CR>')
+		set_keymap(buf, keys.add_memo, '<Cmd>lua require("memos.ui").create_memo_in_buffer()<CR>')
+		set_keymap(buf, keys.refresh_list, '<Cmd>lua require("memos.ui").show_memos_list({ force_refresh = true })<CR>')
+		set_keymap(buf, keys.next_page, '<Cmd>lua require("memos.ui").load_next_page()<CR>')
+		set_keymap(buf, keys.quit, '<Cmd>lua require("memos.ui").quit_memos_list()<CR>')
+		vim.b[buf].memos_list_keymaps = true
+	end
+end
+
+function M.toggle_memos_list()
+	if config.window and config.window.enable_float then
+		local existing = find_memos_float_window()
+		if existing then
+			pcall(vim.api.nvim_win_close, existing, true)
+			return
+		end
+		if last_float_buf and vim.api.nvim_buf_is_valid(last_float_buf) then
+			create_float_window(last_float_buf)
+			return
+		end
+	end
+	M.show_memos_list()
+end
+
+function M.quit_memos_list()
+	local current_win = vim.api.nvim_get_current_win()
+	local current_buf = vim.api.nvim_get_current_buf()
+	local ok, is_memos_window = pcall(vim.api.nvim_win_get_var, current_win, "memos_window")
+	if ok and is_memos_window == true then
+		pcall(vim.api.nvim_win_close, current_win, true)
 		return
 	end
-	fetch_memos_with_optional_local_filter(
-		current_user.name,
-		current_filter,
-		config.page_size,
-		nil,
-		current_order_by,
-		current_state,
-		function(data)
-			M.render_memos(data, false)
-		end
-	)
+	if count_normal_windows() > 1 then
+		pcall(vim.api.nvim_win_close, current_win, true)
+		return
+	end
+	if current_buf == list_buf then
+		vim.cmd("enew")
+	end
+end
+
+function M.load_next_page()
+	if not current_page_token or current_page_token == "" then
+		vim.notify("No more pages to load.", vim.log.levels.INFO)
+		return
+	end
+	fetch_memos({
+		page_token = current_page_token,
+		append = true,
+	})
 end
 
 function M.open_edit_buffer(content, open_cmd)
@@ -1059,9 +270,9 @@ function M.open_edit_buffer(content, open_cmd)
 			vim.cmd("enew")
 			used_float = true
 		else
-			local new_buf = vim.api.nvim_create_buf(false, true)
-			create_float_window(new_buf)
-			vim.api.nvim_set_current_buf(new_buf)
+			local buf = vim.api.nvim_create_buf(false, true)
+			create_float_window(buf)
+			vim.api.nvim_set_current_buf(buf)
 			used_float = true
 		end
 	end
@@ -1074,1226 +285,79 @@ function M.open_edit_buffer(content, open_cmd)
 	return vim.api.nvim_get_current_buf()
 end
 
-function M.create_memo_in_buffer()
-	M.open_edit_buffer(nil, "enew")
-	vim.b.memos_memo_name = nil
-	vim.b.memos_template_mode = nil
-	vim.b.memos_template_source = nil
-	vim.b.memos_template_id = nil
-	vim.b.memos_template_memo_name = nil
-	-- 使用一个带时间戳的、独一无二的临时名字，防止冲突
-	vim.api.nvim_buf_set_name(0, "memos/new_memo_" .. vim.fn.strftime("%s"))
-	M.setup_buffer_for_editing()
-end
+function M.setup_buffer_for_editing()
+	vim.bo.buftype = "acwrite"
+	vim.bo.bufhidden = "hide"
+	vim.bo.buflisted = false
+	vim.bo.filetype = "markdown"
+	vim.bo.swapfile = false
+	vim.b.memos_original_content = table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), "\n")
+	vim.b.memos_save_inflight = false
+	vim.b.memos_save_pending = false
+	vim.bo.modified = false
 
-function M.create_memo_from_content(content)
-	M.open_edit_buffer(content or "", "enew")
-	vim.b.memos_memo_name = nil
-	vim.b.memos_template_mode = nil
-	vim.b.memos_template_source = nil
-	vim.b.memos_template_id = nil
-	vim.b.memos_template_memo_name = nil
-	vim.api.nvim_buf_set_name(0, "memos/new_memo_" .. vim.fn.strftime("%s"))
-	M.setup_buffer_for_editing()
-end
+	vim.api.nvim_buf_create_user_command(0, "MemosSave", function()
+		M.save_or_create_dispatcher()
+	end, {})
+	vim.api.nvim_create_autocmd("BufWriteCmd", {
+		buffer = 0,
+		callback = function()
+			M.save_or_create_dispatcher({ post_save_ui = false })
+		end,
+	})
 
--- 【新增】创建居中浮动窗口的辅助函数
-create_float_window = function(buf)
-	local width = math.floor(vim.o.columns * (config.window.width or 0.8))
-	local height = math.floor(vim.o.lines * (config.window.height or 0.8))
+	local keys = config.keymaps.buffer
+	set_keymap(0, keys.save, "<Cmd>MemosSave<CR>")
+	set_keymap(0, keys.back_to_list, '<Cmd>lua require("memos.ui").return_to_list()<CR>')
 
-	-- 计算居中位置
-	local row = math.floor((vim.o.lines - height) / 2)
-	local col = math.floor((vim.o.columns - width) / 2)
-
-	local opts = {
-		relative = "editor",
-		row = row,
-		col = col,
-		width = width,
-		height = height,
-		style = "minimal",
-		border = config.window.border or "rounded",
-		title = " Memos ",
-		title_pos = "center",
-	}
-
-	local win = vim.api.nvim_open_win(buf, true, opts)
-	-- 关键：标记这个窗口是 Memos 的专用窗口
-	vim.api.nvim_win_set_var(win, "memos_window", true)
-	last_float_buf_id = buf
-	return win
-end
-
-local function get_sort_presets()
-	local presets = config.list_sort_presets
-	if type(presets) ~= "table" or #presets == 0 then
-		return { config.list_sort_default }
-	end
-	return presets
-end
-
-local SAFE_ORDER_BY_DEFAULT = "pinned desc, update_time desc"
-local ORDER_BY_FIELD_ALIASES = {
-	pinned = "pinned",
-	update_time = "update_time",
-	updatetime = "update_time",
-	display_time = "update_time",
-	displaytime = "update_time",
-	create_time = "create_time",
-	createtime = "create_time",
-	name = "name",
-}
-
-local function normalize_order_by(order_by)
-	local raw = vim.trim(order_by or "")
-	if raw == "" then
-		return nil
-	end
-	local parts = vim.split(raw, ",", { trimempty = true })
-	if #parts == 0 then
-		return nil
-	end
-	local out = {}
-	for _, part in ipairs(parts) do
-		local tokens = vim.split(vim.trim(part), "%s+", { trimempty = true })
-		if #tokens == 0 then
-			return nil
-		end
-		if #tokens > 2 then
-			return nil
-		end
-		local key = tokens[1]:lower():gsub("_", "")
-		local canonical_field = ORDER_BY_FIELD_ALIASES[key]
-		if not canonical_field then
-			return nil
-		end
-		local direction = "desc"
-		if #tokens == 2 then
-			local normalized_direction = tokens[2]:lower()
-			if normalized_direction ~= "asc" and normalized_direction ~= "desc" then
-				return nil
-			end
-			direction = normalized_direction
-		end
-		table.insert(out, string.format("%s %s", canonical_field, direction))
-	end
-	return table.concat(out, ", ")
-end
-
-sanitize_order_by = function(order_by)
-	local raw = vim.trim(order_by or "")
-	if raw == "" then
-		return SAFE_ORDER_BY_DEFAULT, false
-	end
-	local normalized = normalize_order_by(raw)
-	if normalized then
-		return normalized, normalized ~= raw
-	end
-	if not invalid_sort_warned[raw] then
-		invalid_sort_warned[raw] = true
-		vim.schedule(function()
-			vim.notify(
-				string.format("Invalid sort preset '%s'. Falling back to '%s'.", raw, SAFE_ORDER_BY_DEFAULT),
-				vim.log.levels.WARN
-			)
-		end)
-	end
-	return SAFE_ORDER_BY_DEFAULT, true
-end
-
-resolve_sort_index = function(order_by)
-	local presets = get_sort_presets()
-	for i, preset in ipairs(presets) do
-		if preset == order_by then
-			return i
-		end
-	end
-	return 1
-end
-
-local function prompt_select_sort()
-	local cap = get_capabilities()
-	if cap and not cap.supports_sort then
-		vim.notify("Sorting is not supported by this Memos API version.", vim.log.levels.WARN)
-		return
-	end
-	local presets = get_sort_presets()
-	if #presets == 0 then
-		return
-	end
-	local items = {}
-	for _, preset in ipairs(presets) do
-		table.insert(items, { value = preset })
-	end
-	local default_value = current_order_by or config.list_sort_default
-	vim.schedule(function()
-		vim.ui.select(items, {
-			prompt = "Select sort order:",
-			format_item = function(item)
-				return item.value
+	if config.auto_save then
+		local group = vim.api.nvim_create_augroup("MemosAutoSave", { clear = false })
+		vim.api.nvim_create_autocmd({ "InsertLeave", "CursorHold" }, {
+			group = group,
+			buffer = 0,
+			callback = function()
+				M.check_and_auto_save()
 			end,
-		}, function(choice)
-			if not choice then
-				return
-			end
-			current_order_by = choice.value
-			current_sort_index = resolve_sort_index(current_order_by)
-			current_page_token = nil
-			vim.notify("Sort: " .. tostring(current_order_by))
-			M.show_memos_list(current_filter, { force_refresh = true, reason = "sort" })
-		end)
-	end)
+		})
+	end
 end
 
-function M.cycle_sort()
-	prompt_select_sort()
-end
-
-function M.toggle_state()
-	local cap = get_capabilities()
-	if cap and not cap.supports_state then
-		vim.notify("State filtering is not supported by this Memos API version.", vim.log.levels.WARN)
-		return
-	end
-	if current_state == "ARCHIVED" then
-		current_state = "NORMAL"
-	else
-		current_state = "ARCHIVED"
-	end
-	current_page_token = nil
-	vim.notify("State: " .. tostring(current_state))
-	M.show_memos_list(current_filter, { force_refresh = true, reason = "state" })
-end
-
-local function render_cached_list()
-	M.render_memos({
-		memos = memos_cache,
-		nextPageToken = current_page_token or "",
-	}, false)
-end
-
-local function resolve_relation_title(related_name, callback)
-	if not related_name or related_name == "" then
-		callback(nil)
-		return
-	end
-	local cached = relation_title_cache[related_name]
-	if cached then
-		callback(cached)
-		return
-	end
-	if relation_title_inflight[related_name] then
-		return
-	end
-	relation_title_inflight[related_name] = true
-	api.get_memo(related_name, function(memo, err)
-		relation_title_inflight[related_name] = nil
-		local title = "(missing)"
-		if memo then
-			title = clip_title(extract_memo_title(memo), config.metadata_title_max_len)
-		else
-			if err then
-				vim.schedule(function()
-					vim.notify("Failed to load related memo: " .. tostring(err), vim.log.levels.WARN)
-				end)
-			end
-		end
-		relation_title_cache[related_name] = title
-		callback(title)
-	end)
-end
-
-local function build_relation_entries(relations, mode)
-	local entries = {}
-	if type(relations) ~= "table" then
-		return entries
-	end
-	for _, rel in ipairs(relations) do
-		if mode == "v0.21" then
-			local related_id = rel and (rel.relatedMemoID or rel.relatedMemoId)
-			local related_name = related_id and ("memos/" .. tostring(related_id)) or nil
-			if related_name then
-				table.insert(entries, {
-					id = related_name,
-					type = rel.type or "REFERENCE",
-				})
-			end
-		else
-			local related = rel and rel.relatedMemo or nil
-			local related_name = related and (related.name or related.id) or nil
-			if related_name then
-				table.insert(entries, {
-					id = related_name,
-					type = rel.type or "TYPE_UNSPECIFIED",
-				})
-			end
-		end
-	end
-	return entries
-end
-
-local function format_attachment_size(size)
-	local num = tonumber(size) or 0
-	if num <= 0 then
-		return "0 B"
-	end
-	local units = { "B", "KB", "MB", "GB", "TB" }
-	local idx = 1
-	local value = num
-	while value >= 1024 and idx < #units do
-		value = value / 1024
-		idx = idx + 1
-	end
-	if idx == 1 then
-		return string.format("%d %s", math.floor(value), units[idx])
-	end
-	return string.format("%.1f %s", value, units[idx])
-end
-
-local function url_encode_component(str)
-	local value = tostring(str or "")
-	value = value:gsub("\n", "\r\n")
-	value = value:gsub("([^%w %-%_%.%~])", function(c)
-		return string.format("%%%02X", string.byte(c))
-	end)
-	return value:gsub(" ", "%%20")
-end
-
-local function encode_path_preserve_slash(path)
-	local value = tostring(path or "")
-	if value == "" then
-		return value
-	end
-	local parts = vim.split(value, "/", { plain = true, trimempty = false })
-	for i, part in ipairs(parts) do
-		parts[i] = url_encode_component(part)
-	end
-	return table.concat(parts, "/")
-end
-
-local function build_attachment_url(attachment)
-	if type(attachment) ~= "table" then
-		return nil
-	end
-	local external_link = attachment.external_link or attachment.externalLink
-	if type(external_link) == "string" and external_link ~= "" then
-		return external_link
-	end
-	local name = attachment.name
-	local filename = attachment.filename
-	if type(config.host) ~= "string" or config.host == "" then
-		return nil
-	end
-	if type(name) ~= "string" or name == "" or type(filename) ~= "string" or filename == "" then
-		return nil
-	end
-	return string.format("%s/file/%s/%s", config.host, encode_path_preserve_slash(name), url_encode_component(filename))
-end
-
-local function normalize_attachment(attachment)
-	if type(attachment) ~= "table" then
-		return nil
-	end
-	local filename = attachment.filename or attachment.fileName or ""
-	local mime = attachment.type or attachment.mimeType or attachment.mime_type or "unknown"
-	local size = tonumber(attachment.size) or 0
-	local external_link = attachment.external_link or attachment.externalLink or ""
-	local name = attachment.name or ""
-	return {
-		name = name,
-		filename = filename ~= "" and filename or "(unnamed)",
-		mime = mime ~= "" and mime or "unknown",
-		size = size,
-		size_text = format_attachment_size(size),
-		external_link = external_link,
-	}
-end
-
-ensure_attachments_loaded = function(memo)
+function M.open_memo_for_edit(memo, open_cmd)
 	if not memo or not memo.name or memo.name == "" then
+		vim.notify("Selected memo has no valid identifier.", vim.log.levels.ERROR)
 		return
 	end
-	local cap = get_capabilities()
-	if not (cap and cap.supports_attachments) then
-		return
-	end
-	local existing = attachments_cache[memo.name]
-	if existing and (existing.status == "loading" or existing.status == "loaded" or existing.status == "error") then
-		return
-	end
-	attachments_cache[memo.name] = {
-		status = "loading",
-		items = {},
-		total = 0,
-		truncated = 0,
-		next_page_token = "",
-		error = nil,
-	}
-	local cache = attachments_cache[memo.name]
-	local list_limit = tonumber(config.list_attachments_limit) or 20
-	api.list_memo_attachments(memo.name, list_limit > 0 and list_limit + 1 or nil, nil, function(resp, err)
-		if not resp then
-			cache.status = "error"
-			cache.error = err
-			cache.items = {}
-			cache.total = 0
-			cache.truncated = 0
-			attachments_cache[memo.name] = cache
-			render_cached_list()
-			return
-		end
-		local raw = type(resp.attachments) == "table" and resp.attachments or {}
-		local items = {}
-		for _, attachment in ipairs(raw) do
-			local normalized = normalize_attachment(attachment)
-			if normalized then
-				table.insert(items, normalized)
-			end
-		end
-		local total = #items
-		local truncated = 0
-		if list_limit > 0 and #items > list_limit then
-			truncated = #items - list_limit
-			local sliced = {}
-			for i = 1, list_limit do
-				table.insert(sliced, items[i])
-			end
-			items = sliced
-		end
-		cache.status = "loaded"
-		cache.items = items
-		cache.total = total
-		cache.truncated = truncated
-		cache.next_page_token = resp.nextPageToken or ""
-		if cache.next_page_token ~= "" then
-			cache.truncated = math.max(cache.truncated, 1)
-		end
-		attachments_cache[memo.name] = cache
-		render_cached_list()
-	end)
-end
-
-ensure_relations_loaded = function(memo)
-	if not memo or not memo.name or memo.name == "" then
-		return
-	end
-	local relations_mode = (config.list_relations_mode or "both"):lower()
-	local show_out = relations_mode == "both" or relations_mode == "out"
-	local show_in = relations_mode == "both" or relations_mode == "in"
-	if not show_out and not show_in then
-		return
-	end
-	local existing = relations_cache[memo.name]
-	if existing and (existing.status == "loading" or existing.status == "loaded" or existing.status == "error") then
-		return
-	end
-
-	relations_cache[memo.name] = {
-		status = "loading",
-		out_items = {},
-		in_items = {},
-		truncated_out = 0,
-		truncated_in = 0,
-		out_total = 0,
-		in_total = 0,
-		out_status = "loading",
-		in_status = "loading",
-		out_more = false,
-		in_more = false,
-		source = nil,
-		has_more = false,
-	}
-	local cache = relations_cache[memo.name]
-	local cap = get_capabilities()
-	local mode = cap and cap.mode or "v0.26"
-
-	local function update_cache()
-		if cache.out_status == "error" and cache.in_status == "error" then
-			cache.status = "error"
-		elseif cache.out_status == "loading" or cache.in_status == "loading" then
-			cache.status = "loading"
+	local content = memo.content or ""
+	local buffer_name = build_memo_buffer_name(memo, content)
+	local existing = buffer_name and vim.fn.bufnr(buffer_name) or -1
+	if existing ~= -1 and vim.api.nvim_buf_is_loaded(existing) then
+		local win = vim.fn.bufwinid(existing)
+		if win ~= -1 then
+			vim.api.nvim_set_current_win(win)
 		else
-			cache.status = "loaded"
+			vim.api.nvim_set_current_buf(existing)
 		end
-		relations_cache[memo.name] = cache
-		render_cached_list()
-	end
-
-	local function handle_relations(relations)
-		local entries = build_relation_entries(relations, mode)
-		local total = #entries
-		local limit = tonumber(config.list_relations_limit) or 20
-		local truncated = 0
-		if limit > 0 and #entries > limit then
-			truncated = #entries - limit
-			local sliced = {}
-			for i = 1, limit do
-				table.insert(sliced, entries[i])
-			end
-			entries = sliced
-		end
-		for _, entry in ipairs(entries) do
-			local cached = relation_title_cache[entry.id]
-			entry.title = cached or "(loading...)"
-		end
-		cache.status = "loaded"
-		cache.out_items = entries
-		cache.in_items = {}
-		cache.truncated_out = truncated
-		cache.truncated_in = 0
-		cache.out_total = total
-		cache.in_total = 0
-		cache.out_status = "loaded"
-		cache.in_status = "loaded"
-		cache.out_more = truncated > 0
-		cache.in_more = false
-		cache.source = "legacy"
-		cache.has_more = false
-		update_cache()
-		for _, entry in ipairs(entries) do
-			if not relation_title_cache[entry.id] then
-				resolve_relation_title(entry.id, function(title)
-					if title then
-						entry.title = title
-						render_cached_list()
-					end
-				end)
-			end
-		end
-	end
-
-	local function handle_error(err)
-		cache.status = "error"
-		cache.out_items = {}
-		cache.in_items = {}
-		cache.truncated_out = 0
-		cache.truncated_in = 0
-		cache.out_total = 0
-		cache.in_total = 0
-		cache.out_status = "error"
-		cache.in_status = "error"
-		cache.out_more = false
-		cache.in_more = false
-		cache.error = err
-		cache.source = "error"
-		cache.has_more = false
-		update_cache()
-	end
-
-	if mode == "v0.21" then
-		if not show_out then
-			cache.out_items = {}
-			cache.in_items = {}
-			cache.out_total = 0
-			cache.in_total = 0
-			cache.truncated_out = 0
-			cache.truncated_in = 0
-			cache.out_more = false
-			cache.in_more = false
-			cache.out_status = "loaded"
-			cache.in_status = "loaded"
-			cache.source = "legacy"
-			update_cache()
-			return
-		end
-		api.list_memo_relations(memo.name, function(relations, err)
-			if not relations then
-				handle_error(err)
-				return
-			end
-			handle_relations(relations)
-		end)
 		return
 	end
 
-	cache.source = "v1"
-
-	local function apply_out_from_memo(source_memo)
-		if not show_out then
-			cache.out_items = {}
-			cache.out_total = 0
-			cache.truncated_out = 0
-			cache.out_more = false
-			cache.out_status = "loaded"
-			update_cache()
-			return
-		end
-		local relations = type(source_memo.relations) == "table" and source_memo.relations or {}
-		local entries = {}
-		local total_out = 0
-		for _, rel in ipairs(relations) do
-			local memo_side = rel and rel.memo or nil
-			if memo_side and memo_side.name and memo_side.name ~= memo.name then
-				goto continue
-			end
-			local related = rel and rel.relatedMemo or nil
-			local related_name = related and (related.name or related.id) or nil
-			if not related_name then
-				local related_id = rel and (rel.relatedMemoId or rel.relatedMemoID) or nil
-				if related_id then
-					related_name = "memos/" .. tostring(related_id)
-				end
-			end
-			if related_name then
-				total_out = total_out + 1
-				local snippet = related and type(related.snippet) == "string" and related.snippet or ""
-				local title = snippet ~= "" and clip_title(snippet, config.metadata_title_max_len) or "(loading...)"
-				table.insert(entries, {
-					id = related_name,
-					type = rel and rel.type or "REFERENCE",
-					title = title,
-				})
-			end
-			::continue::
-		end
-		local limit = tonumber(config.list_relations_limit) or 20
-		local truncated = 0
-		if limit > 0 and #entries > limit then
-			truncated = #entries - limit
-			local sliced = {}
-			for i = 1, limit do
-				table.insert(sliced, entries[i])
-			end
-			entries = sliced
-		end
-		cache.out_items = entries
-		cache.out_total = total_out
-		cache.truncated_out = truncated
-		cache.out_more = truncated > 0
-		cache.out_status = "loaded"
-		update_cache()
-		for _, entry in ipairs(entries) do
-			if entry.id and entry.title == "(loading...)" and not relation_title_cache[entry.id] then
-				resolve_relation_title(entry.id, function(title)
-					if title then
-						entry.title = title
-						render_cached_list()
-					end
-				end)
-			end
-		end
+	M.open_edit_buffer(content, open_cmd or "enew")
+	if buffer_name then
+		vim.api.nvim_buf_set_name(0, buffer_name)
 	end
-
-	if type(memo.relations) == "table" then
-		apply_out_from_memo(memo)
-	else
-		if show_out then
-			api.get_memo(memo.name, function(full_memo, fallback_err)
-				if not full_memo then
-					cache.out_status = "error"
-					cache.out_error = fallback_err
-					update_cache()
-					return
-				end
-				apply_out_from_memo(full_memo)
-			end)
-		else
-			apply_out_from_memo(memo)
-		end
-	end
-
-	if show_in then
-		api.list_memo_relations_v1(memo.name, config.list_relations_limit, nil, function(resp, err)
-			if not resp then
-				cache.in_status = "error"
-				cache.in_error = err
-				cache.in_items = {}
-				cache.in_total = 0
-				cache.in_more = false
-				update_cache()
-				return
-			end
-			local relations = type(resp.relations) == "table" and resp.relations or {}
-			local in_items = {}
-			local total_in = 0
-			for _, rel in ipairs(relations) do
-				local memo_side = rel and rel.memo or nil
-				local related_side = rel and rel.relatedMemo or nil
-				if related_side and related_side.name == memo.name and memo_side and memo_side.name then
-					total_in = total_in + 1
-					local snippet = type(memo_side.snippet) == "string" and memo_side.snippet or ""
-					local title = snippet ~= "" and clip_title(snippet, config.metadata_title_max_len) or "(missing)"
-					table.insert(in_items, {
-						id = memo_side.name,
-						type = rel and rel.type or "REFERENCE",
-						title = title,
-					})
-				end
-			end
-			local limit = tonumber(config.list_relations_limit) or 20
-			local truncated = 0
-			if limit > 0 and #in_items > limit then
-				truncated = #in_items - limit
-				local sliced = {}
-				for i = 1, limit do
-					table.insert(sliced, in_items[i])
-				end
-				in_items = sliced
-			end
-			cache.in_items = in_items
-			cache.in_total = total_in
-			cache.truncated_in = truncated
-			cache.in_more = (resp.nextPageToken and resp.nextPageToken ~= "") or truncated > 0
-			cache.in_status = "loaded"
-			update_cache()
-		end)
-	else
-		cache.in_items = {}
-		cache.in_total = 0
-		cache.truncated_in = 0
-		cache.in_more = false
-		cache.in_status = "loaded"
-		update_cache()
-	end
+	vim.b.memos_memo_name = memo.name
+	M.setup_buffer_for_editing()
 end
 
-function M.clear_selection()
-	clear_selection()
-	render_cached_list()
-end
-
-local function selected_memo_objects()
-	local out = {}
-	for _, memo in ipairs(memos_cache) do
-		if memo and memo.name and selected_memos[memo.name] then
-			table.insert(out, memo)
-		end
-	end
-	return out
+function M.create_memo_in_buffer()
+	M.open_edit_buffer("", "enew")
+	vim.b.memos_memo_name = nil
+	vim.api.nvim_buf_set_name(0, "memos/new_memo_" .. vim.fn.strftime("%s"))
+	M.setup_buffer_for_editing()
 end
 
 local function current_list_item()
-	local line_num = vim.api.nvim_win_get_cursor(0)[1]
-	return list_items[line_num]
-end
-
-local function memo_from_item(item)
-	if not item then
-		return nil
-	end
-	if item.kind == "memo" then
-		return memos_cache[item.memo_index]
-	end
-	if item.kind == "relation" then
-		return memos_cache[item.parent_index]
-	end
-	if item.parent_index then
-		return memos_cache[item.parent_index]
-	end
-	return nil
-end
-
-local function resolve_relation_edge(item)
-	if not item or item.kind ~= "relation" then
-		return nil
-	end
-	local parent = memos_cache[item.parent_index]
-	local parent_name = parent and parent.name or nil
-	local related_name = item.related_name
-	if not parent_name or not related_name or related_name == "" then
-		return nil
-	end
-	local direction = item.direction or "out"
-	local source_name = parent_name
-	local target_name = related_name
-	if direction == "in" then
-		source_name = related_name
-		target_name = parent_name
-	end
-	return {
-		source = source_name,
-		related = target_name,
-		parent = parent_name,
-		rel_type = item.rel_type,
-	}
-end
-
-local function find_next_memo_line(start_line, direction)
-	local line = (start_line or 0) + direction
-	while line >= 1 and line <= list_line_count do
-		local item = list_items[line]
-		if item and item.kind == "memo" then
-			return line
-		end
-		line = line + direction
-	end
-	return nil
-end
-
-local function move_cursor_to(line_num)
-	if line_num and line_num > 0 then
-		pcall(vim.api.nvim_win_set_cursor, 0, { line_num, 0 })
-	end
-end
-
-extract_memo_title = function(memo)
-	local content = memo and memo.content or ""
-	local first_line = type(content) == "string" and (content:match("^[^\n]*") or "") or ""
-	first_line = vim.trim(first_line)
-	if first_line ~= "" then
-		return first_line
-	end
-	if memo and memo.name and memo.name ~= "" then
-		return memo.name
-	end
-	return "untitled"
-end
-
-clip_title = function(title, max_len)
-	if type(title) ~= "string" then
-		return ""
-	end
-	local limit = tonumber(max_len) or 50
-	if limit <= 0 then
-		return ""
-	end
-	if #title <= limit then
-		return title
-	end
-	if limit <= 3 then
-		return title:sub(1, limit)
-	end
-	return title:sub(1, limit - 3) .. "..."
-end
-
-function M.toggle_select_next()
-	if not memos_cache or #memos_cache == 0 then
-		return
-	end
-	local line_num = vim.api.nvim_win_get_cursor(0)[1]
-	local item = list_items[line_num]
-	local selected_memo = item and item.kind == "memo" and memos_cache[item.memo_index] or nil
-	if selected_memo then
-		toggle_selected(selected_memo)
-		render_cached_list()
-	end
-	local target = find_next_memo_line(line_num, 1)
-	if target then
-		move_cursor_to(target)
-	end
-end
-
-function M.toggle_select_prev()
-	if not memos_cache or #memos_cache == 0 then
-		return
-	end
-	local line_num = vim.api.nvim_win_get_cursor(0)[1]
-	local item = list_items[line_num]
-	local selected_memo = item and item.kind == "memo" and memos_cache[item.memo_index] or nil
-	if selected_memo then
-		toggle_selected(selected_memo)
-		render_cached_list()
-	end
-	local target = find_next_memo_line(line_num, -1)
-	if target then
-		move_cursor_to(target)
-	end
-end
-
-function M.toggle_relations_tree()
-	local item = current_list_item()
-	if not item then
-		return
-	end
-	local memo = memo_from_item(item)
-	if not memo or not memo.name then
-		return
-	end
-	relations_expanded[memo.name] = not relations_expanded[memo.name]
-	ensure_relations_loaded(memo)
-	render_cached_list()
-end
-
-function M.toggle_relations_tree_all()
-	if not memos_cache or #memos_cache == 0 then
-		return
-	end
-	local memo_list = {}
-	local has_collapsed = false
-	for _, memo in ipairs(memos_cache) do
-		if memo and memo.name and memo.name ~= "" then
-			table.insert(memo_list, memo)
-			if relations_expanded[memo.name] ~= true then
-				has_collapsed = true
-			end
-		end
-	end
-	if #memo_list == 0 then
-		return
-	end
-	for _, memo in ipairs(memo_list) do
-		relations_expanded[memo.name] = has_collapsed
-		if has_collapsed then
-			ensure_relations_loaded(memo)
-		end
-	end
-	render_cached_list()
-end
-
-function M.toggle_attachments_tree()
-	local cap = get_capabilities()
-	if not (cap and cap.supports_attachments) then
-		vim.notify("Attachments are supported in v0.25+ only.", vim.log.levels.WARN)
-		return
-	end
-	local item = current_list_item()
-	if not item then
-		return
-	end
-	local memo = memo_from_item(item)
-	if not memo or not memo.name then
-		return
-	end
-	attachments_expanded[memo.name] = not attachments_expanded[memo.name]
-	if attachments_expanded[memo.name] then
-		ensure_attachments_loaded(memo)
-	end
-	render_cached_list()
-end
-
-function M.toggle_attachments_tree_all()
-	local cap = get_capabilities()
-	if not (cap and cap.supports_attachments) then
-		vim.notify("Attachments are supported in v0.25+ only.", vim.log.levels.WARN)
-		return
-	end
-	if not memos_cache or #memos_cache == 0 then
-		return
-	end
-	local memo_list = {}
-	local has_collapsed = false
-	for _, memo in ipairs(memos_cache) do
-		if memo and memo.name and memo.name ~= "" then
-			table.insert(memo_list, memo)
-			if attachments_expanded[memo.name] ~= true then
-				has_collapsed = true
-			end
-		end
-	end
-	if #memo_list == 0 then
-		return
-	end
-	for _, memo in ipairs(memo_list) do
-		attachments_expanded[memo.name] = has_collapsed
-		if has_collapsed then
-			ensure_attachments_loaded(memo)
-		end
-	end
-	render_cached_list()
-end
-
-function M.toggle_memos_list()
-	if config.window and config.window.enable_float then
-		local existing = find_memos_float_window()
-		if existing then
-			pcall(vim.api.nvim_win_close, existing, true)
-			return
-		end
-		if last_float_buf_id and vim.api.nvim_buf_is_valid(last_float_buf_id) then
-			create_float_window(last_float_buf_id)
-			return
-		end
-	end
-	if not (config.window and config.window.enable_float) then
-		if buf_id and vim.api.nvim_buf_is_valid(buf_id) then
-			local win_id = vim.fn.bufwinid(buf_id)
-			if win_id ~= -1 then
-				pcall(vim.api.nvim_win_close, win_id, true)
-				return
-			end
-		end
-	end
-	M.show_memos_list(nil, { force_refresh = false, reason = "toggle" })
-end
-
-function M.show_memos_list(filter, opts)
-	opts = opts or {}
-	local new_filter = filter
-	local filter_changed = false
-	if new_filter == nil then
-		new_filter = current_filter
-	end
-	if current_filter ~= new_filter then
-		filter_changed = true
-	end
-	current_filter = new_filter
-	if opts.force_refresh or filter_changed or opts.reason == "sort" or opts.reason == "state" then
-		clear_selection()
-		reset_relations_state()
-	end
-	local cap = get_capabilities()
-	local supports_sort = cap and cap.supports_sort
-	local supports_state = cap and cap.supports_state
-	if not current_order_by or current_order_by == "" then
-		current_order_by = config.list_sort_default
-	end
-	current_sort_index = resolve_sort_index(current_order_by)
-	if not current_state or current_state == "" then
-		current_state = config.list_state_default or "NORMAL"
-	end
-
-	-- Ensure list buffer exists.
-	if buf_id and vim.api.nvim_buf_is_valid(buf_id) then
-		-- keep existing
-	else
-		buf_id = vim.api.nvim_create_buf(false, true) -- 改为 false, true (unlisted, scratch)
-		vim.api.nvim_buf_set_name(buf_id, "MemosList")
-		vim.bo[buf_id].buftype = "nofile"
-		vim.bo[buf_id].swapfile = false
-		vim.bo[buf_id].filetype = "memos_list"
-		vim.bo[buf_id].modifiable = false
-		vim.bo[buf_id].buflisted = false
-		vim.bo[buf_id].bufhidden = "hide"
-	end
-
-	-- Focus existing window if buffer is already visible.
-	local win_id = vim.fn.bufwinid(buf_id)
-	if win_id ~= -1 then
-		vim.api.nvim_set_current_win(win_id)
-	else
-		if config.window and config.window.enable_float then
-			local found_win = find_memos_float_window()
-			if found_win then
-				vim.api.nvim_set_current_win(found_win)
-				vim.api.nvim_set_current_buf(buf_id)
-				last_float_buf_id = buf_id
-			else
-				create_float_window(buf_id)
-			end
-		else
-			vim.api.nvim_set_current_buf(buf_id)
-		end
-	end
-	if config.window and config.window.enable_float then
-		local current_win = vim.api.nvim_get_current_win()
-		local ok, is_memos_window = pcall(vim.api.nvim_win_get_var, current_win, "memos_window")
-		if ok and is_memos_window == true then
-			last_float_buf_id = buf_id
-		end
-	end
-
-	if memos_cache and #memos_cache > 0 then
-		render_cached_list()
-	end
-
-	local need_fetch = false
-	if opts.force_refresh then
-		need_fetch = true
-	elseif filter_changed then
-		need_fetch = true
-	elseif not memos_cache or #memos_cache == 0 then
-		need_fetch = true
-	end
-
-	if need_fetch then
-		vim.schedule(function()
-			vim.notify("Getting user info...")
-		end)
-		api.get_current_user(function(user)
-			if user and user.name then
-				current_user = user
-				vim.schedule(function()
-					vim.notify("Fetching memos for " .. user.name .. "...")
-				end)
-				fetch_memos_with_optional_local_filter(
-					user.name,
-					current_filter,
-					config.page_size,
-					nil,
-					current_order_by,
-					current_state,
-					function(data)
-						M.render_memos(data, false)
-					end
-				)
-			else
-				vim.schedule(function()
-					vim.notify("Could not get user, aborting fetch.", vim.log.levels.ERROR)
-				end)
-			end
-		end)
-	end
-
-	-- 【修改】这个函数现在可以处理单个按键（字符串）或多个按键（table）
-	local function set_keymap(keys, command)
-		if not keys then
-			return
-		end
-
-		if type(keys) == "table" then
-			-- 如果是 table，就为里面的每个按键都设置映射
-			for _, key in ipairs(keys) do
-				if key and key ~= "" then
-					vim.api.nvim_buf_set_keymap(buf_id, "n", key, command, { noremap = true, silent = true })
-				end
-			end
-		else
-			-- 如果只是字符串，就按原来的方式设置
-			if keys and keys ~= "" then
-				vim.api.nvim_buf_set_keymap(buf_id, "n", keys, command, { noremap = true, silent = true })
-			end
-		end
-	end
-
-	if config.keymaps and config.keymaps.list and not vim.b[buf_id].memos_list_keymaps then
-		local list_keymaps = config.keymaps.list
-		set_keymap(list_keymaps.edit_memo, '<Cmd>lua require("memos.ui").edit_selected_memo()<CR>')
-		set_keymap(list_keymaps.split_edit_memo, '<Cmd>lua require("memos.ui").edit_selected_memo_in_split()<CR>')
-		set_keymap(list_keymaps.vsplit_edit_memo, '<Cmd>lua require("memos.ui").edit_selected_memo_in_vsplit()<CR>')
-		set_keymap(list_keymaps.edit_metadata, '<Cmd>lua require("memos.ui").edit_selected_memo_metadata()<CR>')
-		set_keymap(list_keymaps.multi_edit_metadata, '<Cmd>lua require("memos.ui").edit_selected_memo_metadata_multi()<CR>')
-		set_keymap(list_keymaps.clear_selection, '<Cmd>lua require("memos.ui").clear_selection()<CR>')
-		set_keymap(list_keymaps.quit, '<Cmd>lua require("memos.ui").quit_memos_list()<CR>')
-		set_keymap(list_keymaps.search_memos, '<Cmd>lua require("memos.ui").search_memos()<CR>')
-		set_keymap(list_keymaps.search_fuzzy, '<Cmd>lua require("memos.ui").search_memos_fuzzy()<CR>')
-		set_keymap(
-			list_keymaps.refresh_list,
-			'<Cmd>lua require("memos.ui").show_memos_list(nil, { force_refresh = true })<CR>'
-		)
-		set_keymap(list_keymaps.next_page, '<Cmd>lua require("memos.ui").load_next_page()<CR>')
-		set_keymap(list_keymaps.add_memo, '<Cmd>lua require("memos.ui").create_memo_in_buffer()<CR>')
-		set_keymap(list_keymaps.create_from_template, "<Cmd>MemosCreateFromTemplate<CR>")
-		set_keymap(list_keymaps.copy_memo_id, '<Cmd>lua require("memos.ui").copy_selected_memo_id()<CR>')
-		set_keymap(list_keymaps.paste_memo, '<Cmd>lua require("memos.ui").paste_memo_from_clipboard()<CR>')
-		set_keymap(list_keymaps.delete_memo, '<Cmd>lua require("memos.ui").confirm_delete_memo()<CR>')
-		set_keymap(list_keymaps.delete_memo_visual, '<Cmd>lua require("memos.ui").confirm_delete_memo()<CR>')
-		set_keymap(list_keymaps.smart_delete, '<Cmd>lua require("memos.ui").confirm_delete_smart()<CR>')
-		set_keymap(list_keymaps.toggle_sort, '<Cmd>lua require("memos.ui").cycle_sort()<CR>')
-		set_keymap(list_keymaps.toggle_state, '<Cmd>lua require("memos.ui").toggle_state()<CR>')
-		set_keymap(list_keymaps.toggle_select_next, '<Cmd>lua require("memos.ui").toggle_select_next()<CR>')
-		set_keymap(list_keymaps.toggle_select_prev, '<Cmd>lua require("memos.ui").toggle_select_prev()<CR>')
-		set_keymap(list_keymaps.toggle_relations, '<Cmd>lua require("memos.ui").toggle_relations_tree()<CR>')
-		set_keymap(list_keymaps.toggle_relations_all, '<Cmd>lua require("memos.ui").toggle_relations_tree_all()<CR>')
-		set_keymap(list_keymaps.toggle_attachments, '<Cmd>lua require("memos.ui").toggle_attachments_tree()<CR>')
-		set_keymap(list_keymaps.toggle_attachments_all, '<Cmd>lua require("memos.ui").toggle_attachments_tree_all()<CR>')
-		vim.b[buf_id].memos_list_keymaps = true
-	end
-end
-
-function M.load_next_page()
-	if not current_page_token or current_page_token == "" then
-		vim.notify("No more pages to load.", vim.log.levels.INFO)
-		return
-	end
-	if not current_user or not current_user.name then
-		vim.notify("User info not available.", vim.log.levels.WARN)
-		return
-	end
-	vim.schedule(function()
-		vim.notify("Loading next page...")
-	end)
-	fetch_memos_with_optional_local_filter(
-		current_user.name,
-		current_filter,
-		config.page_size,
-		current_page_token,
-		current_order_by,
-		current_state,
-		function(data)
-			M.render_memos(data, true)
-		end
-	)
-end
-
-local function open_related_memo(related_name, open_cmd)
-	if not related_name or related_name == "" then
-		vim.notify("Related memo ID is missing.", vim.log.levels.WARN)
-		return
-	end
-	api.get_memo(related_name, function(memo, err)
-		if not memo then
-			vim.schedule(function()
-				vim.notify("Failed to load related memo: " .. tostring(err), vim.log.levels.ERROR)
-			end)
-			return
-		end
-		vim.schedule(function()
-			M.open_memo_for_edit(memo, open_cmd or "enew")
-		end)
-	end)
-end
-
-local function open_url(url)
-	if type(url) ~= "string" or url == "" then
-		return false
-	end
-	if vim.ui and type(vim.ui.open) == "function" then
-		local ok, err = pcall(vim.ui.open, url)
-		if ok and not err then
-			return true
-		end
-	end
-	local cmd
-	if vim.fn.has("win32") == 1 then
-		cmd = { "cmd.exe", "/c", "start", "", url }
-	elseif vim.fn.has("macunix") == 1 then
-		cmd = { "open", url }
-	else
-		cmd = { "xdg-open", url }
-	end
-	local ok = vim.fn.jobstart(cmd, { detach = true }) > 0
-	return ok
-end
-
-local function attachment_from_item(item)
-	if not item or item.kind ~= "attachment" then
-		return nil
-	end
-	return {
-		name = item.attachment_name,
-		filename = item.attachment_filename,
-		external_link = item.attachment_external_link,
-	}
-end
-
-local function handle_attachment_action(item)
-	local attachment = attachment_from_item(item)
-	if not attachment then
-		return
-	end
-	local url = build_attachment_url(attachment)
-	local filename = attachment.filename or "(unnamed)"
-	local options = {
-		{ key = "open", label = "Open URL" },
-		{ key = "copy_url", label = "Copy URL" },
-		{ key = "copy_filename", label = "Copy filename" },
-	}
-	vim.ui.select(options, {
-		prompt = string.format("Attachment: %s", filename),
-		format_item = function(choice)
-			return choice.label
-		end,
-	}, function(choice)
-		if not choice then
-			return
-		end
-		if choice.key == "open" then
-			if not url or url == "" then
-				vim.notify("No URL available for this attachment.", vim.log.levels.WARN)
-				return
-			end
-			if open_url(url) then
-				vim.notify("Opened attachment URL.")
-			else
-				vim.notify("Failed to open attachment URL.", vim.log.levels.ERROR)
-			end
-			return
-		end
-		if choice.key == "copy_url" then
-			if not url or url == "" then
-				vim.notify("No URL available for this attachment.", vim.log.levels.WARN)
-				return
-			end
-			vim.fn.setreg("+", url)
-			vim.notify("Attachment URL copied to clipboard.")
-			return
-		end
-		if choice.key == "copy_filename" then
-			vim.fn.setreg("+", filename)
-			vim.notify("Attachment filename copied to clipboard.")
-		end
-	end)
+	local line = vim.api.nvim_win_get_cursor(0)[1]
+	return list_items[line]
 end
 
 function M.edit_selected_memo()
@@ -2301,1925 +365,125 @@ function M.edit_selected_memo()
 	if not item then
 		return
 	end
-	if item.kind == "relation" then
-		open_related_memo(item.related_name, "enew")
+	if item.kind == "load_more" then
+		M.load_next_page()
 		return
 	end
-	if item.kind == "attachment" then
-		handle_attachment_action(item)
-		return
-	end
-	local selected_memo = item.kind == "memo" and memos_cache[item.memo_index] or nil
-	if selected_memo then
-		M.open_memo_for_edit(selected_memo, "enew")
+	local memo = item.kind == "memo" and memos_cache[item.index] or nil
+	if memo then
+		M.open_memo_for_edit(memo, "enew")
 	end
 end
 
-function M.edit_selected_memo_in_vsplit()
-	local item = current_list_item()
-	if not item then
-		return
-	end
-	local current_win = vim.api.nvim_get_current_win()
-	local ok, is_memos_window = pcall(vim.api.nvim_win_get_var, current_win, "memos_window")
-	if ok and is_memos_window == true then
-		pcall(vim.api.nvim_win_close, current_win, true)
-	end
-	if item.kind == "relation" then
-		open_related_memo(item.related_name, "vsplit | enew")
-		return
-	end
-	if item.kind == "attachment" then
-		handle_attachment_action(item)
-		return
-	end
-	local selected_memo = item.kind == "memo" and memos_cache[item.memo_index] or nil
-	if selected_memo then
-		M.open_memo_for_edit(selected_memo, "vsplit | enew")
+function M.refresh_list_silently()
+	if list_buf and vim.api.nvim_buf_is_valid(list_buf) then
+		fetch_memos({ append = false })
 	end
 end
 
-function M.edit_selected_memo_in_split()
-	local item = current_list_item()
-	if not item then
-		return
-	end
-	local current_win = vim.api.nvim_get_current_win()
-	local ok, is_memos_window = pcall(vim.api.nvim_win_get_var, current_win, "memos_window")
-	if ok and is_memos_window == true then
-		pcall(vim.api.nvim_win_close, current_win, true)
-	end
-	if item.kind == "relation" then
-		open_related_memo(item.related_name, "split | enew")
-		return
-	end
-	if item.kind == "attachment" then
-		handle_attachment_action(item)
-		return
-	end
-	local selected_memo = item.kind == "memo" and memos_cache[item.memo_index] or nil
-	if selected_memo then
-		M.open_memo_for_edit(selected_memo, "split | enew")
+function M.return_to_list()
+	local current_buf = vim.api.nvim_get_current_buf()
+	M.show_memos_list({ force_refresh = true })
+	if vim.api.nvim_buf_is_valid(current_buf) and not vim.bo[current_buf].modified then
+		pcall(vim.api.nvim_buf_delete, current_buf, { force = false })
 	end
 end
 
-function M.copy_selected_memo_id()
-	local selected_ids = selected_list()
-	if #selected_ids > 0 then
-		if config.confirm_copy then
-			local prompt = string.format("Copy %d memo IDs to clipboard?", #selected_ids)
-			local choice = vim.fn.confirm(prompt, "&Yes\n&No", 2)
-			if choice ~= 1 then
-				return
-			end
-		end
-		vim.fn.setreg("+", table.concat(selected_ids, ","))
-		vim.notify(string.format("Copied %d memo IDs to clipboard.", #selected_ids))
+function M.check_and_auto_save()
+	if vim.b.memos_original_content == nil then
 		return
 	end
-	local item = current_list_item()
-	if not item then
-		vim.notify("Select a memo line to copy.", vim.log.levels.WARN)
-		return
-	end
-	local selected_id = nil
-	local preview = nil
-	if item.kind == "relation" then
-		selected_id = item.related_name
-		preview = relation_title_cache[selected_id]
-	elseif item.kind == "memo" then
-		local selected_memo = memos_cache[item.memo_index]
-		selected_id = selected_memo and selected_memo.name or nil
-		preview = selected_memo and (type(selected_memo.content) == "string" and selected_memo.content or ""):sub(1, 50) or nil
-	end
-	if not selected_id or selected_id == "" then
-		vim.notify("Selected memo has no valid identifier.", vim.log.levels.WARN)
-		return
-	end
-
-	if config.confirm_copy then
-		local preview_text = preview or selected_id
-		local choice = vim.fn.confirm("Copy this memo ID?\n[" .. preview_text .. "...]", "&Yes\n&No", 2)
-		if choice ~= 1 then
-			return
-		end
-	end
-
-	vim.fn.setreg("+", selected_id)
-	vim.notify("📋 Memo ID copied to clipboard.")
-end
-
-local function normalize_memo_name(raw)
-	if type(raw) ~= "string" then
-		return nil
-	end
-	local trimmed = vim.trim(raw)
-	if trimmed == "" then
-		return nil
-	end
-	if trimmed:match("^memos/") then
-		return trimmed
-	end
-	if trimmed:match("^%d+$") then
-		return "memos/" .. trimmed
-	end
-	return nil
-end
-
-local function parse_relation_ids(raw)
-	local text = vim.trim(raw or "")
-	if text == "" then
-		return {}
-	end
-	local out = {}
-	local seen = {}
-	for token in text:gmatch("[^,%s]+") do
-		local normalized = normalize_memo_name(token)
-		if normalized and normalized ~= "" and not seen[normalized] then
-			table.insert(out, normalized)
-			seen[normalized] = true
-		end
-	end
-	return out
-end
-
-local function prompt_relation_op(callback)
-	local items = {
-		{ value = "append", label = "Append" },
-		{ value = "delete", label = "Delete" },
-		{ value = "replace", label = "Replace" },
-	}
-	vim.schedule(function()
-		vim.ui.select(items, {
-			prompt = "Relation operation:",
-			format_item = function(item)
-				return item.label
-			end,
-		}, function(choice)
-			if not choice then
-				callback(nil)
-				return
-			end
-			callback(choice.value)
-		end)
-	end)
-end
-
-local function prompt_relation_ids(default_raw, callback)
-	vim.schedule(function()
-		local default_value = default_raw or ""
-		if type(default_value) ~= "string" then
-			default_value = tostring(default_value)
-		end
-		default_value = default_value:gsub("[\r\n]+", " ")
-		vim.ui.input({
-			prompt = "Related memo ids (comma-separated, memos/<id>): ",
-			default = default_value,
-		}, function(input)
-			if input == nil then
-				callback(nil, nil)
-				return
-			end
-			callback(parse_relation_ids(input), input)
-		end)
-	end)
-end
-
-function M.paste_memo_from_clipboard()
-	local selected_ids = selected_list()
-	if #selected_ids > 0 then
-		vim.notify("Multi-select paste is not supported yet. Pasted the first memo only.", vim.log.levels.WARN)
-	end
-	local raw = vim.fn.getreg("+")
-	local memo_name = nil
-	if #selected_ids > 0 then
-		local ids = parse_relation_ids(raw)
-		memo_name = ids[1]
-	else
-		memo_name = normalize_memo_name(raw)
-	end
-	if not memo_name then
-		vim.notify("Clipboard does not contain a valid memo id.", vim.log.levels.WARN)
-		return
-	end
-
-	api.get_memo(memo_name, function(memo, err)
-		if not memo then
-			vim.schedule(function()
-				vim.notify("Failed to fetch memo: " .. tostring(err), vim.log.levels.ERROR)
-			end)
-			return
-		end
-		vim.schedule(function()
-			M.create_memo_from_content(type(memo.content) == "string" and memo.content or "")
-		end)
-	end)
-end
-
-local function delete_relation_edge(item)
-	local edge = resolve_relation_edge(item)
-	if not edge then
-		vim.notify("Select a relation line to delete.", vim.log.levels.WARN)
-		return
-	end
-	local preview = relation_title_cache[edge.related] or edge.related
-	local choice = vim.fn.confirm(
-		string.format("Delete relation?\n%s -> %s", edge.source or "(source)", preview or "(target)"),
-		"&Yes\n&No",
-		2
-	)
-	if choice ~= 1 then
-		return
-	end
-	local cap = get_capabilities()
-	if cap and cap.mode == "v0.21" then
-		local rel_type = edge.rel_type or "REFERENCE"
-		api.delete_memo_relation(edge.source, edge.related, rel_type, function(ok, err)
-			vim.schedule(function()
-				if ok then
-					vim.notify("✅ Relation deleted.")
-					invalidate_relations_cache({ edge.source, edge.related, edge.parent })
-					M.refresh_list_silently()
-				else
-					vim.notify("❌ Failed to delete relation: " .. tostring(err), vim.log.levels.ERROR)
-				end
-			end)
-		end)
-		return
-	end
-
-	api.get_memo(edge.source, function(source_memo, err)
-		if not source_memo then
-			vim.schedule(function()
-				vim.notify("Failed to load relation source: " .. tostring(err), vim.log.levels.ERROR)
-			end)
-			return
-		end
-		local relations = type(source_memo.relations) == "table" and source_memo.relations or {}
-		local updated = {}
-		local removed = 0
-		local target_type = edge.rel_type
-		if target_type == "" then
-			target_type = nil
-		end
-		for _, rel in ipairs(relations) do
-			local rel_related = rel and rel.relatedMemo and rel.relatedMemo.name or nil
-			if not rel_related then
-				local rel_id = rel and (rel.relatedMemoId or rel.relatedMemoID) or nil
-				if rel_id then
-					rel_related = "memos/" .. tostring(rel_id)
-				end
-			end
-			local rel_type = rel and rel.type or "TYPE_UNSPECIFIED"
-			if rel_related == edge.related and (not target_type or rel_type == target_type) then
-				removed = removed + 1
-			else
-				table.insert(updated, rel)
-			end
-		end
-		if removed == 0 then
-			vim.schedule(function()
-				vim.notify("No matching relation found to delete.", vim.log.levels.WARN)
-			end)
-			return
-		end
-		local fields = {
-			content = source_memo.content or "",
-			relations = updated,
-		}
-		api.update_memo_metadata(edge.source, fields, "relations", function(success)
-			vim.schedule(function()
-				if success then
-					vim.notify("✅ Relation deleted.")
-					invalidate_relations_cache({ edge.source, edge.related, edge.parent })
-					M.refresh_list_silently()
-				else
-					vim.notify("❌ Failed to delete relation.", vim.log.levels.ERROR)
-				end
-			end)
-		end)
-	end)
-end
-
-local function delete_memos_sequentially(memo_names, on_done)
-	local names = memo_names or {}
-	local done = on_done or function() end
-	local index = 1
-	local success_count = 0
-	local failed_names = {}
-
-	local function process_next()
-		local memo_name = names[index]
-		if not memo_name then
-			done(success_count, failed_names)
-			return
-		end
-		index = index + 1
-		api.delete_memo(memo_name, function(success)
-			if success then
-				success_count = success_count + 1
-			else
-				table.insert(failed_names, memo_name)
-			end
-			process_next()
-		end)
-	end
-
-	process_next()
-end
-
-local function confirm_delete_selected_memos(selected)
-	local selected_memos_local = selected or {}
-	local memo_names = {}
-	local seen = {}
-	for _, memo in ipairs(selected_memos_local) do
-		if memo and memo.name and memo.name ~= "" and not seen[memo.name] then
-			table.insert(memo_names, memo.name)
-			seen[memo.name] = true
-		end
-	end
-	if #memo_names == 0 then
-		return false
-	end
-
-	local choice = vim.fn.confirm(string.format("Delete %d selected memos?", #memo_names), "&Yes\n&No", 2)
-	if choice ~= 1 then
-		return true
-	end
-
-	delete_memos_sequentially(memo_names, function(success_count, failed_names)
-		vim.schedule(function()
-			clear_selection()
-			if #failed_names == 0 then
-				vim.notify(string.format("✅ Deleted %d memos.", success_count))
-			else
-				local failed_preview = table.concat(failed_names, ", ")
-				if #failed_preview > 120 then
-					failed_preview = failed_preview:sub(1, 117) .. "..."
-				end
-				vim.notify(
-					string.format("⚠️ Deleted %d memos, %d failed: %s", success_count, #failed_names, failed_preview),
-					vim.log.levels.WARN
-				)
-			end
-			M.show_memos_list(current_filter, { force_refresh = true, reason = "delete" })
-		end)
-	end)
-
-	return true
-end
-
-local function delete_referenced_memo_from_relation(item)
-	if not item or item.kind ~= "relation" then
-		return false
-	end
-	local related_name = item.related_name
-	if not related_name or related_name == "" then
-		vim.notify("Related memo ID is missing.", vim.log.levels.WARN)
-		return true
-	end
-	local preview = relation_title_cache[related_name] or related_name
-	local choice = vim.fn.confirm("Delete referenced memo?\n[" .. preview .. "]", "&Yes\n&No", 2)
-	if choice ~= 1 then
-		return true
-	end
-	api.delete_memo(related_name, function(success)
-		vim.schedule(function()
-			if success then
-				vim.notify("✅ Memo deleted.")
-				local parent = memos_cache[item.parent_index]
-				local parent_name = parent and parent.name or nil
-				invalidate_relations_cache({ related_name, parent_name })
-				M.refresh_list_silently()
-			else
-				vim.notify("❌ Failed to delete memo.", vim.log.levels.ERROR)
-			end
-		end)
-	end)
-	return true
-end
-
-function M.confirm_delete_smart()
-	local item = current_list_item()
-	if item and item.kind == "relation" then
-		delete_referenced_memo_from_relation(item)
-		return
-	end
-
-	local selected = selected_memo_objects()
-	if #selected > 0 then
-		confirm_delete_selected_memos(selected)
-		return
-	end
-
-	M.confirm_delete_memo()
-end
-
-function M.confirm_delete_memo()
-	local item = current_list_item()
-	if not item then
-		vim.notify("Select a memo line to delete.", vim.log.levels.WARN)
-		return
-	end
-	if item.kind == "relation" then
-		delete_relation_edge(item)
-		return
-	end
-	local selected_memo = memos_cache[item.memo_index]
-	if not selected_memo or not selected_memo.name or selected_memo.name == "" then
-		return
-	end
-	local preview = (type(selected_memo.content) == "string" and selected_memo.content or ""):sub(1, 50)
-	local choice = vim.fn.confirm("Delete this memo?\n[" .. preview .. "...]", "&Yes\n&No", 2)
-	if choice == 1 then
-		api.delete_memo(selected_memo.name, function(success)
-			if success then
-				vim.schedule(function()
-					vim.notify("✅ Memo deleted.")
-					M.show_memos_list(current_filter, { force_refresh = true, reason = "delete" })
-				end)
-			else
-				vim.schedule(function()
-					vim.notify("❌ Failed to delete memo.", vim.log.levels.ERROR)
-				end)
-			end
-		end)
+	local content = table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), "\n")
+	if content ~= vim.b.memos_original_content then
+		M.save_or_create_dispatcher()
 	end
 end
 
-function M.search_memos()
-	local cap = get_capabilities()
-	if cap and cap.search_mode == "simple" then
-		vim.ui.input({
-			prompt = "Search (text or #tag): ",
-		}, function(input)
-			current_local_filter = nil
-			local_filter_notice_shown = false
-			M.show_memos_list(vim.trim(input or ""), { force_refresh = true })
-		end)
-		return
-	end
-	local function looks_like_cel(expr)
-		if expr:find("content%.contains%(") then
-			return true
-		end
-		if expr:find(" in tags") or expr:find("tags") then
-			return true
-		end
-		if expr:find("&&") or expr:find("||") then
-			return true
-		end
-		if expr:find("==") or expr:find("~=") or expr:find(">=") or expr:find("<=") then
-			return true
-		end
-		if expr:find("%(") or expr:find("%)") then
-			return true
-		end
-		if expr:find('".+"') and (expr:find("&&") or expr:find("||") or expr:find(" in ")) then
-			return true
-		end
-		return false
-	end
-
-	local function build_filter_from_input(raw)
-		local input = vim.trim(raw or "")
-		if input == "" then
-			return ""
-		end
-		if looks_like_cel(input) then
-			return input
-		end
-
-		local clauses = {}
-		local remaining = input
-
-		for tag in input:gmatch("#([%w_/%-]+)") do
-			local escaped = vim.fn.escape(tag, '"')
-			table.insert(clauses, string.format('"%s" in tags', escaped))
-		end
-
-		remaining = remaining:gsub("#[%w_/%-]+", " ")
-		remaining = vim.trim(remaining)
-		if remaining ~= "" then
-			local tokens = {}
-			local rest = remaining
-			while true do
-				local start_q, end_q = rest:find('"(.-)"')
-				if not start_q then
-					break
-				end
-				local before = vim.trim(rest:sub(1, start_q - 1))
-				if before ~= "" then
-					for _, word in ipairs(vim.split(before, "%s+")) do
-						if word ~= "" then
-							table.insert(tokens, word)
-						end
-					end
-				end
-				local quoted = rest:sub(start_q + 1, end_q - 1)
-				if quoted ~= "" then
-					table.insert(tokens, quoted)
-				end
-				rest = rest:sub(end_q + 1)
-			end
-			rest = vim.trim(rest)
-			if rest ~= "" then
-				for _, word in ipairs(vim.split(rest, "%s+")) do
-					if word ~= "" then
-						table.insert(tokens, word)
-					end
-				end
-			end
-			for _, token in ipairs(tokens) do
-				local escaped = vim.fn.escape(token, '"')
-				table.insert(clauses, string.format('content.contains("%s")', escaped))
-			end
-		end
-		return table.concat(clauses, " && ")
-	end
-
-	vim.ui.input({
-		prompt = 'Search (text or CEL): foo bar | "foo bar" | #area/work #todo | content.contains("foo") && "work" in tags: ',
-	}, function(input)
-		current_local_filter = nil
-		local_filter_notice_shown = false
-		M.show_memos_list(build_filter_from_input(input), { force_refresh = true })
-	end)
-end
-
-function M.search_memos_fuzzy()
-	local cap = get_capabilities()
-	if cap and cap.search_mode == "simple" then
-		vim.notify("Fuzzy search requires CEL (v0.25/v0.26).", vim.log.levels.WARN)
-		return
-	end
-
-	local function tokenize(input)
-		local tokens = {}
-		local i = 1
-		local len = #input
-		while i <= len do
-			local ch = input:sub(i, i)
-			if ch:match("%s") then
-				i = i + 1
-			elseif ch == "(" then
-				table.insert(tokens, { type = "LPAREN" })
-				i = i + 1
-			elseif ch == ")" then
-				table.insert(tokens, { type = "RPAREN" })
-				i = i + 1
-			elseif ch == "," then
-				table.insert(tokens, { type = "OR" })
-				i = i + 1
-			elseif ch == "&" and input:sub(i, i + 1) == "&&" then
-				table.insert(tokens, { type = "AND" })
-				i = i + 2
-			elseif ch == "|" and input:sub(i, i + 1) == "||" then
-				table.insert(tokens, { type = "OR" })
-				i = i + 2
-			elseif ch == '"' then
-				local j = i + 1
-				while j <= len and input:sub(j, j) ~= '"' do
-					j = j + 1
-				end
-				if j > len then
-					return nil, "Unterminated string."
-				end
-				local value = input:sub(i + 1, j - 1)
-				table.insert(tokens, { type = "TERM", kind = "content", value = value })
-				i = j + 1
-			elseif ch == "#" then
-				local j = i + 1
-				while j <= len and input:sub(j, j):match("[%w_/%-]") do
-					j = j + 1
-				end
-				local value = input:sub(i + 1, j - 1)
-				if value == "" then
-					return nil, "Invalid tag."
-				end
-				table.insert(tokens, { type = "TERM", kind = "tag", value = value })
-				i = j
-			else
-				local j = i
-				while j <= len do
-					local c = input:sub(j, j)
-					if c:match("%s") or c == "(" or c == ")" or c == "," then
-						break
-					end
-					if c == "&" and input:sub(j, j + 1) == "&&" then
-						break
-					end
-					if c == "|" and input:sub(j, j + 1) == "||" then
-						break
-					end
-					j = j + 1
-				end
-				local value = input:sub(i, j - 1)
-				if value ~= "" then
-					table.insert(tokens, { type = "TERM", kind = "content", value = value })
-				end
-				i = j
-			end
-		end
-		return tokens, nil
-	end
-
-	local function insert_implicit_and(tokens)
-		local out = {}
-		local function is_term_like(tok)
-			return tok.type == "TERM" or tok.type == "RPAREN"
-		end
-		local function is_start_like(tok)
-			return tok.type == "TERM" or tok.type == "LPAREN"
-		end
-		for idx, tok in ipairs(tokens) do
-			local prev = out[#out]
-			if prev and is_term_like(prev) and is_start_like(tok) then
-				table.insert(out, { type = "AND" })
-			end
-			table.insert(out, tok)
-		end
-		return out
-	end
-
-	local function starts_with(str, prefix)
-		return str:sub(1, #prefix) == prefix
-	end
-
-	local function ends_with(str, suffix)
-		if #suffix == 0 then
-			return true
-		end
-		if #str < #suffix then
-			return false
-		end
-		return str:sub(-#suffix) == suffix
-	end
-
-	local function build_term(term)
-		local escaped = vim.fn.escape(term.value, '"')
-		if term.kind == "tag" then
-			local tag_value = term.value
-			local prefix = tag_value .. "/"
-			local suffix = "/" .. tag_value
-			return {
-				server_expr = "true",
-				has_tag = true,
-				local_match = function(memo)
-					local tags = memo and memo.tags or nil
-					if type(tags) ~= "table" then
-						return false
-					end
-					for _, tag in ipairs(tags) do
-						if type(tag) == "string" then
-							if tag == tag_value or starts_with(tag, prefix) or ends_with(tag, suffix) then
-								return true
-							end
-						end
-					end
-					return false
-				end,
-			}
-		end
-
-		local needle = term.value
-		return {
-			server_expr = string.format('content.contains("%s")', escaped),
-			has_tag = false,
-			local_match = function(memo)
-				local content = type(memo and memo.content) == "string" and memo.content or ""
-				return content:find(needle, 1, true) ~= nil
-			end,
-		}
-	end
-
-	local function combine_server_expr(op, left, right)
-		local l = left or "true"
-		local r = right or "true"
-		if op == "AND" then
-			if l == "true" then
-				return r
-			end
-			if r == "true" then
-				return l
-			end
-			if l == "false" or r == "false" then
-				return "false"
-			end
-			return "(" .. l .. " && " .. r .. ")"
-		end
-		if l == "true" or r == "true" then
-			return "true"
-		end
-		if l == "false" then
-			return r
-		end
-		if r == "false" then
-			return l
-		end
-		return "(" .. l .. " || " .. r .. ")"
-	end
-
-	local function combine_nodes(op, left, right)
-		return {
-			server_expr = combine_server_expr(op, left.server_expr, right.server_expr),
-			has_tag = left.has_tag or right.has_tag,
-			local_match = function(memo)
-				local l = left.local_match(memo)
-				local r = right.local_match(memo)
-				if op == "AND" then
-					return l and r
-				end
-				return l or r
-			end,
-		}
-	end
-
-	local function parse(tokens)
-		local idx = 1
-		local parse_or
-
-		local function parse_primary()
-			local tok = tokens[idx]
-			if not tok then
-				return nil, "Unexpected end of input."
-			end
-			if tok.type == "TERM" then
-				idx = idx + 1
-				return build_term(tok)
-			end
-			if tok.type == "LPAREN" then
-				idx = idx + 1
-				local node, err = parse_or()
-				if not node then
-					return nil, err
-				end
-				if not tokens[idx] or tokens[idx].type ~= "RPAREN" then
-					return nil, "Missing ')'."
-				end
-				idx = idx + 1
-				return node
-			end
-			return nil, "Unexpected token."
-		end
-
-		local function parse_and()
-			local left, err = parse_primary()
-			if not left then
-				return nil, err
-			end
-			while tokens[idx] and tokens[idx].type == "AND" do
-				idx = idx + 1
-				local right, err2 = parse_primary()
-				if not right then
-					return nil, err2
-				end
-				left = combine_nodes("AND", left, right)
-			end
-			return left
-		end
-
-		parse_or = function()
-			local left, err = parse_and()
-			if not left then
-				return nil, err
-			end
-			while tokens[idx] and tokens[idx].type == "OR" do
-				idx = idx + 1
-				local right, err2 = parse_and()
-				if not right then
-					return nil, err2
-				end
-				left = combine_nodes("OR", left, right)
-			end
-			return left
-		end
-
-		local node, err = parse_or()
-		if not node then
-			return nil, err
-		end
-		if tokens[idx] then
-			return nil, "Unexpected token."
-		end
-		return node
-	end
-
-	vim.ui.input({
-		prompt = 'Fuzzy search (pseudo-CEL): "foo bar" #tag, #tag2',
-	}, function(input)
-		local raw = vim.trim(input or "")
-		if raw == "" then
-			current_local_filter = nil
-			local_filter_notice_shown = false
-			M.show_memos_list("", { force_refresh = true })
-			return
-		end
-		local tokens, err = tokenize(raw)
-		if not tokens then
-			vim.notify("Fuzzy search parse error: " .. tostring(err), vim.log.levels.ERROR)
-			return
-		end
-		tokens = insert_implicit_and(tokens)
-		local node, err2 = parse(tokens)
-		if not node then
-			vim.notify("Fuzzy search parse error: " .. tostring(err2), vim.log.levels.ERROR)
-			return
-		end
-
-		local server_filter = node.server_expr or ""
-		if server_filter == "true" then
-			server_filter = ""
-		end
-
-		if node.has_tag then
-			current_local_filter = node.local_match
-			local_filter_notice_shown = false
-		else
-			current_local_filter = nil
-			local_filter_notice_shown = false
-		end
-
-		M.show_memos_list(server_filter, { force_refresh = true })
-	end)
-end
-
-local function prompt_select_field(capabilities, callback, opts)
+function M.save_or_create_dispatcher(opts)
 	opts = opts or {}
-	local allow_relations = opts.allow_relations ~= false
-	local prompt = opts.prompt or "Edit memo metadata:"
-	local items = {}
-	table.insert(items, { key = "visibility", label = "Visibility" })
-	table.insert(items, { key = "pinned", label = "Pinned" })
-	if not (capabilities and capabilities.mode == "v0.21") then
-		table.insert(items, { key = "displayTime", label = "Display time" })
-	end
-	table.insert(items, { key = "createTime", label = "Create time" })
-	if allow_relations then
-		table.insert(items, { key = "relations", label = "Relations" })
-	end
-	table.insert(items, { key = "state", label = "State" })
-	vim.schedule(function()
-		vim.ui.select(items, {
-			prompt = prompt,
-			format_item = function(item)
-				return item.label
-			end,
-		}, function(choice)
-			if not choice then
-				callback(nil)
-				return
-			end
-			callback(choice.key)
-		end)
-	end)
-end
-
-local function prompt_select_enum(prompt, choices, callback)
-	local items = {}
-	for _, value in ipairs(choices) do
-		table.insert(items, { value = value })
-	end
-	vim.schedule(function()
-		vim.ui.select(items, {
-			prompt = prompt,
-			format_item = function(item)
-				return item.value
-			end,
-		}, function(choice)
-			if not choice then
-				callback(nil)
-				return
-			end
-			callback(choice.value)
-		end)
-	end)
-end
-
-local function prompt_select_boolean(prompt, callback)
-	local items = { { value = true, label = "true" }, { value = false, label = "false" } }
-	vim.schedule(function()
-		vim.ui.select(items, {
-			prompt = prompt,
-			format_item = function(item)
-				return item.label
-			end,
-		}, function(choice)
-			if not choice then
-				callback(nil)
-				return
-			end
-			callback(choice.value)
-		end)
-	end)
-end
-
-local prompt_iso_time
-
-local function prompt_metadata_value(field, memo, callback)
-	if field == "visibility" then
-		prompt_select_enum("Visibility", { "PRIVATE", "PROTECTED", "PUBLIC" }, callback)
-		return
-	end
-	if field == "pinned" then
-		prompt_select_boolean("Pinned", callback)
-		return
-	end
-	if field == "displayTime" then
-		prompt_iso_time("Display time", memo and memo.displayTime or nil, callback)
-		return
-	end
-	if field == "createTime" then
-		prompt_iso_time("Create time", memo and memo.createTime or nil, callback)
-		return
-	end
-	if field == "state" then
-		prompt_select_enum("State", { "NORMAL", "ARCHIVED" }, callback)
-		return
-	end
-	callback(nil)
-end
-
-local function prompt_non_relation_metadata(capabilities, memo, callback, prompt)
-	prompt_select_field(capabilities, function(field)
-		if not field then
-			callback(nil, nil)
-			return
-		end
-		if field == "relations" then
-			vim.notify("Relations are not supported in multi-edit mode.", vim.log.levels.WARN)
-			callback(nil, nil)
-			return
-		end
-		prompt_metadata_value(field, memo, function(value)
-			if value == nil then
-				callback(nil, nil)
-				return
-			end
-			callback(field, value)
-		end)
-	end, { allow_relations = false, prompt = prompt })
-end
-
-local function normalize_iso_time(input)
-	local value = vim.trim(input or "")
-	if value == "" then
-		return value
-	end
-	if value:match("Z$") or value:match("[%+%-]%d%d:?%d%d$") then
-		return value
-	end
-	if value:match("^%d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d$") then
-		local y, mo, d, h, mi, s = value:match("^(%d%d%d%d)%-(%d%d)%-(%d%d)T(%d%d):(%d%d):(%d%d)$")
-		local ts = os.time({
-			year = tonumber(y),
-			month = tonumber(mo),
-			day = tonumber(d),
-			hour = tonumber(h),
-			min = tonumber(mi),
-			sec = tonumber(s),
-		})
-		local local_now = os.date("*t", ts)
-		local utc_now = os.date("!*t", ts)
-		local offset_seconds = os.difftime(os.time(local_now), os.time(utc_now))
-		local sign = offset_seconds >= 0 and "+" or "-"
-		local abs_seconds = math.abs(offset_seconds)
-		local hours = math.floor(abs_seconds / 3600)
-		local minutes = math.floor((abs_seconds % 3600) / 60)
-		return string.format("%s%s%02d:%02d", value, sign, hours, minutes)
-	end
-	return value
-end
-
-local function iso_to_unix_time(value)
-	local normalized = normalize_iso_time(value or "")
-	if normalized == "" then
-		return nil
-	end
-	normalized = normalized:gsub("^(%d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d)%.%d+(Z)$", "%1%2")
-	normalized = normalized:gsub("^(%d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d)%.%d+([%+%-]%d%d:%d%d)$", "%1%2")
-	normalized = normalized:gsub("^(%d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d)%.%d+([%+%-]%d%d%d%d)$", "%1%2")
-	normalized = normalized:gsub("^(%d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d)%.%d+$", "%1")
-
-	local function parse_components(raw)
-		local y, mo, d, h, mi, s, z = raw:match("^(%d%d%d%d)%-(%d%d)%-(%d%d)T(%d%d):(%d%d):(%d%d)(.*)$")
-		if not y then
-			return nil
-		end
-		return {
-			year = tonumber(y),
-			month = tonumber(mo),
-			day = tonumber(d),
-			hour = tonumber(h),
-			min = tonumber(mi),
-			sec = tonumber(s),
-			zone = z or "",
-		}
-	end
-
-	local function local_utc_offset_seconds(ts)
-		local local_now = os.date("*t", ts)
-		local utc_now = os.date("!*t", ts)
-		return os.difftime(os.time(local_now), os.time(utc_now))
-	end
-
-	local parts = parse_components(normalized)
-	if not parts then
-		return nil
-	end
-	local local_ts = os.time({
-		year = parts.year,
-		month = parts.month,
-		day = parts.day,
-		hour = parts.hour,
-		min = parts.min,
-		sec = parts.sec,
-	})
-	if not local_ts then
-		return nil
-	end
-	local zone = parts.zone
-	if zone == "" then
-		local num = tonumber(local_ts)
-		if not num or num <= 0 then
-			return nil
-		end
-		return num
-	end
-	local target_offset = nil
-	if zone == "Z" then
-		target_offset = 0
-	elseif zone:match("^[%+%-]%d%d:%d%d$") then
-		local sign_char, zh, zm = zone:match("^([%+%-])(%d%d):(%d%d)$")
-		local sign = sign_char == "-" and -1 or 1
-		target_offset = sign * (tonumber(zh) * 3600 + tonumber(zm) * 60)
-	elseif zone:match("^[%+%-]%d%d%d%d$") then
-		local sign_char, zh, zm = zone:match("^([%+%-])(%d%d)(%d%d)$")
-		local sign = sign_char == "-" and -1 or 1
-		target_offset = sign * (tonumber(zh) * 3600 + tonumber(zm) * 60)
-	else
-		return nil
-	end
-	local local_offset = local_utc_offset_seconds(local_ts)
-	local num = tonumber(local_ts + (local_offset - target_offset))
-	if not num or num <= 0 then
-		return nil
-	end
-	return num
-end
-
-local function format_time_default_for_input(value)
-	if type(value) ~= "string" or value == "" then
-		return value or ""
-	end
-	local ts = iso_to_unix_time(value)
-	if not ts then
-		return value
-	end
-	return os.date("%Y-%m-%dT%H:%M:%S", ts)
-end
-
-prompt_iso_time = function(prompt, default_value, callback)
-	vim.schedule(function()
-		vim.ui.input({
-			prompt = prompt .. " (ISO 8601, e.g. 2025-02-07T12:34:56+08:00): ",
-			default = format_time_default_for_input(default_value),
-		}, function(input)
-			if not input or input == "" then
-				callback(nil)
-				return
-			end
-			callback(normalize_iso_time(input))
-		end)
-	end)
-end
-
-local function is_time_field(field)
-	return field == "displayTime" or field == "createTime"
-end
-
-local function time_values_equal(left, right)
-	if type(left) ~= "string" or type(right) ~= "string" then
-		return false
-	end
-	if left == right then
-		return true
-	end
-	local left_ts = iso_to_unix_time(left)
-	local right_ts = iso_to_unix_time(right)
-	if left_ts and right_ts then
-		return left_ts == right_ts
-	end
-	return false
-end
-
-local function normalize_memo_name(raw)
-	if type(raw) ~= "string" then
-		return nil
-	end
-	local trimmed = vim.trim(raw)
-	if trimmed == "" then
-		return nil
-	end
-	if trimmed:match("^memos/") then
-		return trimmed
-	end
-	if trimmed:match("^%d+$") then
-		return "memos/" .. trimmed
-	end
-	return nil
-end
-
-local function get_default_relation_memo_name(memo)
-	local relations = memo and memo.relations or nil
-	if type(relations) ~= "table" or #relations == 0 then
-		return ""
-	end
-	local first = relations[1]
-	local related = first and first.relatedMemo or nil
-	if related and related.name and related.name ~= "" then
-		return related.name
-	end
-	return ""
-end
-
-local function get_default_relation_type(memo)
-	local relations = memo and memo.relations or nil
-	if type(relations) ~= "table" or #relations == 0 then
-		return "TYPE_UNSPECIFIED"
-	end
-	local first = relations[1]
-	local rel_type = first and first.type or nil
-	if type(rel_type) == "string" and rel_type ~= "" then
-		return rel_type
-	end
-	return "TYPE_UNSPECIFIED"
-end
-
-local function relation_name_from_id(id)
-	if not id then
-		return ""
-	end
-	return "memos/" .. tostring(id)
-end
-
-local function collect_relation_names(relations)
-	local names = {}
-	if type(relations) ~= "table" then
-		return names
-	end
-	for _, rel in ipairs(relations) do
-		local related = rel and rel.relatedMemo or nil
-		local related_name = related and related.name or nil
-		if not related_name then
-			local related_id = rel and (rel.relatedMemoId or rel.relatedMemoID) or nil
-			if related_id then
-				related_name = relation_name_from_id(related_id)
-			end
-		end
-		if related_name and related_name ~= "" then
-			table.insert(names, related_name)
-		end
-	end
-	return names
-end
-
-invalidate_relations_cache = function(names)
-	if type(names) ~= "table" then
-		return
-	end
-	local seen = {}
-	for _, name in ipairs(names) do
-		if type(name) == "string" and name ~= "" and not seen[name] then
-			relations_cache[name] = nil
-			seen[name] = true
-		end
-	end
-end
-
-local function get_default_relation_name_v021(relations)
-	if type(relations) ~= "table" or #relations == 0 then
-		return ""
-	end
-	local first = relations[1]
-	local related = first and (first.relatedMemoID or first.relatedMemoId)
-	if related then
-		return relation_name_from_id(related)
-	end
-	return ""
-end
-
-local function get_default_relation_type_v021(relations)
-	if type(relations) ~= "table" or #relations == 0 then
-		return "REFERENCE"
-	end
-	local first = relations[1]
-	local rel_type = first and first.type or nil
-	if type(rel_type) == "string" and rel_type ~= "" then
-		return rel_type
-	end
-	return "REFERENCE"
-end
-
-local function to_snake_mask(field)
-	if field == "displayTime" then
-		return "display_time"
-	end
-	if field == "createTime" then
-		return "create_time"
-	end
-	return field
-end
-
-local function notify_metadata_success()
-	vim.schedule(function()
-		vim.notify("✅ Memo metadata updated.")
-		M.refresh_list_silently()
-	end)
-end
-
-local function notify_metadata_unchanged()
-	vim.schedule(function()
-		vim.notify("⚠️ Memo metadata was not applied by server.", vim.log.levels.WARN)
-		M.refresh_list_silently()
-	end)
-end
-
-local function edit_relations_v021(memo)
-	if not memo or not memo.name or memo.name == "" then
-		return
-	end
-	api.list_memo_relations(memo.name, function(relations, err)
-		if not relations then
-			vim.schedule(function()
-				vim.notify("Failed to fetch memo relations: " .. tostring(err), vim.log.levels.ERROR)
-			end)
-			return
-		end
-		local existing_names = collect_relation_names(relations)
-		local function clear_all_relations(silent, callback)
-			if type(relations) ~= "table" or #relations == 0 then
-				if not silent then
-					vim.notify("No relations to clear.", vim.log.levels.INFO)
-				end
-				if callback then
-					callback(true)
-				end
-				return
-			end
-			local function finalize(failed)
-				vim.schedule(function()
-					if not silent then
-						if failed then
-							vim.notify("❌ Failed to clear some relations.", vim.log.levels.ERROR)
-						else
-							vim.notify("✅ Memo relations cleared.")
-						end
-						invalidate_relations_cache(vim.list_extend({ memo.name }, existing_names))
-						M.refresh_list_silently()
-					end
-				end)
-				if callback then
-					callback(not failed)
-				end
-			end
-			local pending = #relations
-			local failed = false
-			for _, rel in ipairs(relations) do
-				local related_id = rel and (rel.relatedMemoID or rel.relatedMemoId)
-				local rel_type = rel and rel.type or "REFERENCE"
-				if related_id then
-					api.delete_memo_relation(memo.name, relation_name_from_id(related_id), rel_type, function(ok, _)
-						if not ok then
-							failed = true
-						end
-						pending = pending - 1
-						if pending == 0 then
-							finalize(failed)
-						end
-					end)
-				else
-					pending = pending - 1
-					if pending == 0 then
-						finalize(failed)
-					end
-				end
-			end
-		end
-
-		prompt_relation_op(function(op)
-			if not op then
-				return
-			end
-			local clipboard_raw = vim.fn.getreg("+") or ""
-			prompt_relation_ids(clipboard_raw, function(ids, _)
-				if ids == nil then
-					return
-				end
-				if op == "delete" then
-					if #ids == 0 then
-						clear_all_relations(false, nil)
-						return
-					end
-					local wanted = {}
-					for _, id in ipairs(ids) do
-						wanted[id] = true
-					end
-					local targets = {}
-					for _, rel in ipairs(relations) do
-						local related_id = rel and (rel.relatedMemoID or rel.relatedMemoId)
-						local rel_type = rel and rel.type or "REFERENCE"
-						local related_name = related_id and relation_name_from_id(related_id) or nil
-						if related_name and wanted[related_name] then
-							table.insert(targets, { id = related_id, rel_type = rel_type })
-						end
-					end
-					if #targets == 0 then
-						vim.notify("No matching relations found for provided IDs.", vim.log.levels.WARN)
-						return
-					end
-					local pending = #targets
-					local failed = false
-					for _, target in ipairs(targets) do
-						api.delete_memo_relation(
-							memo.name,
-							relation_name_from_id(target.id),
-							target.rel_type,
-							function(ok, _)
-								if not ok then
-									failed = true
-								end
-								pending = pending - 1
-								if pending == 0 then
-									vim.schedule(function()
-										if failed then
-											vim.notify("❌ Failed to update relations.", vim.log.levels.ERROR)
-										else
-											vim.notify("✅ Memo relations updated.")
-										end
-										invalidate_relations_cache(vim.list_extend({ memo.name }, ids))
-										M.refresh_list_silently()
-									end)
-								end
-							end
-						)
-					end
-					return
-				end
-
-				if #ids == 0 then
-					if op == "replace" then
-						clear_all_relations(false, nil)
-					else
-						vim.notify("No valid memo IDs provided.", vim.log.levels.WARN)
-					end
-					return
-				end
-
-				local default_type = get_default_relation_type_v021(relations)
-				vim.ui.input({
-					prompt = "Relation type: ",
-					default = default_type,
-				}, function(type_input)
-					if not type_input or type_input == "" then
-						return
-					end
-					local existing = {}
-					for _, rel in ipairs(relations) do
-						local related_id = rel and (rel.relatedMemoID or rel.relatedMemoId)
-						local rel_type = rel and rel.type or "REFERENCE"
-						if related_id then
-							existing[relation_name_from_id(related_id) .. "|" .. rel_type] = true
-						end
-					end
-
-					local function apply_append()
-						local to_create = {}
-						for _, id in ipairs(ids) do
-							local key = id .. "|" .. type_input
-							if not existing[key] then
-								table.insert(to_create, id)
-							end
-						end
-						if #to_create == 0 then
-							vim.notify("No new relations to add.", vim.log.levels.INFO)
-							return
-						end
-						local pending = #to_create
-						local failed = false
-						for _, id in ipairs(to_create) do
-							api.create_memo_relation(memo.name, id, type_input, function(ok, relation_err)
-								if not ok then
-									failed = true
-									vim.notify("❌ Failed to update relations: " .. tostring(relation_err), vim.log.levels.ERROR)
-								end
-								pending = pending - 1
-								if pending == 0 then
-									vim.schedule(function()
-										if not failed then
-											vim.notify("✅ Memo relations updated.")
-										end
-										local targets = vim.list_extend({ memo.name }, ids)
-										if op == "replace" then
-											targets = vim.list_extend(targets, existing_names)
-										end
-										invalidate_relations_cache(targets)
-										M.refresh_list_silently()
-									end)
-								end
-							end)
-						end
-					end
-
-					if op == "replace" then
-						clear_all_relations(true, function(ok)
-							if not ok then
-								return
-							end
-							apply_append()
-						end)
-					else
-						apply_append()
-					end
-				end)
-			end)
-		end)
-	end)
-end
-
-local function update_metadata_field(memo, field, value)
-	if not memo or not memo.name or memo.name == "" then
-		return
-	end
-	local cap = get_capabilities()
-	if cap and cap.mode == "v0.21" then
-		if field == "relations" then
-			edit_relations_v021(memo)
-			return
-		end
-		local fields = {
-			content = memo.content or "",
-		}
-		local update_mask = field
-		if field == "createTime" then
-			local ts = iso_to_unix_time(value)
-			if not ts then
-				vim.notify("Invalid time format for create time.", vim.log.levels.ERROR)
-				return
-			end
-			fields.createdTs = ts
-			update_mask = "createdTs"
-		elseif field == "state" then
-			fields.rowStatus = value
-			update_mask = "rowStatus"
-		elseif field == "visibility" then
-			fields.visibility = value
-		elseif field == "pinned" then
-			fields.pinned = value
-		else
-			vim.notify("This metadata field is not supported in v0.21.", vim.log.levels.WARN)
-			return
-		end
-		api.update_memo_metadata(memo.name, fields, update_mask, function(success)
-			if success then
-				notify_metadata_success()
-			end
-		end)
-		return
-	end
-	local fields = {
-		content = memo.content or "",
-	}
-	fields[field] = value
-
-	if not is_time_field(field) then
-		api.update_memo_metadata(memo.name, fields, field, function(success)
-			if success then
-				notify_metadata_success()
-			end
-		end)
-		return
-	end
-
-	local function attempt(update_mask, tried_retry)
-		api.update_memo_metadata(memo.name, fields, update_mask, function(success)
-			if not success then
-				return
-			end
-			api.get_memo(memo.name, function(updated)
-				if not updated then
-					return
-				end
-				local applied = false
-				if is_time_field(field) then
-					applied = time_values_equal(updated[field], value)
-				else
-					applied = updated[field] == value
-				end
-				if applied then
-					notify_metadata_success()
-					return
-				end
-				if not tried_retry then
-					local snake = to_snake_mask(field)
-					if snake ~= update_mask then
-						attempt(snake, true)
-						return
-					end
-				end
-				notify_metadata_unchanged()
-			end)
-		end)
-	end
-
-	attempt(field, false)
-end
-
-local function edit_metadata_flow(memo)
-	if not memo or not memo.name or memo.name == "" then
-		return
-	end
-	local cap = get_capabilities()
-	local title = clip_title(extract_memo_title(memo), config.metadata_title_max_len)
-	local prompt = string.format("Edit memo metadata: %s", title)
-	prompt_select_field(cap, function(field)
-		if not field then
-			return
-		end
-		if field == "visibility" then
-			prompt_select_enum("Visibility", { "PRIVATE", "PROTECTED", "PUBLIC" }, function(value)
-				if value then
-					update_metadata_field(memo, "visibility", value)
-				end
-			end)
-			return
-		end
-		if field == "pinned" then
-			prompt_select_boolean("Pinned", function(value)
-				if value ~= nil then
-					update_metadata_field(memo, "pinned", value)
-				end
-			end)
-			return
-		end
-		if field == "displayTime" then
-			prompt_iso_time("Display time", memo.displayTime, function(value)
-				if value then
-					update_metadata_field(memo, "displayTime", value)
-				end
-			end)
-			return
-		end
-		if field == "createTime" then
-			prompt_iso_time("Create time", memo.createTime, function(value)
-				if value then
-					update_metadata_field(memo, "createTime", value)
-				end
-			end)
-			return
-		end
-		if field == "relations" then
-			if cap and cap.mode == "v0.21" then
-				edit_relations_v021(memo)
-				return
-			end
-			prompt_relation_op(function(op)
-				if not op then
-					return
-				end
-				local clipboard_raw = vim.fn.getreg("+") or ""
-				prompt_relation_ids(clipboard_raw, function(ids, _)
-					if ids == nil then
-						return
-					end
-					local existing = memo.relations or {}
-					local existing_names = collect_relation_names(existing)
-					if op == "delete" then
-						if #ids == 0 then
-							local fields = {
-								content = memo.content or "",
-								relations = {},
-							}
-							api.update_memo_metadata(memo.name, fields, "relations", function(success)
-								if success then
-									vim.schedule(function()
-										vim.notify("✅ Memo relations cleared.")
-										invalidate_relations_cache(vim.list_extend({ memo.name }, existing_names))
-										M.refresh_list_silently()
-									end)
-								end
-							end)
-							return
-						end
-						local wanted = {}
-						for _, id in ipairs(ids) do
-							wanted[id] = true
-						end
-						local updated = {}
-						local removed = 0
-						for _, rel in ipairs(existing) do
-							local related_name = rel and rel.relatedMemo and rel.relatedMemo.name or nil
-							if related_name and wanted[related_name] then
-								removed = removed + 1
-							else
-								table.insert(updated, rel)
-							end
-						end
-						if removed == 0 then
-							vim.notify("No matching relations found for provided IDs.", vim.log.levels.WARN)
-							return
-						end
-						local fields = {
-							content = memo.content or "",
-							relations = updated,
-						}
-						api.update_memo_metadata(memo.name, fields, "relations", function(success)
-							if success then
-								vim.schedule(function()
-									vim.notify("✅ Memo relations updated.")
-									invalidate_relations_cache(vim.list_extend({ memo.name }, ids))
-									M.refresh_list_silently()
-								end)
-							end
-						end)
-						return
-					end
-
-					if #ids == 0 then
-						if op == "replace" then
-							local fields = {
-								content = memo.content or "",
-								relations = {},
-							}
-							api.update_memo_metadata(memo.name, fields, "relations", function(success)
-								if success then
-									vim.schedule(function()
-										vim.notify("✅ Memo relations cleared.")
-										invalidate_relations_cache(vim.list_extend({ memo.name }, existing_names))
-										M.refresh_list_silently()
-									end)
-								end
-							end)
-						else
-							vim.notify("No valid memo IDs provided.", vim.log.levels.WARN)
-						end
-						return
-					end
-
-					local default_type = get_default_relation_type(memo)
-					vim.ui.input({
-						prompt = "Relation type: ",
-						default = default_type,
-					}, function(type_input)
-						if not type_input or type_input == "" then
-							return
-						end
-						local updated = {}
-						local existing_map = {}
-						for _, rel in ipairs(existing) do
-							table.insert(updated, rel)
-							local related_name = rel and rel.relatedMemo and rel.relatedMemo.name or nil
-							local rel_type = rel and rel.type or "TYPE_UNSPECIFIED"
-							if related_name and related_name ~= "" then
-								existing_map[related_name .. "|" .. rel_type] = true
-							end
-						end
-						if op == "replace" then
-							updated = {}
-							existing_map = {}
-						end
-						local added = 0
-						for _, id in ipairs(ids) do
-							local key = id .. "|" .. type_input
-							if not existing_map[key] then
-								table.insert(updated, {
-									memo = { name = memo.name },
-									relatedMemo = { name = id },
-									type = type_input,
-								})
-								added = added + 1
-							end
-						end
-						if added == 0 and op == "append" then
-							vim.notify("No new relations to add.", vim.log.levels.INFO)
-							return
-						end
-						local fields = {
-							content = memo.content or "",
-							relations = updated,
-						}
-						api.update_memo_metadata(memo.name, fields, "relations", function(success)
-							if success then
-								vim.schedule(function()
-									vim.notify("✅ Memo relations updated.")
-									local targets = vim.list_extend({ memo.name }, ids)
-									if op == "replace" then
-										targets = vim.list_extend(targets, existing_names)
-									end
-									invalidate_relations_cache(targets)
-									M.refresh_list_silently()
-								end)
-							end
-						end)
-					end)
-				end)
-			end)
-			return
-		end
-		if field == "state" then
-			prompt_select_enum("State", { "NORMAL", "ARCHIVED" }, function(value)
-				if value then
-					update_metadata_field(memo, "state", value)
-				end
-			end)
-			return
-		end
-	end, { prompt = prompt })
-end
-
-function M.edit_selected_memo_metadata()
-	local item = current_list_item()
-	if not item then
-		vim.notify("Select a memo or relation line to edit metadata.", vim.log.levels.WARN)
-		return
-	end
-	local selected_memo = nil
-	local target_memo_name = nil
-	if item.kind == "memo" then
-		selected_memo = memos_cache[item.memo_index]
-		if not selected_memo or not selected_memo.name or selected_memo.name == "" then
-			vim.notify("No memo selected.", vim.log.levels.WARN)
-			return
-		end
-		target_memo_name = selected_memo.name
-	elseif item.kind == "relation" then
-		target_memo_name = item.related_name
-		if not target_memo_name or target_memo_name == "" then
-			vim.notify("No referenced memo selected.", vim.log.levels.WARN)
-			return
-		end
-	else
-		vim.notify("Select a memo or relation line to edit metadata.", vim.log.levels.WARN)
-		return
-	end
-	local cap = get_capabilities()
-	if cap and cap.mode == "v0.21" and selected_memo then
-		edit_metadata_flow(selected_memo)
-		return
-	end
-	api.get_memo(target_memo_name, function(memo, err)
-		if not memo then
-			vim.schedule(function()
-				vim.notify("Failed to load memo metadata: " .. tostring(err), vim.log.levels.ERROR)
-			end)
-			return
-		end
-		edit_metadata_flow(memo)
-	end)
-end
-
-function M.edit_selected_memo_metadata_multi()
-	local selected = selected_memo_objects()
-	if #selected == 0 then
-		M.edit_selected_memo_metadata()
-		return
-	end
-
-	local items = {
-		{ value = "all", label = "Apply to all" },
-		{ value = "per", label = "Repeat per memo" },
-	}
-	vim.schedule(function()
-		vim.ui.select(items, {
-			prompt = string.format("Edit metadata (%d selected):", #selected),
-			format_item = function(item)
-				return item.label
-			end,
-		}, function(choice)
-			if not choice then
-				return
-			end
-			local cap = get_capabilities()
-			if choice.value == "all" then
-				api.get_memo(selected[1].name, function(first_memo, err)
-					if not first_memo then
-						vim.schedule(function()
-							vim.notify("Failed to load memo metadata: " .. tostring(err), vim.log.levels.ERROR)
-						end)
-						return
-					end
-					local prompt = string.format("Edit metadata (%d selected):", #selected)
-					prompt_non_relation_metadata(cap, first_memo, function(field, value)
-						if not field then
-							return
-						end
-						for _, memo in ipairs(selected) do
-							api.get_memo(memo.name, function(full_memo, load_err)
-								if not full_memo then
-									vim.schedule(function()
-										vim.notify("Failed to load memo metadata: " .. tostring(load_err), vim.log.levels.ERROR)
-									end)
-									return
-								end
-								update_metadata_field(full_memo, field, value)
-							end)
-						end
-						clear_selection()
-						render_cached_list()
-					end, prompt)
-				end)
-				return
-			end
-
-			local function process_idx(idx)
-				local memo = selected[idx]
-				if not memo then
-					clear_selection()
-					render_cached_list()
-					return
-				end
-				api.get_memo(memo.name, function(full_memo, err)
-					if not full_memo then
-						vim.schedule(function()
-							vim.notify("Failed to load memo metadata: " .. tostring(err), vim.log.levels.ERROR)
-						end)
-						process_idx(idx + 1)
-						return
-					end
-					local title = clip_title(extract_memo_title(full_memo), config.metadata_title_max_len)
-					local prompt = string.format("Edit memo metadata: %s", title)
-					prompt_non_relation_metadata(cap, full_memo, function(field, value)
-						if not field then
-							clear_selection()
-							render_cached_list()
-							return
-						end
-						update_metadata_field(full_memo, field, value)
-						process_idx(idx + 1)
-					end, prompt)
-				end)
-			end
-
-			process_idx(1)
-		end)
-	end)
-end
-
-function M.modify_current_memo_metadata()
-	if vim.b.memos_template_mode == true then
-		vim.notify("Template buffer does not support memo metadata editing.", vim.log.levels.WARN)
-		return
-	end
-	local memo_name = vim.b.memos_memo_name
-	if memo_name and memo_name ~= "" then
-		api.get_memo(memo_name, function(memo, err)
-			if not memo then
-				vim.schedule(function()
-					vim.notify("Failed to load memo metadata: " .. tostring(err), vim.log.levels.ERROR)
-				end)
-				return
-			end
-			edit_metadata_flow(memo)
-		end)
-		return
-	end
-
+	local post_save_ui = opts.post_save_ui ~= false
 	local bufnr = vim.api.nvim_get_current_buf()
+	if vim.b[bufnr].memos_save_inflight then
+		vim.b[bufnr].memos_save_pending = true
+		return
+	end
+	vim.b[bufnr].memos_save_inflight = true
+
+	local memo_name = vim.b[bufnr].memos_memo_name
 	local content = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
+
+	local function finish()
+		if not vim.api.nvim_buf_is_valid(bufnr) then
+			return
+		end
+		vim.b[bufnr].memos_save_inflight = false
+		if vim.b[bufnr].memos_save_pending then
+			vim.b[bufnr].memos_save_pending = false
+			local latest = table.concat(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false), "\n")
+			if latest ~= vim.b[bufnr].memos_original_content then
+				vim.schedule(function()
+					if vim.api.nvim_buf_is_valid(bufnr) then
+						M.save_or_create_dispatcher(opts)
+					end
+				end)
+			end
+		end
+	end
+
 	if content == "" then
 		vim.notify("Memo is empty, not sending.", vim.log.levels.WARN)
+		finish()
 		return
 	end
 
-	api.create_memo(content, function(new_memo)
-		if not new_memo or not new_memo.name then
+	if memo_name then
+		api.update_memo(memo_name, content, function(success, err)
 			vim.schedule(function()
-				vim.notify("❌ Failed to create memo.", vim.log.levels.ERROR)
+				if success then
+					vim.b[bufnr].memos_original_content = content
+					vim.bo[bufnr].modified = false
+					vim.notify("Memo saved.")
+					M.refresh_list_silently()
+				else
+					vim.notify("Failed to save memo: " .. tostring(err), vim.log.levels.ERROR)
+				end
+				finish()
 			end)
-			return
-		end
-		local cap = get_capabilities()
+		end)
+		return
+	end
+
+	api.create_memo(content, function(new_memo, err)
 		vim.schedule(function()
-			if vim.api.nvim_buf_is_valid(bufnr) then
+			if new_memo and new_memo.name then
 				vim.b[bufnr].memos_memo_name = new_memo.name
 				vim.b[bufnr].memos_original_content = content
 				vim.bo[bufnr].modified = false
+				local new_name = build_memo_buffer_name(new_memo, content)
+				if new_name then
+					pcall(vim.api.nvim_buf_set_name, bufnr, new_name)
+				end
+				vim.notify("Memo created.")
+				if post_save_ui then
+					M.show_memos_list({ force_refresh = true })
+				else
+					M.refresh_list_silently()
+				end
+			else
+				vim.notify("Failed to create memo: " .. tostring(err), vim.log.levels.ERROR)
 			end
-		end)
-		if cap and cap.mode == "v0.21" then
-			edit_metadata_flow(new_memo)
-			return
-		end
-		api.get_memo(new_memo.name, function(memo, err)
-			if not memo then
-				vim.schedule(function()
-					vim.notify("Failed to load memo metadata: " .. tostring(err), vim.log.levels.ERROR)
-				end)
-				return
-			end
-			edit_metadata_flow(memo)
+			finish()
 		end)
 	end)
+end
+
+function M.on_account_switched()
+	memos_cache = {}
+	list_items = {}
+	current_page_token = nil
+	if list_buf and vim.api.nvim_buf_is_valid(list_buf) and vim.fn.bufwinid(list_buf) ~= -1 then
+		M.show_memos_list({ force_refresh = true })
+	end
 end
 
 return M

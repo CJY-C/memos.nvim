@@ -1,17 +1,15 @@
--- 创建 :MemosCreate 命令
-vim.api.nvim_create_user_command("MemosCreate", function()
-	require("memos").create_memo()
-end, {
-	nargs = 0,
-	desc = "Create a new Memos entry",
-})
-
--- 创建 :Memos 命令
 vim.api.nvim_create_user_command("Memos", function()
 	require("memos").show_list()
 end, {
 	nargs = 0,
-	desc = "List and search your Memos",
+	desc = "Open the Memos list",
+})
+
+vim.api.nvim_create_user_command("MemosCreate", function()
+	require("memos").create_memo()
+end, {
+	nargs = 0,
+	desc = "Create a new memo",
 })
 
 vim.api.nvim_create_user_command("MemosSwitch", function()
@@ -35,68 +33,17 @@ end, {
 	desc = "Delete a saved Memos account",
 })
 
-vim.api.nvim_create_user_command("MemosModifyMeta", function()
-	require("memos").modify_meta()
-end, {
-	nargs = 0,
-	desc = "Modify memo metadata",
-})
-
-vim.api.nvim_create_user_command("MemosTemplateCreate", function()
-	require("memos").template_create()
-end, {
-	nargs = 0,
-	desc = "Create a memo template",
-})
-
-vim.api.nvim_create_user_command("MemosTemplateEdit", function()
-	require("memos").template_edit()
-end, {
-	nargs = 0,
-	desc = "Edit a memo template",
-})
-
-vim.api.nvim_create_user_command("MemosTemplateDelete", function()
-	require("memos").template_delete()
-end, {
-	nargs = 0,
-	desc = "Delete a memo template",
-})
-
-vim.api.nvim_create_user_command("MemosCreateFromTemplate", function()
-	require("memos").create_memo_from_template()
-end, {
-	nargs = 0,
-	desc = "Create a memo from template",
-})
-
--- 【新增】创建启动快捷键
--- 使用 vim.schedule 确保在所有插件加载后执行，避免 require('memos') 失败
 vim.schedule(function()
-	-- 我们需要先加载 memos 模块才能读取它的配置
-	local memos_config = require("memos").config
-	local key = memos_config.keymaps.start_memos
+	local ok, memos = pcall(require, "memos")
+	if not ok then
+		return
+	end
+	local key = memos.config.keymaps.start_memos
 	if key and key ~= "" then
 		vim.keymap.set("n", key, "<Cmd>Memos<CR>", {
 			noremap = true,
 			silent = true,
 			desc = "Open Memos list",
-		})
-	end
-	local key = memos_config.keymaps.switch_user
-	if key and key ~= "" then
-		vim.keymap.set("n", key, "<Cmd>MemosSwitch<CR>", {
-			noremap = true,
-			silent = true,
-			desc = "Switch Memos User",
-		})
-	end
-	local key = memos_config.keymaps.create_from_template
-	if key and key ~= "" then
-		vim.keymap.set("n", key, "<Cmd>MemosCreateFromTemplate<CR>", {
-			noremap = true,
-			silent = true,
-			desc = "Create memo from template",
 		})
 	end
 end)
