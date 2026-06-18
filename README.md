@@ -178,6 +178,8 @@ Keep the real list path warm, not just `auth/me`:
 
 ```sh
 curl -fsS \
+  --max-time 300 \
+  --write-out "warmup http=%{http_code} total=%{time_total} connect=%{time_connect} ttfb=%{time_starttransfer}\n" \
   -H "Authorization: Bearer $MEMOS_TOKEN" \
   "$MEMOS_HOST/api/v1/memos?pageSize=1&state=NORMAL&orderBy=update_time%20desc" \
   >/dev/null
@@ -190,7 +192,7 @@ systemd.services.memos-list-keepalive = {
   serviceConfig = {
     Type = "oneshot";
     EnvironmentFile = config.sops.templates."memos.env".path;
-    ExecStart = "${pkgs.curl}/bin/curl -fsS -H \"Authorization: Bearer $MEMOS_TOKEN\" \"$MEMOS_HOST/api/v1/memos?pageSize=1&state=NORMAL&orderBy=update_time%20desc\"";
+    ExecStart = "${pkgs.curl}/bin/curl -fsS --max-time 300 --output /dev/null --write-out \"warmup http=%%{http_code} total=%%{time_total} connect=%%{time_connect} ttfb=%%{time_starttransfer}\\n\" -H \"Authorization: Bearer $MEMOS_TOKEN\" \"$MEMOS_HOST/api/v1/memos?pageSize=1&state=NORMAL&orderBy=update_time%20desc\"";
   };
 };
 
@@ -198,12 +200,13 @@ systemd.timers.memos-list-keepalive = {
   wantedBy = [ "timers.target" ];
   timerConfig = {
     OnBootSec = "2min";
-    OnUnitActiveSec = "25min";
+    OnUnitActiveSec = "1min";
+    AccuracySec = "10s";
   };
 };
 ```
 
-`pageSize=1` is enough to exercise the list path. The plugin does not run this keepalive itself so the default request model stays explicit and minimal.
+`pageSize=1` is enough to exercise the list path. Start with a short interval such as 1 minute and inspect the `ttfb` values in `journalctl`; if the list path stays hot, gradually relax the timer to 2 minutes, 5 minutes, or longer. The plugin does not run this keepalive itself so the default request model stays explicit and minimal.
 
 ## Development
 
