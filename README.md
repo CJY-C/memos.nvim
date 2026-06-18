@@ -28,8 +28,33 @@ With lazy.nvim:
 }
 ```
 
-For interactive use, prefer explicit plugin config or `:MemosUserAdd`.
-You can also pass a systemd-style env file:
+With nixvim, keep secrets out of the Nix store and point the plugin at a runtime env file:
+
+```nix
+{
+  extraPlugins = [
+    pkgs.vimPlugins.plenary-nvim
+    # Add memos.nvim through your local plugin package or overlay.
+  ];
+
+  extraConfigLua = ''
+    require("memos").setup({
+      env_file = "/run/secrets-rendered/memos.env",
+    })
+  '';
+
+  keymaps = [
+    {
+      mode = "n";
+      key = "<leader>mm";
+      action = "<cmd>Memos<CR>";
+      options.desc = "Open Memos list";
+    }
+  ];
+}
+```
+
+You can also pass a systemd-style env file from any plugin manager:
 
 ```lua
 require("memos").setup({
@@ -48,6 +73,8 @@ MEMOS_TOKEN=your-token
 
 Global shell exports work for temporary debugging, but are not recommended for
 long-lived use because the token is inherited by every child process.
+Do not put `MEMOS_TOKEN` directly in Nix/nixvim config; it may enter the Nix store.
+The env file must be readable by the user running Neovim.
 
 ## Commands
 
@@ -56,17 +83,8 @@ long-lived use because the token is inherited by every child process.
 | `:Memos` | Toggle the memo list |
 | `:MemosCreate` | Open a new memo buffer |
 | `:MemosSave` | Save the current memo buffer |
-| `:MemosSwitch` | Switch saved account |
-| `:MemosUserAdd` | Add a saved account |
-| `:MemosUserDelete` | Delete a saved account |
 
-## Default Keys
-
-Global:
-
-| Key | Description |
-| --- | --- |
-| `<leader>mm` | Toggle memo list |
+## Keymaps
 
 List buffer:
 
@@ -105,7 +123,7 @@ require("memos").setup({
 })
 ```
 
-Credential priority is explicit `host`/`token`, then `env_file`, then `MEMOS_HOST`/`MEMOS_TOKEN`, then saved accounts. Saved accounts are stored under Neovim's data directory in `memos.nvim/memos_config.json`.
+Credential priority is explicit `host`/`token`, then `env_file`, then `MEMOS_HOST`/`MEMOS_TOKEN`. The plugin does not persist accounts; configure credentials declaratively through nixvim, `env_file`, or process env.
 
 With Nix/sops, keep the token scoped to the program that needs it:
 
@@ -138,7 +156,7 @@ MEMOS_ENV_FILE=/run/secrets-rendered/memos.env ./scripts/latency-test.sh
 
 The script records list/create/update latency, request count, and curl timing breakdowns such as connect time and time to first byte. It intentionally does not enforce a fixed threshold yet; use the output as a baseline while optimizing the plugin.
 
-The script can also use saved memos.nvim accounts or credentials injected by a systemd service. The write portion creates and updates a test memo. Use a test Memos instance if you do not want benchmark entries in your main account.
+The script can also use credentials injected by a systemd service. The write portion creates and updates a test memo. Use a test Memos instance if you do not want benchmark entries in your main account.
 
 Useful flags:
 

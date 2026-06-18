@@ -182,7 +182,7 @@ function M.run(opts)
 
 	local cfg = require("memos").config
 	if not cfg.host or cfg.host == "" or not cfg.token or cfg.token == "" then
-		error("Memos credentials are required: use saved accounts, setup({ host, token }), MEMOS_HOST/MEMOS_TOKEN, or setup({ env_file })")
+		error("Memos credentials are required: use setup({ host, token }), setup({ env_file }), or MEMOS_HOST/MEMOS_TOKEN")
 	end
 	if not cfg.host:match("^https?://") then
 		error("Memos host must include http:// or https://: " .. cfg.host)

@@ -31,22 +31,11 @@ COMMANDS                                                   *memos.nvim-commands*
 *:MemosSave*
   Save the current memo buffer. This command is available in memo buffers.
 
-*:MemosSwitch*
-  Switch the active saved Memos account.
-
-*:MemosUserAdd*
-  Add a saved Memos account.
-
-*:MemosUserDelete*
-  Delete a saved Memos account.
-
 ==============================================================================
 KEYMAPS                                                     *memos.nvim-keymaps*
 
-Global:
->
-  <leader>mm     Toggle memo list
-<
+Global keymaps are intentionally not created by the plugin. Configure them in
+your plugin manager or nixvim, for example `<leader>mm` -> `:Memos`.
 
 List buffer:
 >
@@ -101,8 +90,38 @@ The file should contain:
 MEMOS_HOST must include http:// or https://.
 
 Credential priority is explicit host/token, then env_file, then MEMOS_HOST and
-MEMOS_TOKEN, then saved accounts. Global shell environment variables work for
-temporary debugging, but are not recommended for long-lived use.
+MEMOS_TOKEN. The plugin does not persist accounts. Global shell environment
+variables work for temporary debugging, but are not recommended for long-lived
+use.
+
+For nixvim, keep secrets out of the Nix store and point the plugin at a runtime
+env file:
+>
+  {
+    extraPlugins = [
+      pkgs.vimPlugins.plenary-nvim
+      # Add memos.nvim through your local plugin package or overlay.
+    ];
+
+    extraConfigLua = ''
+      require("memos").setup({
+        env_file = "/run/secrets-rendered/memos.env",
+      })
+    '';
+
+    keymaps = [
+      {
+        mode = "n";
+        key = "<leader>mm";
+        action = "<cmd>Memos<CR>";
+        options.desc = "Open Memos list";
+      }
+    ];
+  }
+<
+
+Do not put MEMOS_TOKEN directly in Nix/nixvim config; it may enter the Nix
+store. The env file must be readable by the user running Neovim.
 
 With Nix/sops, a template such as `sops.templates."memos.env"` only generates a
 secret env file. It does not enter your interactive shell automatically. Use it
@@ -126,9 +145,9 @@ Run:
 <
 
 The latency script uses a real Memos API and records list/create/update timing
-plus request count and curl timing details. It can also use saved accounts or
-credentials injected by a systemd service. It creates and updates a test memo
-unless --skip-write is used.
+plus request count and curl timing details. It can also use credentials
+injected by a systemd service. It creates and updates a test memo unless
+--skip-write is used.
 
 Useful flags:
 >
