@@ -117,6 +117,7 @@ require("memos").setup({
   page_size = 50,
   list_state = "NORMAL",
   list_order_by = "pinned desc, update_time desc",
+  list_style = "default",
   auto_save = false,
   window = {
     enable_float = true,
@@ -151,6 +152,8 @@ List search uses the Memos server-side `filter` parameter and still issues one l
 Copying a memo ID uses the memo resource name already present in the list response, such as `memos/abc123`. It does not issue any API request.
 
 Split editing also uses the memo content already present in the list response. It does not issue any extra API request.
+
+`list_style` only changes local rendering and does not issue extra API requests. Use `"default"` for dated rows or `"compact"` for shorter rows.
 
 With Nix/sops, keep the token scoped to the program that needs it:
 

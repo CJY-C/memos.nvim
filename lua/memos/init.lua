@@ -7,6 +7,7 @@ M.config = {
 	page_size = 50,
 	list_state = "NORMAL",
 	list_order_by = "pinned desc, update_time desc",
+	list_style = "default",
 	auto_save = false,
 	window = {
 		enable_float = true,

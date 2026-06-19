@@ -161,6 +161,38 @@ local function display_date(memo)
 	return value:sub(1, 10)
 end
 
+local function memo_badges(memo)
+	local badges = {}
+	if memo.pinned then
+		table.insert(badges, "P")
+	end
+	if memo.state == "ARCHIVED" then
+		table.insert(badges, "A")
+	end
+	return badges
+end
+
+local function memo_title(memo)
+	local title = first_line(memo.content)
+	if title ~= "" then
+		return title
+	end
+	if type(memo.snippet) == "string" and memo.snippet ~= "" then
+		return memo.snippet
+	end
+	return "(empty)"
+end
+
+function M.format_memo_line(index, memo)
+	local badges = memo_badges(memo)
+	local badge_text = #badges > 0 and ("[" .. table.concat(badges, "") .. "] ") or ""
+	local title = memo_title(memo)
+	if config.list_style == "compact" then
+		return string.format("%d. %s%s", index, badge_text, title)
+	end
+	return string.format("%d. [%s] %s%s", index, display_date(memo), badge_text, title)
+end
+
 local function build_memo_buffer_name(memo, content)
 	if not memo or not memo.name or memo.name == "" then
 		return nil
@@ -216,19 +248,7 @@ function M.render_memos(data, append)
 			list_items[#lines] = { kind = "empty" }
 		else
 			for index, memo in ipairs(memos_cache) do
-				local badges = {}
-				if memo.pinned then
-					table.insert(badges, "P")
-				end
-				if memo.state == "ARCHIVED" then
-					table.insert(badges, "A")
-				end
-				local badge_text = #badges > 0 and ("[" .. table.concat(badges, "") .. "] ") or ""
-				local title = first_line(memo.content)
-				if title == "" then
-					title = memo.snippet ~= "" and memo.snippet or "(empty)"
-				end
-				table.insert(lines, string.format("%d. [%s] %s%s", index, display_date(memo), badge_text, title))
+				table.insert(lines, M.format_memo_line(index, memo))
 				list_items[#lines] = { kind = "memo", index = index }
 			end
 		end
