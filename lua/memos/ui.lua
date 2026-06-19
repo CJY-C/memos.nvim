@@ -270,19 +270,34 @@ local function list_status_line()
 	return nil
 end
 
+local function list_header_line()
+	local left = "View: " .. current_list_state
+	local right = list_status_line()
+	if not right then
+		return left
+	end
+
+	local width = vim.o.columns
+	local win = list_buf and vim.fn.bufwinid(list_buf) or -1
+	if win ~= -1 and vim.api.nvim_win_is_valid(win) then
+		width = vim.api.nvim_win_get_width(win)
+	end
+
+	local gap = width - #left - #right
+	if gap > 1 then
+		return left .. string.rep(" ", gap) .. right
+	end
+	return left .. " " .. right
+end
+
 local function render_cached_memos()
 	vim.schedule(function()
 		list_items = {}
 
 		local lines = {}
 		local keys = config.keymaps.list
-		local status_line = list_status_line()
-		if status_line then
-			table.insert(lines, status_line)
-			list_items[#lines] = { kind = "status" }
-		end
-		table.insert(lines, "View: " .. current_list_state)
-		list_items[#lines] = { kind = "view" }
+		table.insert(lines, list_header_line())
+		list_items[#lines] = { kind = "header" }
 		if current_filter ~= "" then
 			table.insert(lines, "Filter: " .. current_filter)
 			list_items[#lines] = { kind = "filter" }
