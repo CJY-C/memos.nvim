@@ -97,6 +97,7 @@ List buffer:
 | `s` | Search/filter memos on the server |
 | `y` | Copy selected memo ID |
 | `p` | Toggle selected memo pin |
+| `x` | Archive selected memo |
 | `r` | Refresh list |
 | `.` | Load next page |
 | `q` | Quit list |
@@ -135,6 +136,7 @@ require("memos").setup({
       search_memos = "s",
       copy_memo_id = "y",
       toggle_pin = "p",
+      archive_memo = "x",
       refresh_list = "r",
       next_page = ".",
       quit = "q",
@@ -154,6 +156,8 @@ List search uses the Memos server-side `filter` parameter and still issues one l
 Copying a memo ID uses the memo resource name already present in the list response, such as `memos/abc123`. It does not issue any API request.
 
 Toggling pin sends one PATCH request and then refreshes the list once in the background so server-side ordering is restored.
+
+Archiving sends one PATCH request, removes the memo from the current list immediately, and then refreshes the list once in the background.
 
 Split editing also uses the memo content already present in the list response. It does not issue any extra API request.
 

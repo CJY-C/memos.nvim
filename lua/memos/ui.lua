@@ -367,6 +367,7 @@ function M.show_memos_list(opts)
 		set_keymap(buf, keys.search_memos, '<Cmd>lua require("memos.ui").search_memos()<CR>')
 		set_keymap(buf, keys.copy_memo_id, '<Cmd>lua require("memos.ui").copy_selected_memo_id()<CR>')
 		set_keymap(buf, keys.toggle_pin, '<Cmd>lua require("memos.ui").toggle_selected_memo_pin()<CR>')
+		set_keymap(buf, keys.archive_memo, '<Cmd>lua require("memos.ui").archive_selected_memo()<CR>')
 		set_keymap(buf, keys.refresh_list, '<Cmd>lua require("memos.ui").show_memos_list({ force_refresh = true })<CR>')
 		set_keymap(buf, keys.next_page, '<Cmd>lua require("memos.ui").load_next_page()<CR>')
 		set_keymap(buf, keys.quit, '<Cmd>lua require("memos.ui").quit_memos_list()<CR>')
@@ -620,6 +621,28 @@ function M.toggle_selected_memo_pin()
 				M.refresh_list_silently()
 			else
 				vim.notify("Failed to update memo pin: " .. tostring(err), vim.log.levels.ERROR)
+			end
+		end)
+	end)
+end
+
+function M.archive_selected_memo()
+	local item = current_list_item()
+	local memo = item and item.kind == "memo" and memos_cache[item.index] or nil
+	if not memo or not memo.name or memo.name == "" then
+		vim.notify("No memo on the current line.", vim.log.levels.INFO)
+		return
+	end
+
+	api.update_memo_state(memo.name, "ARCHIVED", function(success, err)
+		vim.schedule(function()
+			if success then
+				table.remove(memos_cache, item.index)
+				render_cached_memos()
+				vim.notify("Memo archived.")
+				M.refresh_list_silently()
+			else
+				vim.notify("Failed to archive memo: " .. tostring(err), vim.log.levels.ERROR)
 			end
 		end)
 	end)
