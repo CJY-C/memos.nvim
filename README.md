@@ -96,6 +96,7 @@ List buffer:
 | `a` | Create memo |
 | `s` | Search/filter memos on the server |
 | `y` | Copy selected memo ID |
+| `p` | Toggle selected memo pin |
 | `r` | Refresh list |
 | `.` | Load next page |
 | `q` | Quit list |
@@ -133,6 +134,7 @@ require("memos").setup({
       edit_memo_vsplit = "v",
       search_memos = "s",
       copy_memo_id = "y",
+      toggle_pin = "p",
       refresh_list = "r",
       next_page = ".",
       quit = "q",
@@ -150,6 +152,8 @@ Credential priority is explicit `host`/`token`, then `env_file`, then `MEMOS_HOS
 List search uses the Memos server-side `filter` parameter and still issues one list request per search. Plain text becomes `content.contains("...")`, `#tag` becomes a tag filter, and raw CEL filter expressions are passed through. Empty search input clears the filter. It does not fetch extra pages for local fuzzy search.
 
 Copying a memo ID uses the memo resource name already present in the list response, such as `memos/abc123`. It does not issue any API request.
+
+Toggling pin sends one PATCH request and then refreshes the list once in the background so server-side ordering is restored.
 
 Split editing also uses the memo content already present in the list response. It does not issue any extra API request.
 

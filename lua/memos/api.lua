@@ -249,4 +249,28 @@ function M.update_memo(memo_name, content, callback)
 	end)
 end
 
+function M.update_memo_pinned(memo_name, pinned, callback)
+	local cfg = get_config()
+	local json_data = vim.json.encode({
+		name = memo_name,
+		pinned = pinned == true,
+	})
+
+	run_curl({
+		"-X",
+		"PATCH",
+		cfg.host .. "/api/v1/" .. memo_name .. "?updateMask=pinned",
+		"-H",
+		"Content-Type: application/json",
+		"--data",
+		json_data,
+	}, function(response)
+		if not response.ok then
+			callback(false, parse_api_error(response), response)
+			return
+		end
+		callback(true, nil, response)
+	end)
+end
+
 return M

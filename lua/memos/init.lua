@@ -23,6 +23,7 @@ M.config = {
 			edit_memo_vsplit = "v",
 			search_memos = "s",
 			copy_memo_id = "y",
+			toggle_pin = "p",
 			refresh_list = "r",
 			next_page = ".",
 			quit = "q",
