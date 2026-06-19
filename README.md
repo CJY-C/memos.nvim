@@ -155,6 +155,34 @@ Split editing also uses the memo content already present in the list response. I
 
 `list_style` only changes local rendering and does not issue extra API requests. Use `"default"` for dated rows or `"compact"` for shorter rows.
 
+The list uses an in-memory stale cache for the current Neovim session. When cached rows exist, opening or refreshing the list shows them immediately, marks the list as refreshing, and then replaces them after one background list request. The cache is not written to disk.
+
+You can expose the refresh state in lualine without making lualine a plugin dependency:
+
+```lua
+require("lualine").setup({
+  sections = {
+    lualine_x = {
+      require("memos").statusline,
+    },
+  },
+})
+```
+
+With nixvim, keep it declarative in your lualine configuration:
+
+```nix
+plugins.lualine.settings.sections.lualine_x = [
+  ''
+    function()
+      return require("memos").statusline()
+    end
+  ''
+];
+```
+
+For custom statuslines, `require("memos").status()` returns `{ state, text, last_refresh_at, last_error }`.
+
 With Nix/sops, keep the token scoped to the program that needs it:
 
 ```nix

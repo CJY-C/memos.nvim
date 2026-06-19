@@ -174,4 +174,25 @@ function M.show_list()
 	end)
 end
 
+function M.status()
+	local ok, ui = pcall(require, "memos.ui")
+	if not ok or not ui.status then
+		return {
+			state = "idle",
+			text = "",
+			last_refresh_at = nil,
+			last_error = nil,
+		}
+	end
+	return ui.status()
+end
+
+function M.statusline()
+	local ok, ui = pcall(require, "memos.ui")
+	if not ok or not ui.statusline then
+		return ""
+	end
+	return ui.statusline()
+end
+
 return M

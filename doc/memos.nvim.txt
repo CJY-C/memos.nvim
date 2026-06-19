@@ -110,6 +110,37 @@ It does not issue any extra API request.
 list_style only changes local rendering and does not issue extra API requests.
 Use "default" for dated rows or "compact" for shorter rows.
 
+The list uses an in-memory stale cache for the current Neovim session. When
+cached rows exist, opening or refreshing the list shows them immediately, marks
+the list as refreshing, and then replaces them after one background list
+request. The cache is not written to disk.
+
+The refresh state can be exposed in lualine without making lualine a plugin
+dependency:
+>
+  require("lualine").setup({
+    sections = {
+      lualine_x = {
+        require("memos").statusline,
+      },
+    },
+  })
+<
+
+For nixvim, keep it in your lualine configuration:
+>
+  plugins.lualine.settings.sections.lualine_x = [
+    ''
+      function()
+        return require("memos").statusline()
+      end
+    ''
+  ];
+<
+
+For custom statuslines, require("memos").status() returns a table with state,
+text, last_refresh_at, and last_error.
+
 Credentials may also come from a systemd-style env file:
 >
   require("memos").setup({

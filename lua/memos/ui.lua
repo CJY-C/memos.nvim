@@ -9,6 +9,39 @@ local memos_cache = {}
 local list_items = {}
 local current_page_token = nil
 local current_filter = ""
+local list_refresh_state = "idle"
+local last_refresh_at = nil
+local last_refresh_error = nil
+
+local function redraw_status()
+	vim.schedule(function()
+		pcall(vim.cmd, "redrawstatus")
+	end)
+end
+
+local function set_refresh_state(state, err)
+	list_refresh_state = state or "idle"
+	if list_refresh_state == "failed" then
+		last_refresh_error = tostring(err or "Unknown error")
+	elseif list_refresh_state == "idle" then
+		last_refresh_error = nil
+	end
+	redraw_status()
+end
+
+local function mark_refresh_success()
+	list_refresh_state = "idle"
+	last_refresh_error = nil
+	last_refresh_at = os.time()
+	redraw_status()
+end
+
+local function format_time(value, with_seconds)
+	if not value then
+		return nil
+	end
+	return os.date(with_seconds and "%H:%M:%S" or "%H:%M", value)
+end
 
 local function is_float_window(win)
 	local cfg = vim.api.nvim_win_get_config(win)
@@ -222,22 +255,31 @@ local function copy_text(text)
 	return '"'
 end
 
-function M.render_memos(data, append)
+local function list_status_line()
+	if list_refresh_state == "refreshing" then
+		return "Refreshing..."
+	end
+	if list_refresh_state == "failed" then
+		return "Refresh failed"
+	end
+	local refreshed = format_time(last_refresh_at, true)
+	if refreshed then
+		return "Updated " .. refreshed
+	end
+	return nil
+end
+
+local function render_cached_memos()
 	vim.schedule(function()
-		if not data then
-			vim.notify("API returned no data.", vim.log.levels.WARN)
-			return
-		end
-		if append then
-			vim.list_extend(memos_cache, data.memos or {})
-		else
-			memos_cache = data.memos or {}
-		end
-		current_page_token = data.next_page_token or ""
 		list_items = {}
 
 		local lines = {}
 		local keys = config.keymaps.list
+		local status_line = list_status_line()
+		if status_line then
+			table.insert(lines, status_line)
+			list_items[#lines] = { kind = "status" }
+		end
 		if current_filter ~= "" then
 			table.insert(lines, "Filter: " .. current_filter)
 			list_items[#lines] = { kind = "filter" }
@@ -262,6 +304,20 @@ function M.render_memos(data, append)
 	end)
 end
 
+function M.render_memos(data, append)
+	if not data then
+		vim.notify("API returned no data.", vim.log.levels.WARN)
+		return
+	end
+	if append then
+		vim.list_extend(memos_cache, data.memos or {})
+	else
+		memos_cache = data.memos or {}
+	end
+	current_page_token = data.next_page_token or ""
+	render_cached_memos()
+end
+
 local function fetch_memos(opts)
 	opts = opts or {}
 	api.list_memos({
@@ -273,9 +329,16 @@ local function fetch_memos(opts)
 	}, function(data, err)
 		if not data then
 			vim.schedule(function()
+				set_refresh_state("failed", err)
+				if #memos_cache > 0 then
+					render_cached_memos()
+				end
 				vim.notify("Failed to fetch memos: " .. tostring(err), vim.log.levels.ERROR)
 			end)
 			return
+		end
+		if not opts.append then
+			mark_refresh_success()
 		end
 		M.render_memos(data, opts.append == true)
 	end)
@@ -284,11 +347,14 @@ end
 function M.show_memos_list(opts)
 	opts = opts or {}
 	focus_list_buf()
-	if opts.force_refresh or #memos_cache == 0 then
+	if #memos_cache == 0 then
+		set_refresh_state("refreshing")
 		set_list_lines({ "Loading memos..." })
 		fetch_memos({ append = false })
 	else
-		M.render_memos({ memos = memos_cache, next_page_token = current_page_token }, false)
+		set_refresh_state("refreshing")
+		render_cached_memos()
+		fetch_memos({ append = false })
 	end
 
 	local buf = ensure_list_buf()
@@ -317,6 +383,9 @@ function M.search_memos()
 		memos_cache = {}
 		list_items = {}
 		current_page_token = nil
+		list_refresh_state = "idle"
+		last_refresh_error = nil
+		redraw_status()
 		focus_list_buf()
 		set_list_lines({ next_filter == "" and "Loading memos..." or "Loading filtered memos..." })
 		if next_filter == "" then
@@ -337,6 +406,7 @@ function M.toggle_memos_list()
 		end
 		if last_float_buf and vim.api.nvim_buf_is_valid(last_float_buf) then
 			create_float_window(last_float_buf)
+			M.show_memos_list({ force_refresh = true })
 			return
 		end
 	end
@@ -533,6 +603,10 @@ end
 
 function M.refresh_list_silently()
 	if list_buf and vim.api.nvim_buf_is_valid(list_buf) then
+		set_refresh_state("refreshing")
+		if #memos_cache > 0 then
+			render_cached_memos()
+		end
 		fetch_memos({ append = false })
 	end
 end
@@ -638,9 +712,39 @@ function M.on_account_switched()
 	list_items = {}
 	current_page_token = nil
 	current_filter = ""
+	list_refresh_state = "idle"
+	last_refresh_at = nil
+	last_refresh_error = nil
 	if list_buf and vim.api.nvim_buf_is_valid(list_buf) and vim.fn.bufwinid(list_buf) ~= -1 then
 		M.show_memos_list({ force_refresh = true })
 	end
+end
+
+local function status_text(with_seconds)
+	if list_refresh_state == "refreshing" then
+		return "Memos refreshing"
+	end
+	if list_refresh_state == "failed" then
+		return "Memos failed"
+	end
+	local refreshed = format_time(last_refresh_at, with_seconds)
+	if refreshed then
+		return "Memos updated " .. refreshed
+	end
+	return ""
+end
+
+function M.status()
+	return {
+		state = list_refresh_state,
+		text = status_text(true),
+		last_refresh_at = last_refresh_at,
+		last_error = last_refresh_error,
+	}
+end
+
+function M.statusline()
+	return status_text(false)
 end
 
 return M
