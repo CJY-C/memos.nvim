@@ -9,6 +9,7 @@ local memos_cache = {}
 local list_items = {}
 local current_page_token = nil
 local current_filter = ""
+local current_list_state = config.list_state or "NORMAL"
 local list_refresh_state = "idle"
 local last_refresh_at = nil
 local last_refresh_error = nil
@@ -280,6 +281,8 @@ local function render_cached_memos()
 			table.insert(lines, status_line)
 			list_items[#lines] = { kind = "status" }
 		end
+		table.insert(lines, "View: " .. current_list_state)
+		list_items[#lines] = { kind = "view" }
 		if current_filter ~= "" then
 			table.insert(lines, "Filter: " .. current_filter)
 			list_items[#lines] = { kind = "filter" }
@@ -323,7 +326,7 @@ local function fetch_memos(opts)
 	api.list_memos({
 		page_size = config.page_size,
 		page_token = opts.page_token,
-		state = config.list_state,
+		state = current_list_state,
 		order_by = config.list_order_by,
 		filter = current_filter,
 	}, function(data, err)
@@ -368,6 +371,7 @@ function M.show_memos_list(opts)
 		set_keymap(buf, keys.copy_memo_id, '<Cmd>lua require("memos.ui").copy_selected_memo_id()<CR>')
 		set_keymap(buf, keys.toggle_pin, '<Cmd>lua require("memos.ui").toggle_selected_memo_pin()<CR>')
 		set_keymap(buf, keys.archive_memo, '<Cmd>lua require("memos.ui").archive_selected_memo()<CR>')
+		set_keymap(buf, keys.toggle_archive_view, '<Cmd>lua require("memos.ui").toggle_archive_view()<CR>')
 		set_keymap(buf, keys.refresh_list, '<Cmd>lua require("memos.ui").show_memos_list({ force_refresh = true })<CR>')
 		set_keymap(buf, keys.next_page, '<Cmd>lua require("memos.ui").load_next_page()<CR>')
 		set_keymap(buf, keys.quit, '<Cmd>lua require("memos.ui").quit_memos_list()<CR>')
@@ -397,6 +401,17 @@ function M.search_memos()
 		end
 		fetch_memos({ append = false })
 	end)
+end
+
+function M.toggle_archive_view()
+	current_list_state = current_list_state == "ARCHIVED" and "NORMAL" or "ARCHIVED"
+	memos_cache = {}
+	list_items = {}
+	current_page_token = nil
+	set_refresh_state("refreshing")
+	focus_list_buf()
+	set_list_lines({ "Loading " .. current_list_state:lower() .. " memos..." })
+	fetch_memos({ append = false })
 end
 
 function M.toggle_memos_list()
@@ -634,15 +649,16 @@ function M.archive_selected_memo()
 		return
 	end
 
-	api.update_memo_state(memo.name, "ARCHIVED", function(success, err)
+	local next_state = current_list_state == "ARCHIVED" and "NORMAL" or "ARCHIVED"
+	api.update_memo_state(memo.name, next_state, function(success, err)
 		vim.schedule(function()
 			if success then
 				table.remove(memos_cache, item.index)
 				render_cached_memos()
-				vim.notify("Memo archived.")
+				vim.notify(next_state == "ARCHIVED" and "Memo archived." or "Memo restored.")
 				M.refresh_list_silently()
 			else
-				vim.notify("Failed to archive memo: " .. tostring(err), vim.log.levels.ERROR)
+				vim.notify("Failed to update memo state: " .. tostring(err), vim.log.levels.ERROR)
 			end
 		end)
 	end)
@@ -759,6 +775,7 @@ function M.on_account_switched()
 	list_items = {}
 	current_page_token = nil
 	current_filter = ""
+	current_list_state = config.list_state or "NORMAL"
 	list_refresh_state = "idle"
 	last_refresh_at = nil
 	last_refresh_error = nil

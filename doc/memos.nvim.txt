@@ -46,7 +46,8 @@ List buffer:
   s              Search/filter memos on the server
   y              Copy selected memo ID
   p              Toggle selected memo pin
-  x              Archive selected memo
+  x              Archive or restore selected memo
+  A              Toggle Normal/Archive view
   r              Refresh list
   .              Load next page
   q              Quit list
@@ -88,6 +89,7 @@ Example:
         copy_memo_id = "y",
         toggle_pin = "p",
         archive_memo = "x",
+        toggle_archive_view = "A",
         refresh_list = "r",
         next_page = ".",
         quit = "q",
@@ -111,8 +113,10 @@ response, such as memos/abc123. It does not issue any API request.
 Toggling pin sends one PATCH request and then refreshes the list once in the
 background so server-side ordering is restored.
 
-Archiving sends one PATCH request, removes the memo from the current list
-immediately, and then refreshes the list once in the background.
+A toggles between Normal and Archive views and sends one list request. x
+archives in the Normal view or restores in the Archive view, removes the memo
+from the current list immediately, and then refreshes the list once in the
+background.
 
 Split editing also uses the memo content already present in the list response.
 It does not issue any extra API request.

@@ -25,6 +25,7 @@ M.config = {
 			copy_memo_id = "y",
 			toggle_pin = "p",
 			archive_memo = "x",
+			toggle_archive_view = "A",
 			refresh_list = "r",
 			next_page = ".",
 			quit = "q",
