@@ -14,7 +14,7 @@ None currently.
 - Fuzzy hierarchical tag search. Can require fetching additional pages locally.
 - Template memos. Online templates require list/create/update flows outside the core memo path.
 - Metadata editing for relations and location.
-- Delete memo and force delete flows.
+- Force delete and batch delete flows.
 - Comments, reactions, shares, and link metadata.
 
 ## Future Acceptance Rules

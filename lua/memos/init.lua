@@ -24,6 +24,7 @@ M.config = {
 			search_memos = "s",
 			copy_memo_id = "y",
 			toggle_pin = "p",
+			delete_memo = "D",
 			archive_memo = "x",
 			toggle_archive_view = "A",
 			edit_visibility = "V",

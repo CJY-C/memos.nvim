@@ -97,6 +97,7 @@ List buffer:
 | `s` | Search/filter memos on the server |
 | `y` | Copy selected memo ID |
 | `p` | Toggle selected memo pin |
+| `D` | Delete selected memo after confirmation |
 | `x` | Archive or restore selected memo |
 | `A` | Toggle Normal/Archive view |
 | `V` | Edit selected memo visibility |
@@ -139,6 +140,7 @@ require("memos").setup({
       search_memos = "s",
       copy_memo_id = "y",
       toggle_pin = "p",
+      delete_memo = "D",
       archive_memo = "x",
       toggle_archive_view = "A",
       edit_visibility = "V",
@@ -162,6 +164,8 @@ List search uses the Memos server-side `filter` parameter and still issues one l
 Copying a memo ID uses the memo resource name already present in the list response, such as `memos/abc123`. It does not issue any API request.
 
 Toggling pin sends one PATCH request and then refreshes the list once in the background so server-side ordering is restored.
+
+Deleting a memo asks for confirmation, sends one DELETE request, removes the memo from the local list immediately on success, and then refreshes the list once in the background. Force delete is intentionally not enabled.
 
 `A` toggles between Normal and Archive views and sends one list request. `x` archives in the Normal view or restores in the Archive view, removes the memo from the current list immediately, and then refreshes the list once in the background.
 

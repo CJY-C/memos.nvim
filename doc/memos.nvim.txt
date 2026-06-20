@@ -46,6 +46,7 @@ List buffer:
   s              Search/filter memos on the server
   y              Copy selected memo ID
   p              Toggle selected memo pin
+  D              Delete selected memo after confirmation
   x              Archive or restore selected memo
   A              Toggle Normal/Archive view
   V              Edit selected memo visibility
@@ -90,6 +91,7 @@ Example:
         search_memos = "s",
         copy_memo_id = "y",
         toggle_pin = "p",
+        delete_memo = "D",
         archive_memo = "x",
         toggle_archive_view = "A",
         edit_visibility = "V",

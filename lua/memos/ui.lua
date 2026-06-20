@@ -385,6 +385,7 @@ function M.show_memos_list(opts)
 		set_keymap(buf, keys.search_memos, '<Cmd>lua require("memos.ui").search_memos()<CR>')
 		set_keymap(buf, keys.copy_memo_id, '<Cmd>lua require("memos.ui").copy_selected_memo_id()<CR>')
 		set_keymap(buf, keys.toggle_pin, '<Cmd>lua require("memos.ui").toggle_selected_memo_pin()<CR>')
+		set_keymap(buf, keys.delete_memo, '<Cmd>lua require("memos.ui").delete_selected_memo()<CR>')
 		set_keymap(buf, keys.archive_memo, '<Cmd>lua require("memos.ui").archive_selected_memo()<CR>')
 		set_keymap(buf, keys.toggle_archive_view, '<Cmd>lua require("memos.ui").toggle_archive_view()<CR>')
 		set_keymap(buf, keys.edit_visibility, '<Cmd>lua require("memos.ui").edit_selected_memo_visibility()<CR>')
@@ -677,6 +678,37 @@ function M.archive_selected_memo()
 			else
 				vim.notify("Failed to update memo state: " .. tostring(err), vim.log.levels.ERROR)
 			end
+		end)
+	end)
+end
+
+function M.delete_selected_memo()
+	local item = current_list_item()
+	local memo = item and item.kind == "memo" and memos_cache[item.index] or nil
+	if not memo or not memo.name or memo.name == "" then
+		vim.notify("Select a memo line to delete.", vim.log.levels.INFO)
+		return
+	end
+
+	local title = memo_title(memo)
+	vim.ui.select({ "Cancel", "Delete" }, {
+		prompt = "Delete memo: " .. title,
+	}, function(choice)
+		if choice ~= "Delete" then
+			return
+		end
+
+		api.delete_memo(memo.name, function(success, err)
+			vim.schedule(function()
+				if success then
+					table.remove(memos_cache, item.index)
+					render_cached_memos()
+					vim.notify("Memo deleted.")
+					M.refresh_list_silently()
+				else
+					vim.notify("Failed to delete memo: " .. tostring(err), vim.log.levels.ERROR)
+				end
+			end)
 		end)
 	end)
 end

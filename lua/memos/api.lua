@@ -346,4 +346,20 @@ function M.update_memo_create_time(memo_name, create_time, callback)
 	end)
 end
 
+function M.delete_memo(memo_name, callback)
+	local cfg = get_config()
+
+	run_curl({
+		"-X",
+		"DELETE",
+		cfg.host .. "/api/v1/" .. memo_name,
+	}, function(response)
+		if not response.ok then
+			callback(false, parse_api_error(response), response)
+			return
+		end
+		callback(true, nil, response)
+	end)
+end
+
 return M
