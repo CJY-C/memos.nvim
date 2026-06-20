@@ -228,15 +228,17 @@ end
 
 function M.update_memo(memo_name, content, callback)
 	local cfg = get_config()
+	local update_time = os.date("!%Y-%m-%dT%H:%M:%SZ")
 	local json_data = vim.json.encode({
 		name = memo_name,
 		content = content,
+		update_time = update_time,
 	})
 
 	run_curl({
 		"-X",
 		"PATCH",
-		cfg.host .. "/api/v1/" .. memo_name .. "?updateMask=content",
+		cfg.host .. "/api/v1/" .. memo_name .. "?updateMask=content,update_time",
 		"-H",
 		"Content-Type: application/json",
 		"--data",

@@ -165,6 +165,8 @@ Copying a memo ID uses the memo resource name already present in the list respon
 
 Toggling pin sends one PATCH request and then refreshes the list once in the background so server-side ordering is restored.
 
+Saving an existing memo sends one PATCH request that updates both `content` and `update_time`, so browser views and `update_time` ordering reflect edits made from Neovim.
+
 Deleting a memo asks for confirmation, sends one DELETE request, removes the memo from the local list immediately on success, and then refreshes the list once in the background. Force delete is intentionally not enabled.
 
 `A` toggles between Normal and Archive views and sends one list request. `x` archives in the Normal view or restores in the Archive view, removes the memo from the current list immediately, and then refreshes the list once in the background.
@@ -235,7 +237,7 @@ MEMOS_ENV_FILE=/run/secrets-rendered/memos.env ./scripts/latency-test.sh
 ./scripts/cold-order-by-test.sh --env-file /run/secrets-rendered/memos.env
 ```
 
-The script records list/create/update latency, request count, and curl timing breakdowns such as connect time and time to first byte. It intentionally does not enforce a fixed threshold yet; use the output as a baseline while optimizing the plugin.
+The script records list/create/update latency, request count, and curl timing breakdowns such as connect time and time to first byte. The update step patches both memo content and `update_time` in one request. It intentionally does not enforce a fixed threshold yet; use the output as a baseline while optimizing the plugin.
 
 The script can also use credentials injected by a systemd service. The write portion creates and updates a test memo. Use a test Memos instance if you do not want benchmark entries in your main account.
 

@@ -119,6 +119,9 @@ response, such as memos/abc123. It does not issue any API request.
 Toggling pin sends one PATCH request and then refreshes the list once in the
 background so server-side ordering is restored.
 
+Saving an existing memo sends one PATCH request that updates both content and
+update_time, so browser views and update_time ordering reflect Neovim edits.
+
 A toggles between Normal and Archive views and sends one list request. x
 archives in the Normal view or restores in the Archive view, removes the memo
 from the current list immediately, and then refreshes the list once in the
@@ -239,7 +242,8 @@ Run:
 <
 
 The latency script uses a real Memos API and records list/create/update timing
-plus request count and curl timing details. It can also use credentials
+plus request count and curl timing details. The update step patches content
+and update_time in one request. It can also use credentials
 injected by a systemd service. It creates and updates a test memo unless
 --skip-write is used.
 
