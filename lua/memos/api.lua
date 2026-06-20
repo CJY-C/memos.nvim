@@ -203,11 +203,19 @@ function M.list_memos(opts, callback)
 	end)
 end
 
-function M.create_memo(content, callback)
+function M.create_memo(content, state, callback)
+	if type(state) == "function" then
+		callback = state
+		state = nil
+	end
 	local cfg = get_config()
-	local json_data = vim.json.encode({
+	local payload = {
 		content = content,
-	})
+	}
+	if state then
+		payload.state = state
+	end
+	local json_data = vim.json.encode(payload)
 
 	run_curl({
 		"-X",

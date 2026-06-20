@@ -82,7 +82,8 @@ The env file must be readable by the user running Neovim.
 | --- | --- |
 | `:Memos` | Toggle the memo list |
 | `:MemosCreate` | Open a new memo buffer |
-| `:MemosSave` | Save the current memo buffer |
+| `:MemosTemplate` | Open the template list view |
+| `:MemosSave` | Save the current memo buffer / template |
 
 ## Keymaps
 
@@ -90,21 +91,38 @@ List buffer:
 
 | Key | Description |
 | --- | --- |
-| `<CR>` | Edit selected memo |
+| `<CR>` | Edit selected memo / template |
 | `o` | Edit selected memo in a horizontal split |
 | `v` | Edit selected memo in a vertical split |
-| `a` | Create memo |
-| `s` | Search/filter memos on the server |
+| `a` | Create memo (in Normal/Archive view) or create from template (in Template view) |
+| `i` | Create from template (in Template view) |
+| `e` | Edit selected template (in Template view) |
+| `n` | Create a new template (in Template view) |
+| `s` | Search/filter memos on the server (or filter templates locally in Template view) |
 | `y` | Copy selected memo ID |
 | `p` | Toggle selected memo pin |
-| `D` | Delete selected memo after confirmation |
+| `D` | Delete selected memo / template after confirmation |
 | `x` | Archive or restore selected memo |
 | `A` | Toggle Normal/Archive view |
+| `T` | Toggle Normal/Template view |
 | `V` | Edit selected memo visibility |
-| `T` | Edit selected memo create time |
-| `r` | Refresh list |
+| `t` | Edit selected memo create time |
+| `r` | Refresh list / Sync templates from remote server |
 | `.` | Load next page |
 | `q` | Quit list |
+
+### Template View Mode
+
+When viewing templates (activated by pressing `T` or executing `:MemosTemplate`):
+- Memos are filtered to templates (archived memos containing `#type/template`).
+- Keymaps are overridden:
+  - `a` / `i`: Instantiates a new normal memo from the template under the cursor (the `#type/template` tag is stripped from the new memo content).
+  - `e` / `<CR>`: Edits the selected template.
+  - `D`: Deletes the selected template both locally and on the server.
+  - `r`: Performs a remote sync to download all template memos.
+  - `s`: Filters templates locally by search query.
+  - `n`: Creates a new template. When saved, it is archived on the remote server with `#type/template` appended.
+
 
 Memo buffer:
 

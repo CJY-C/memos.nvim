@@ -11,3 +11,10 @@ end, {
 	nargs = 0,
 	desc = "Create a new memo",
 })
+
+vim.api.nvim_create_user_command("MemosTemplate", function()
+	require("memos").show_templates()
+end, {
+	nargs = 0,
+	desc = "Open the Memos template list",
+})

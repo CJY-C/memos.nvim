@@ -27,8 +27,9 @@ M.config = {
 			delete_memo = "D",
 			archive_memo = "x",
 			toggle_archive_view = "A",
+			toggle_template_view = "T",
 			edit_visibility = "V",
-			edit_create_time = "T",
+			edit_create_time = "t",
 			refresh_list = "r",
 			next_page = ".",
 			quit = "q",
@@ -177,6 +178,12 @@ end
 function M.show_list()
 	ensure_config(function()
 		require("memos.ui").toggle_memos_list()
+	end)
+end
+
+function M.show_templates()
+	ensure_config(function()
+		require("memos.ui").show_templates_list()
 	end)
 end
 
