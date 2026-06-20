@@ -322,4 +322,28 @@ function M.update_memo_visibility(memo_name, visibility, callback)
 	end)
 end
 
+function M.update_memo_create_time(memo_name, create_time, callback)
+	local cfg = get_config()
+	local json_data = vim.json.encode({
+		name = memo_name,
+		create_time = create_time,
+	})
+
+	run_curl({
+		"-X",
+		"PATCH",
+		cfg.host .. "/api/v1/" .. memo_name .. "?updateMask=create_time",
+		"-H",
+		"Content-Type: application/json",
+		"--data",
+		json_data,
+	}, function(response)
+		if not response.ok then
+			callback(false, parse_api_error(response), response)
+			return
+		end
+		callback(true, nil, response)
+	end)
+end
+
 return M

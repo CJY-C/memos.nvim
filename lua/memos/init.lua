@@ -27,6 +27,7 @@ M.config = {
 			archive_memo = "x",
 			toggle_archive_view = "A",
 			edit_visibility = "V",
+			edit_create_time = "T",
 			refresh_list = "r",
 			next_page = ".",
 			quit = "q",

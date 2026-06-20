@@ -388,6 +388,7 @@ function M.show_memos_list(opts)
 		set_keymap(buf, keys.archive_memo, '<Cmd>lua require("memos.ui").archive_selected_memo()<CR>')
 		set_keymap(buf, keys.toggle_archive_view, '<Cmd>lua require("memos.ui").toggle_archive_view()<CR>')
 		set_keymap(buf, keys.edit_visibility, '<Cmd>lua require("memos.ui").edit_selected_memo_visibility()<CR>')
+		set_keymap(buf, keys.edit_create_time, '<Cmd>lua require("memos.ui").edit_selected_memo_create_time()<CR>')
 		set_keymap(buf, keys.refresh_list, '<Cmd>lua require("memos.ui").show_memos_list({ force_refresh = true })<CR>')
 		set_keymap(buf, keys.next_page, '<Cmd>lua require("memos.ui").load_next_page()<CR>')
 		set_keymap(buf, keys.quit, '<Cmd>lua require("memos.ui").quit_memos_list()<CR>')
@@ -703,6 +704,41 @@ function M.edit_selected_memo_visibility()
 					M.refresh_list_silently()
 				else
 					vim.notify("Failed to update memo visibility: " .. tostring(err), vim.log.levels.ERROR)
+				end
+			end)
+		end)
+	end)
+end
+
+function M.edit_selected_memo_create_time()
+	local item = current_list_item()
+	local memo = item and item.kind == "memo" and memos_cache[item.index] or nil
+	if not memo or not memo.name or memo.name == "" then
+		vim.notify("No memo on the current line.", vim.log.levels.INFO)
+		return
+	end
+
+	vim.ui.input({
+		prompt = "Memo create_time:",
+		default = memo.create_time or "",
+	}, function(input)
+		if input == nil then
+			return
+		end
+		local next_create_time = vim.trim(input)
+		if next_create_time == "" then
+			vim.notify("Memo create_time is empty, not sending.", vim.log.levels.WARN)
+			return
+		end
+		api.update_memo_create_time(memo.name, next_create_time, function(success, err)
+			vim.schedule(function()
+				if success then
+					memo.create_time = next_create_time
+					render_cached_memos()
+					vim.notify("Memo create_time updated.")
+					M.refresh_list_silently()
+				else
+					vim.notify("Failed to update memo create_time: " .. tostring(err), vim.log.levels.ERROR)
 				end
 			end)
 		end)
