@@ -26,6 +26,7 @@ M.config = {
 			toggle_pin = "p",
 			archive_memo = "x",
 			toggle_archive_view = "A",
+			edit_visibility = "V",
 			refresh_list = "r",
 			next_page = ".",
 			quit = "q",

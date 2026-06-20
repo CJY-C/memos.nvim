@@ -99,6 +99,7 @@ List buffer:
 | `p` | Toggle selected memo pin |
 | `x` | Archive or restore selected memo |
 | `A` | Toggle Normal/Archive view |
+| `V` | Edit selected memo visibility |
 | `r` | Refresh list |
 | `.` | Load next page |
 | `q` | Quit list |
@@ -139,6 +140,7 @@ require("memos").setup({
       toggle_pin = "p",
       archive_memo = "x",
       toggle_archive_view = "A",
+      edit_visibility = "V",
       refresh_list = "r",
       next_page = ".",
       quit = "q",
@@ -160,6 +162,8 @@ Copying a memo ID uses the memo resource name already present in the list respon
 Toggling pin sends one PATCH request and then refreshes the list once in the background so server-side ordering is restored.
 
 `A` toggles between Normal and Archive views and sends one list request. `x` archives in the Normal view or restores in the Archive view, removes the memo from the current list immediately, and then refreshes the list once in the background.
+
+Editing visibility opens a `vim.ui.select` picker and sends one PATCH request after choosing `PRIVATE`, `PROTECTED`, or `PUBLIC`.
 
 Split editing also uses the memo content already present in the list response. It does not issue any extra API request.
 

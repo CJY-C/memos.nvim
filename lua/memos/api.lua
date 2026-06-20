@@ -120,6 +120,7 @@ local function normalize_memo(memo)
 	normalized.update_time = normalized.update_time or normalized.updateTime or ""
 	normalized.state = normalized.state or "NORMAL"
 	normalized.pinned = normalized.pinned == true
+	normalized.visibility = type(normalized.visibility) == "string" and normalized.visibility or ""
 	normalized.snippet = type(normalized.snippet) == "string" and normalized.snippet or ""
 	return normalized
 end
@@ -284,6 +285,30 @@ function M.update_memo_state(memo_name, state, callback)
 		"-X",
 		"PATCH",
 		cfg.host .. "/api/v1/" .. memo_name .. "?updateMask=state",
+		"-H",
+		"Content-Type: application/json",
+		"--data",
+		json_data,
+	}, function(response)
+		if not response.ok then
+			callback(false, parse_api_error(response), response)
+			return
+		end
+		callback(true, nil, response)
+	end)
+end
+
+function M.update_memo_visibility(memo_name, visibility, callback)
+	local cfg = get_config()
+	local json_data = vim.json.encode({
+		name = memo_name,
+		visibility = visibility,
+	})
+
+	run_curl({
+		"-X",
+		"PATCH",
+		cfg.host .. "/api/v1/" .. memo_name .. "?updateMask=visibility",
 		"-H",
 		"Content-Type: application/json",
 		"--data",
