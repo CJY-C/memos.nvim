@@ -106,7 +106,7 @@ The table below lists all list-view keymaps. Note that some keys adjust behavior
 | `v` | **Vertical Split** | Edits the memo in a vertical split. | Edits the template in a vertical split. |
 | `a` / `i` | **New / Instantiate** | Opens a blank buffer to compose a new normal memo. | Instantiates a new normal memo *from* the template under the cursor (strips `#type/template`). |
 | `n` | **New** | Opens a blank buffer to compose a new normal memo. | Opens a blank buffer to compose a new template. |
-| `D` | **Delete** | Deletes the selected memo (requires confirmation). | Deletes the selected template from the remote server. |
+| `D` | **Delete / Unlink** | Deletes the selected memo (or unlinks relation if on a relation line, requires confirmation). | Deletes the selected template from the remote server. |
 | `r` | **Refresh** | Refreshes the list from the remote server. | Refreshes the template list from the remote server. |
 | `s` | **Search** | Prompts to search memos on the server using CEL query. | Prompts to search templates on the server using CEL query. |
 | `T` | **Toggle Templates** | Switches the view to **Template View**. | Switches the view back to **Normal View**. |

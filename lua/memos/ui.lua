@@ -1482,6 +1482,15 @@ end
 
 function ListSession:delete_selected_memo()
 	local item = self:current_list_item()
+	if not item then
+		return
+	end
+
+	if item.kind == "relation" or item.kind == "relation_loading" then
+		self:delete_selected_relation(item)
+		return
+	end
+
 	local memo = self:get_memo_from_item(item)
 	if not memo or not memo.name or memo.name == "" then
 		vim.notify("Select a memo line to delete.", vim.log.levels.INFO)
@@ -1510,6 +1519,88 @@ function ListSession:delete_selected_memo()
 					self:refresh_list_silently()
 				else
 					vim.notify("Failed to delete memo: " .. tostring(err), vim.log.levels.ERROR)
+				end
+			end)
+		end)
+	end)
+end
+
+function ListSession:delete_selected_relation(item)
+	local parent_memo = self.memos_cache[item.parent_index]
+	if not parent_memo then
+		vim.notify("Parent memo not found.", vim.log.levels.ERROR)
+		return
+	end
+
+	local target_name = ""
+	if item.kind == "relation" then
+		target_name = item.memo.name
+	elseif item.kind == "relation_loading" then
+		target_name = item.relation_name
+	end
+
+	if target_name == "" then
+		vim.notify("Related memo name not found.", vim.log.levels.ERROR)
+		return
+	end
+
+	local source_memo_name
+	local target_memo_name
+	if item.relation_type == "outgoing" then
+		source_memo_name = parent_memo.name
+		target_memo_name = target_name
+	else
+		source_memo_name = target_name
+		target_memo_name = parent_memo.name
+	end
+
+	local source_memo
+	if source_memo_name == parent_memo.name then
+		source_memo = parent_memo
+	else
+		source_memo = self:get_cached_relation_memo(source_memo_name)
+	end
+
+	if not source_memo or not source_memo.relations then
+		vim.notify("Relation source memo not loaded.", vim.log.levels.WARN)
+		return
+	end
+
+	local prompt_msg = string.format("Unlink relation: %s -> %s?", source_memo_name, target_memo_name)
+	vim.ui.select({ "Cancel", "Unlink" }, {
+		prompt = prompt_msg,
+	}, function(choice)
+		if choice ~= "Unlink" then
+			return
+		end
+
+		local new_relations = {}
+		for _, r in ipairs(source_memo.relations) do
+			local m_name = get_name_from_relation_field(r.memo or r.memoName)
+			local r_name = get_name_from_relation_field(r.relatedMemo or r.related_memo or r.relatedMemoName)
+			if m_name ~= "" and r_name ~= "" then
+				if not (m_name == source_memo_name and r_name == target_memo_name) then
+					table.insert(new_relations, {
+						memo = { name = m_name },
+						relatedMemo = { name = r_name },
+						type = r.type or "REFERENCE"
+					})
+				end
+			end
+		end
+
+		api:set_memo_relations(source_memo_name, new_relations, function(success, err)
+			vim.schedule(function()
+				if success then
+					source_memo.relations = {}
+					for _, r in ipairs(new_relations) do
+						table.insert(source_memo.relations, r)
+					end
+					self:render_cached_memos()
+					vim.notify("Relation unlinked.")
+					self:refresh_list_silently()
+				else
+					vim.notify("Failed to unlink relation: " .. tostring(err), vim.log.levels.ERROR)
 				end
 			end)
 		end)

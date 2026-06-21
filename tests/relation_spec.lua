@@ -256,4 +256,89 @@ describe("memos.ui relations", function()
 		assert.are.same("idle", s.list_refresh_state)
 		assert.are.same("Resolved Memo Content", s.relation_details_cache["memos/99"].content)
 	end)
+
+	it("should unlink selected relation when D is pressed on relation line", function()
+		local api = require("memos.api")
+		local old_select = vim.ui.select
+		local old_set_memo_relations = api.Client.set_memo_relations
+
+		ui.bind_list_keymaps(buf)
+		local s = ui.get_session(buf)
+
+		-- Setup memo cache with a parent and relation
+		s.memos_cache = {
+			{
+				name = "memos/1",
+				id = 1,
+				content = "Parent memo",
+				relations = {
+					{ memo = "memos/1", relatedMemo = "memos/2", type = "REFERENCE" }
+				}
+			},
+			{
+				name = "memos/2",
+				id = 2,
+				content = "Child memo"
+			}
+		}
+
+		s.expanded_outgoing["memos/1"] = true
+		s.relation_details_cache["memos/2"] = s.memos_cache[2]
+
+		vim.api.nvim_set_current_buf(buf)
+		s:render_cached_memos()
+		vim.wait(500, function()
+			return s.list_items[3] ~= nil
+		end)
+
+		-- Cursor at line 3 (the relation child: memos/2)
+		vim.api.nvim_win_set_cursor(0, { 3, 0 })
+
+		local select_called = false
+		local select_prompt = nil
+		local set_relations_called = false
+		local api_relations_arg = nil
+
+		-- Mock vim.ui.select to simulate selecting "Unlink"
+		vim.ui.select = function(items, opts, on_choice)
+			select_called = true
+			select_prompt = opts.prompt
+			on_choice("Unlink")
+		end
+
+		-- Mock api:set_memo_relations
+		api.Client.set_memo_relations = function(self_api, memo_name, relations, callback)
+			assert.are.same("memos/1", memo_name)
+			set_relations_called = true
+			api_relations_arg = relations
+			callback(true, nil)
+		end
+
+		-- Mock refresh_list_silently
+		local refresh_called = false
+		s.refresh_list_silently = function()
+			refresh_called = true
+		end
+
+		-- Invoke delete_selected_memo on relation line
+		s:delete_selected_memo()
+
+		vim.wait(500, function()
+			return refresh_called
+		end)
+
+		-- Restore mocks
+		vim.ui.select = old_select
+		api.Client.set_memo_relations = old_set_memo_relations
+
+		-- Assertions
+		assert.is_true(select_called)
+		assert.are.same("Unlink relation: memos/1 -> memos/2?", select_prompt)
+		assert.is_true(set_relations_called)
+		assert.is_true(refresh_called)
+
+		-- Remaining relations should be empty
+		assert.are.same(0, #api_relations_arg)
+		assert.are.same(0, #s.memos_cache[1].relations)
+	end)
 end)

@@ -54,7 +54,7 @@ List buffer:
   y              Copy selected memo ID
   c              Add relation to target memo ID
   p              Toggle selected memo pin
-  D              Delete selected memo / template after confirmation
+  D              Delete selected memo / template, or unlink relation on relation line (after confirmation)
   x              Archive or restore selected memo
   A              Toggle Normal/Archive view
   T              Toggle Normal/Template view
