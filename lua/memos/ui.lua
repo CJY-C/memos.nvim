@@ -287,13 +287,21 @@ local function copy_text(text)
 end
 
 local function list_status_line()
+	local refreshed = format_time(last_refresh_at, true)
 	if list_refresh_state == "refreshing" then
-		return "Refreshing..."
+		if refreshed then
+			return "Updated " .. refreshed .. " (Refreshing...)"
+		else
+			return "Refreshing..."
+		end
 	end
 	if list_refresh_state == "failed" then
-		return "Refresh failed"
+		if refreshed then
+			return "Updated " .. refreshed .. " (Refresh failed)"
+		else
+			return "Refresh failed"
+		end
 	end
-	local refreshed = format_time(last_refresh_at, true)
 	if refreshed then
 		return "Updated " .. refreshed
 	end
@@ -509,7 +517,7 @@ function M.toggle_memos_list()
 		end
 		if last_float_buf and vim.api.nvim_buf_is_valid(last_float_buf) then
 			create_float_window(last_float_buf)
-			M.show_memos_list({ force_refresh = true })
+			M.show_memos_list()
 			return
 		end
 	end
@@ -1029,13 +1037,21 @@ function M.on_account_switched()
 end
 
 local function status_text(with_seconds)
+	local refreshed = format_time(last_refresh_at, with_seconds)
 	if list_refresh_state == "refreshing" then
-		return "Memos refreshing"
+		if refreshed then
+			return "Memos refreshing (Updated " .. refreshed .. ")"
+		else
+			return "Memos refreshing"
+		end
 	end
 	if list_refresh_state == "failed" then
-		return "Memos failed"
+		if refreshed then
+			return "Memos failed (Updated " .. refreshed .. ")"
+		else
+			return "Memos failed"
+		end
 	end
-	local refreshed = format_time(last_refresh_at, with_seconds)
 	if refreshed then
 		return "Memos updated " .. refreshed
 	end
