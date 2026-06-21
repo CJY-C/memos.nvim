@@ -122,4 +122,95 @@ describe("memos.ui relations", function()
 		assert.is_not_nil(resolved)
 		assert.are.same("memos/2", resolved.name)
 	end)
+
+	it("should parse clipboard registry, prompt user, merge relations, and update cache via api:set_memo_relations", function()
+		local api = require("memos.api")
+		local old_input = vim.fn.input
+		local old_getreg = vim.fn.getreg
+		local old_set_memo_relations = api.Client.set_memo_relations
+
+		ui.bind_list_keymaps(buf)
+		local s = ui.get_session(buf)
+
+		-- Setup memo cache with relations
+		s.memos_cache = {
+			{
+				name = "memos/1",
+				id = 1,
+				content = "Memo 1",
+				relations = {
+					{ memo = "memos/1", relatedMemo = "memos/2", type = "REFERENCE" }
+				}
+			}
+		}
+
+		vim.api.nvim_set_current_buf(buf)
+		s:render_cached_memos()
+		vim.wait(500, function()
+			return s.list_items[2] ~= nil
+		end)
+		vim.api.nvim_win_set_cursor(0, { 2, 0 }) -- Select Memo 1
+
+		local input_called = false
+		local set_relations_called = false
+		local api_relations_arg = nil
+
+		-- Mock vim.fn.getreg to return a memo ID
+		vim.fn.getreg = function(reg)
+			if reg == "+" then
+				return "memos/3"
+			end
+			return ""
+		end
+
+		-- Mock vim.fn.input to return the target memo
+		vim.fn.input = function(prompt, default)
+			assert.are.same("Add relation to target memo ID: ", prompt)
+			assert.are.same("memos/3", default)
+			input_called = true
+			return "memos/3"
+		end
+
+		-- Mock api:set_memo_relations
+		api.Client.set_memo_relations = function(self_api, memo_name, relations, callback)
+			assert.are.same("memos/1", memo_name)
+			set_relations_called = true
+			api_relations_arg = relations
+			callback(true, nil)
+		end
+
+		-- Mock refresh_list_silently
+		local refresh_called = false
+		s.refresh_list_silently = function()
+			refresh_called = true
+		end
+
+		-- Invoke add_relation
+		s:add_relation()
+
+		vim.wait(500, function()
+			return refresh_called
+		end)
+
+		-- Restore mocks
+		vim.fn.getreg = old_getreg
+		vim.fn.input = old_input
+		api.Client.set_memo_relations = old_set_memo_relations
+
+		-- Assertions
+		assert.is_true(input_called)
+		assert.is_true(set_relations_called)
+		assert.is_true(refresh_called)
+
+		-- Relations should contain the old relation to memos/2 AND the new relation to memos/3
+		assert.are.same(2, #api_relations_arg)
+		assert.are.same("memos/1", api_relations_arg[1].memo.name)
+		assert.are.same("memos/2", api_relations_arg[1].relatedMemo.name)
+		assert.are.same("memos/1", api_relations_arg[2].memo.name)
+		assert.are.same("memos/3", api_relations_arg[2].relatedMemo.name)
+
+		-- Verify local cache is updated immediately
+		assert.are.same(2, #s.memos_cache[1].relations)
+		assert.are.same("memos/3", s.memos_cache[1].relations[2].relatedMemo.name)
+	end)
 end)

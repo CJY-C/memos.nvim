@@ -397,6 +397,29 @@ function Client:delete_memo(memo_name, callback)
 	end)
 end
 
+function Client:set_memo_relations(memo_name, relations, callback)
+	local host = self:get_host()
+	local json_data = vim.json.encode({
+		relations = relations,
+	})
+
+	self:run_curl({
+		"-X",
+		"PATCH",
+		host .. "/api/v1/" .. memo_name .. "/relations",
+		"-H",
+		"Content-Type: application/json",
+		"--data",
+		json_data,
+	}, function(response)
+		if not response.ok then
+			callback(false, parse_api_error(response), response)
+			return
+		end
+		callback(true, nil, response)
+	end)
+end
+
 M.Client = Client
 
 function M.new(config_or_fn)

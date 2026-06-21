@@ -52,6 +52,7 @@ List buffer:
   n              Create memo (in Normal/Archive) or create a new template (in Template view)
   s              Search/filter memos or templates on the server
   y              Copy selected memo ID
+  c              Add relation to target memo ID
   p              Toggle selected memo pin
   D              Delete selected memo / template after confirmation
   x              Archive or restore selected memo
@@ -113,6 +114,7 @@ Example:
         edit_memo_vsplit = "v",
         search_memos = "s",
         copy_memo_id = "y",
+        add_relation = "c",
         toggle_pin = "p",
         delete_memo = "D",
         archive_memo = "x",

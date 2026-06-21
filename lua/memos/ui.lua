@@ -368,6 +368,7 @@ function ListSession:bind_list_keymaps()
 	set_map(keys.new_memo or "n", '<Cmd>lua require("memos.ui").new_memo_or_template_command()<CR>')
 	set_map(keys.search_memos, '<Cmd>lua require("memos.ui").search_memos()<CR>')
 	set_map(keys.copy_memo_id, '<Cmd>lua require("memos.ui").copy_selected_memo_id()<CR>')
+	set_map(keys.add_relation or "c", '<Cmd>lua require("memos.ui").add_relation_command()<CR>')
 	set_map(keys.toggle_pin, '<Cmd>lua require("memos.ui").toggle_selected_memo_pin()<CR>')
 	set_map(keys.delete_memo, '<Cmd>lua require("memos.ui").delete_selected_memo()<CR>')
 	set_map(keys.archive_memo, '<Cmd>lua require("memos.ui").archive_selected_memo()<CR>')
@@ -1312,6 +1313,102 @@ function ListSession:copy_selected_memo_id()
 	vim.notify("Copied memo ID to " .. register .. ": " .. memo.name)
 end
 
+function ListSession:add_relation()
+	if self.current_list_state == "TEMPLATES" then
+		vim.notify("Relations are not supported for templates.", vim.log.levels.WARN)
+		return
+	end
+	local item = self:current_list_item()
+	local memo = self:get_memo_from_item(item)
+	if not memo or not memo.name or memo.name == "" then
+		vim.notify("No memo on the current line.", vim.log.levels.INFO)
+		return
+	end
+
+	local function get_clipboard_memo_id()
+		for _, reg in ipairs({ "+", "*", '"' }) do
+			local content = vim.trim(vim.fn.getreg(reg) or "")
+			if content ~= "" then
+				if content:match("^memos/[%w%-_]+$") then
+					return content
+				elseif content:match("^[%w%-_]+$") and not content:match("^%d+$") then
+					return "memos/" .. content
+				elseif content:match("^%d+$") then
+					return "memos/" .. content
+				end
+			end
+		end
+		return ""
+	end
+
+	local default_target = get_clipboard_memo_id()
+	local target_input = vim.fn.input("Add relation to target memo ID: ", default_target)
+	print(" ")
+
+	target_input = vim.trim(target_input or "")
+	if target_input == "" then
+		vim.notify("Relation addition cancelled.", vim.log.levels.INFO)
+		return
+	end
+
+	local target_name = target_input
+	if not target_name:match("^memos/") then
+		target_name = "memos/" .. target_name
+	end
+
+	if target_name == memo.name or target_name == tostring(memo.id) then
+		vim.notify("Cannot create a relation to the same memo.", vim.log.levels.ERROR)
+		return
+	end
+
+	local relations = {}
+	local exists = false
+	if type(memo.relations) == "table" then
+		for _, r in ipairs(memo.relations) do
+			local m_name = get_name_from_relation_field(r.memo or r.memoName)
+			local r_name = get_name_from_relation_field(r.relatedMemo or r.related_memo or r.relatedMemoName)
+			if m_name ~= "" and r_name ~= "" then
+				table.insert(relations, {
+					memo = { name = m_name },
+					relatedMemo = { name = r_name },
+					type = r.type or "REFERENCE"
+				})
+				if m_name == memo.name and r_name == target_name then
+					exists = true
+				end
+			end
+		end
+	end
+
+	if exists then
+		vim.notify("Relation already exists.", vim.log.levels.INFO)
+		return
+	end
+
+	local new_relation = {
+		memo = { name = memo.name },
+		relatedMemo = { name = target_name },
+		type = "REFERENCE"
+	}
+	table.insert(relations, new_relation)
+
+	api:set_memo_relations(memo.name, relations, function(success, err)
+		vim.schedule(function()
+			if success then
+				if not memo.relations then
+					memo.relations = {}
+				end
+				table.insert(memo.relations, new_relation)
+				self:render_cached_memos()
+				vim.notify("Relation added successfully.")
+				self:refresh_list_silently()
+			else
+				vim.notify("Failed to add relation: " .. tostring(err), vim.log.levels.ERROR)
+			end
+		end)
+	end)
+end
+
 function ListSession:toggle_selected_memo_pin()
 	if self.current_list_state == "TEMPLATES" then
 		vim.notify("Pinning is not supported for templates.", vim.log.levels.WARN)
@@ -1530,6 +1627,13 @@ function M.copy_selected_memo_id()
 	local s = get_active_session()
 	if s then
 		s:copy_selected_memo_id()
+	end
+end
+
+function M.add_relation_command()
+	local s = get_active_session()
+	if s then
+		s:add_relation()
 	end
 end
 

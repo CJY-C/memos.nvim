@@ -112,6 +112,7 @@ The table below lists all list-view keymaps. Note that some keys adjust behavior
 | `T` | **Toggle Templates** | Switches the view to **Template View**. | Switches the view back to **Normal View**. |
 | `A` | **Toggle Archive** | Toggles the view between **Normal** and **Archive** views. | Switches the view to **Archive View**. |
 | `y` | **Copy ID** | Copies the selected memo name (e.g. `memos/123`) to system clipboard. | Copies the selected template name to system clipboard. |
+| `c` | **Add Relation** | Prompts to add relation to target memo ID (defaults to clipboard content). | *Unsupported* (displays warning). |
 | `p` | **Pin** | Toggles pinning state of the memo. | *Unsupported* (displays warning). |
 | `x` | **Archive** | Toggles archiving state of the memo. | *Unsupported* (displays warning). |
 | `V` | **Visibility** | Prompts to edit memo visibility (`PRIVATE`, etc.). | *Unsupported* (displays warning). |
@@ -158,6 +159,7 @@ require("memos").setup({
       edit_memo_vsplit = "v",
       search_memos = "s",
       copy_memo_id = "y",
+      add_relation = "c",
       toggle_pin = "p",
       delete_memo = "D",
       archive_memo = "x",
