@@ -16,7 +16,7 @@ function M.strip_template_tag(content)
 	local text = tostring(content or "")
 	text = text:gsub("^%s*#type/template%s*\n?", "")
 	text = text:gsub("\n%s*#type/template%s*\n?", "\n")
-	text = text:gsub("%s+#type/template", " ")
+	text = text:gsub("%s+#type/template", "")
 	text = text:gsub("#type/template", "")
 	return vim.trim(text)
 end

@@ -16,6 +16,15 @@ nvim --headless -u NONE \
   +qa
 
 echo "==> Load check passed."
+
+echo "==> Running automated unit tests via Plenary..."
+nvim --headless -u NONE \
+  -i NONE \
+  "+set rtp^=${ROOT_DIR}" \
+  -c "lua require('plenary.test_harness').test_directory('${ROOT_DIR}/tests')" \
+  -c "qa!"
+
+echo "==> Unit tests completed."
 echo "Next manual checks in Neovim:"
 echo "  :Memos"
 echo "  :MemosCreate"
