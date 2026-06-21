@@ -1,4 +1,4 @@
-local api = require("memos.api")
+local api = require("memos.api").new(function() return require("memos").config end)
 
 local M = {}
 
@@ -92,7 +92,7 @@ function M.template_delete_selected(memo, index)
 		if confirmation ~= "Delete" then
 			return
 		end
-		api.delete_memo(memo.name, function(success, err)
+		api:delete_memo(memo.name, function(success, err)
 			vim.schedule(function()
 				if success then
 					local ui = require("memos.ui")
@@ -113,7 +113,7 @@ function M.save_template_buffer(bufnr, content, callback)
 
 	if memo_name and memo_name ~= "" then
 		-- Update existing template
-		api.update_memo(memo_name, tagged_content, function(success, err, response)
+		api:update_memo(memo_name, tagged_content, function(success, err, response)
 			vim.schedule(function()
 				if not success then
 					callback(false, nil, err)
@@ -127,7 +127,7 @@ function M.save_template_buffer(bufnr, content, callback)
 		end)
 	else
 		-- Create new template
-		api.create_memo(tagged_content, function(new_memo, err, response)
+		api:create_memo(tagged_content, function(new_memo, err, response)
 			vim.schedule(function()
 				if not new_memo or not new_memo.name then
 					callback(false, nil, err or "Failed to create template memo on server")
@@ -135,11 +135,11 @@ function M.save_template_buffer(bufnr, content, callback)
 				end
 
 				-- Now archive it!
-				api.update_memo_state(new_memo.name, "ARCHIVED", function(state_success, state_err)
+				api:update_memo_state(new_memo.name, "ARCHIVED", function(state_success, state_err)
 					vim.schedule(function()
 						if not state_success then
 							-- Delete the leaked normal memo to stay clean
-							api.delete_memo(new_memo.name, function() end)
+							api:delete_memo(new_memo.name, function() end)
 							callback(false, nil, state_err or "Failed to archive template memo on server")
 							return
 						end

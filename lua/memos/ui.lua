@@ -1,4 +1,4 @@
-local api = require("memos.api")
+local api = require("memos.api").new(function() return require("memos").config end)
 local config = require("memos").config
 
 local M = {}
@@ -389,7 +389,7 @@ local function fetch_memos(opts)
 		end
 	end
 
-	api.list_memos({
+	api:list_memos({
 		page_size = config.page_size,
 		page_token = opts.page_token,
 		state = state_param,
@@ -731,7 +731,7 @@ function M.toggle_selected_memo_pin()
 	end
 
 	local next_pinned = memo.pinned ~= true
-	api.update_memo_pinned(memo.name, next_pinned, function(success, err)
+	api:update_memo_pinned(memo.name, next_pinned, function(success, err)
 		vim.schedule(function()
 			if success then
 				memo.pinned = next_pinned
@@ -758,7 +758,7 @@ function M.archive_selected_memo()
 	end
 
 	local next_state = current_list_state == "ARCHIVED" and "NORMAL" or "ARCHIVED"
-	api.update_memo_state(memo.name, next_state, function(success, err)
+	api:update_memo_state(memo.name, next_state, function(success, err)
 		vim.schedule(function()
 			if success then
 				table.remove(memos_cache, item.index)
@@ -793,7 +793,7 @@ function M.delete_selected_memo()
 			return
 		end
 
-		api.delete_memo(memo.name, function(success, err)
+		api:delete_memo(memo.name, function(success, err)
 			vim.schedule(function()
 				if success then
 					table.remove(memos_cache, item.index)
@@ -833,7 +833,7 @@ function M.edit_selected_memo_visibility()
 		if not choice then
 			return
 		end
-		api.update_memo_visibility(memo.name, choice, function(success, err)
+		api:update_memo_visibility(memo.name, choice, function(success, err)
 			vim.schedule(function()
 				if success then
 					memo.visibility = choice
@@ -872,7 +872,7 @@ function M.edit_selected_memo_create_time()
 			vim.notify("Memo create_time is empty, not sending.", vim.log.levels.WARN)
 			return
 		end
-		api.update_memo_create_time(memo.name, next_create_time, function(success, err)
+		api:update_memo_create_time(memo.name, next_create_time, function(success, err)
 			vim.schedule(function()
 				if success then
 					memo.create_time = next_create_time
@@ -977,7 +977,7 @@ function M.save_or_create_dispatcher(opts)
 	end
 
 	if memo_name then
-		api.update_memo(memo_name, content, function(success, err)
+		api:update_memo(memo_name, content, function(success, err)
 			vim.schedule(function()
 				if success then
 					vim.b[bufnr].memos_original_content = content
@@ -993,7 +993,7 @@ function M.save_or_create_dispatcher(opts)
 		return
 	end
 
-	api.create_memo(content, function(new_memo, err)
+	api:create_memo(content, function(new_memo, err)
 		vim.schedule(function()
 			if new_memo and new_memo.name then
 				vim.b[bufnr].memos_memo_name = new_memo.name

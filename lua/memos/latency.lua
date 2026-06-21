@@ -1,4 +1,4 @@
-local api = require("memos.api")
+local api = require("memos.api").new(function() return require("memos").config end)
 
 local M = {}
 
@@ -101,7 +101,7 @@ end
 
 local function run_warmup()
 	local _, err, elapsed, response = wait_for_async(function(done)
-		api.get_current_user(done)
+		api:get_current_user(done)
 	end)
 	local ok = response and response.ok == true
 	print_step("warmup", elapsed, ok, response, ok and "auth/me" or tostring(err))
@@ -119,7 +119,7 @@ local function run_once(opts, run_index)
 	end
 
 	local list, list_err, list_ms, list_response = wait_for_async(function(done)
-		api.list_memos({
+		api:list_memos({
 			page_size = page_size,
 			state = require("memos").config.list_state,
 			order_by = order_by,
@@ -150,7 +150,7 @@ local function run_once(opts, run_index)
 	local stamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
 	local content = "memos.nvim latency test " .. stamp
 	local created, create_err, create_ms, create_response = wait_for_async(function(done)
-		api.create_memo(content, done)
+		api:create_memo(content, done)
 	end)
 	print_step("create", create_ms, created ~= nil, create_response, created and created.name or tostring(create_err))
 	if created then
@@ -161,7 +161,7 @@ local function run_once(opts, run_index)
 	end
 
 	local updated, update_err, update_ms, update_response = wait_for_async(function(done)
-		api.update_memo(created.name, content .. "\nupdated", done)
+		api:update_memo(created.name, content .. "\nupdated", done)
 	end)
 	print_step("update", update_ms, updated == true, update_response, updated and created.name or tostring(update_err))
 	if updated == true then

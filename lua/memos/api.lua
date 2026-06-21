@@ -6,8 +6,27 @@ local stats = {
 	requests = 0,
 }
 
-local function get_config()
-	return require("memos").config
+local Client = {}
+Client.__index = Client
+
+function Client.new(config_or_fn)
+	return setmetatable({
+		_config = config_or_fn or {},
+	}, Client)
+end
+
+function Client:get_host()
+	local cfg = type(self._config) == "function" and self._config() or self._config
+	local host = cfg and cfg.host or ""
+	if type(host) == "string" then
+		return host:gsub("/+$", "")
+	end
+	return ""
+end
+
+function Client:get_token()
+	local cfg = type(self._config) == "function" and self._config() or self._config
+	return cfg and cfg.token or ""
 end
 
 local function url_encode(str)
@@ -74,14 +93,14 @@ local function parse_api_error(response)
 	return table.concat(parts, " - ")
 end
 
-local function run_curl(args, callback)
-	local cfg = get_config()
+function Client:run_curl(args, callback)
+	local token = self:get_token()
 	local full_args = vim.deepcopy(args)
 
 	stats.requests = stats.requests + 1
 
 	table.insert(full_args, "-H")
-	table.insert(full_args, "Authorization: Bearer " .. cfg.token)
+	table.insert(full_args, "Authorization: Bearer " .. token)
 	table.insert(full_args, "-sS")
 	table.insert(full_args, "-w")
 	table.insert(
@@ -144,8 +163,7 @@ local function normalize_list_response(data)
 	}
 end
 
-local function build_list_url(opts)
-	local cfg = get_config()
+local function build_list_url(host, opts)
 	local params = {}
 	opts = opts or {}
 
@@ -165,7 +183,7 @@ local function build_list_url(opts)
 		table.insert(params, "filter=" .. url_encode(opts.filter))
 	end
 
-	local url = cfg.host .. "/api/v1/memos"
+	local url = host .. "/api/v1/memos"
 	if #params > 0 then
 		url = url .. "?" .. table.concat(params, "&")
 	end
@@ -180,9 +198,9 @@ function M.get_stats()
 	return vim.deepcopy(stats)
 end
 
-function M.get_current_user(callback)
-	local cfg = get_config()
-	run_curl({ "-X", "GET", cfg.host .. "/api/v1/auth/me" }, function(response)
+function Client:get_current_user(callback)
+	local host = self:get_host()
+	self:run_curl({ "-X", "GET", host .. "/api/v1/auth/me" }, function(response)
 		if not response.ok then
 			callback(nil, parse_api_error(response), response)
 			return
@@ -193,8 +211,9 @@ function M.get_current_user(callback)
 	end)
 end
 
-function M.list_memos(opts, callback)
-	run_curl({ "-X", "GET", build_list_url(opts) }, function(response)
+function Client:list_memos(opts, callback)
+	local host = self:get_host()
+	self:run_curl({ "-X", "GET", build_list_url(host, opts) }, function(response)
 		if not response.ok then
 			callback(nil, parse_api_error(response), response)
 			return
@@ -203,16 +222,16 @@ function M.list_memos(opts, callback)
 	end)
 end
 
-function M.create_memo(content, callback)
-	local cfg = get_config()
+function Client:create_memo(content, callback)
+	local host = self:get_host()
 	local json_data = vim.json.encode({
 		content = content,
 	})
 
-	run_curl({
+	self:run_curl({
 		"-X",
 		"POST",
-		cfg.host .. "/api/v1/memos",
+		host .. "/api/v1/memos",
 		"-H",
 		"Content-Type: application/json",
 		"--data",
@@ -226,8 +245,8 @@ function M.create_memo(content, callback)
 	end)
 end
 
-function M.update_memo(memo_name, content, callback)
-	local cfg = get_config()
+function Client:update_memo(memo_name, content, callback)
+	local host = self:get_host()
 	local update_time = os.date("!%Y-%m-%dT%H:%M:%SZ")
 	local json_data = vim.json.encode({
 		name = memo_name,
@@ -235,10 +254,10 @@ function M.update_memo(memo_name, content, callback)
 		update_time = update_time,
 	})
 
-	run_curl({
+	self:run_curl({
 		"-X",
 		"PATCH",
-		cfg.host .. "/api/v1/" .. memo_name .. "?updateMask=content,update_time",
+		host .. "/api/v1/" .. memo_name .. "?updateMask=content,update_time",
 		"-H",
 		"Content-Type: application/json",
 		"--data",
@@ -252,17 +271,17 @@ function M.update_memo(memo_name, content, callback)
 	end)
 end
 
-function M.update_memo_pinned(memo_name, pinned, callback)
-	local cfg = get_config()
+function Client:update_memo_pinned(memo_name, pinned, callback)
+	local host = self:get_host()
 	local json_data = vim.json.encode({
 		name = memo_name,
 		pinned = pinned == true,
 	})
 
-	run_curl({
+	self:run_curl({
 		"-X",
 		"PATCH",
-		cfg.host .. "/api/v1/" .. memo_name .. "?updateMask=pinned",
+		host .. "/api/v1/" .. memo_name .. "?updateMask=pinned",
 		"-H",
 		"Content-Type: application/json",
 		"--data",
@@ -276,17 +295,17 @@ function M.update_memo_pinned(memo_name, pinned, callback)
 	end)
 end
 
-function M.update_memo_state(memo_name, state, callback)
-	local cfg = get_config()
+function Client:update_memo_state(memo_name, state, callback)
+	local host = self:get_host()
 	local json_data = vim.json.encode({
 		name = memo_name,
 		state = state,
 	})
 
-	run_curl({
+	self:run_curl({
 		"-X",
 		"PATCH",
-		cfg.host .. "/api/v1/" .. memo_name .. "?updateMask=state",
+		host .. "/api/v1/" .. memo_name .. "?updateMask=state",
 		"-H",
 		"Content-Type: application/json",
 		"--data",
@@ -300,17 +319,17 @@ function M.update_memo_state(memo_name, state, callback)
 	end)
 end
 
-function M.update_memo_visibility(memo_name, visibility, callback)
-	local cfg = get_config()
+function Client:update_memo_visibility(memo_name, visibility, callback)
+	local host = self:get_host()
 	local json_data = vim.json.encode({
 		name = memo_name,
 		visibility = visibility,
 	})
 
-	run_curl({
+	self:run_curl({
 		"-X",
 		"PATCH",
-		cfg.host .. "/api/v1/" .. memo_name .. "?updateMask=visibility",
+		host .. "/api/v1/" .. memo_name .. "?updateMask=visibility",
 		"-H",
 		"Content-Type: application/json",
 		"--data",
@@ -324,17 +343,17 @@ function M.update_memo_visibility(memo_name, visibility, callback)
 	end)
 end
 
-function M.update_memo_create_time(memo_name, create_time, callback)
-	local cfg = get_config()
+function Client:update_memo_create_time(memo_name, create_time, callback)
+	local host = self:get_host()
 	local json_data = vim.json.encode({
 		name = memo_name,
 		create_time = create_time,
 	})
 
-	run_curl({
+	self:run_curl({
 		"-X",
 		"PATCH",
-		cfg.host .. "/api/v1/" .. memo_name .. "?updateMask=create_time",
+		host .. "/api/v1/" .. memo_name .. "?updateMask=create_time",
 		"-H",
 		"Content-Type: application/json",
 		"--data",
@@ -348,13 +367,12 @@ function M.update_memo_create_time(memo_name, create_time, callback)
 	end)
 end
 
-function M.delete_memo(memo_name, callback)
-	local cfg = get_config()
-
-	run_curl({
+function Client:delete_memo(memo_name, callback)
+	local host = self:get_host()
+	self:run_curl({
 		"-X",
 		"DELETE",
-		cfg.host .. "/api/v1/" .. memo_name,
+		host .. "/api/v1/" .. memo_name,
 	}, function(response)
 		if not response.ok then
 			callback(false, parse_api_error(response), response)
@@ -363,5 +381,38 @@ function M.delete_memo(memo_name, callback)
 		callback(true, nil, response)
 	end)
 end
+
+M.Client = Client
+
+function M.new(config_or_fn)
+	return Client.new(config_or_fn)
+end
+
+-- Backward compatibility proxy
+local default_client = nil
+local last_cfg_host = nil
+local last_cfg_token = nil
+
+local function get_default_client()
+	local cfg = require("memos").config or {}
+	if not default_client or cfg.host ~= last_cfg_host or cfg.token ~= last_cfg_token then
+		last_cfg_host = cfg.host
+		last_cfg_token = cfg.token
+		default_client = Client.new(cfg)
+	end
+	return default_client
+end
+
+setmetatable(M, {
+	__index = function(t, key)
+		local val = Client[key]
+		if type(val) == "function" then
+			return function(...)
+				return val(get_default_client(), ...)
+			end
+		end
+		return val
+	end,
+})
 
 return M
