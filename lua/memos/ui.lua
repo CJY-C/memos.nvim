@@ -899,7 +899,7 @@ end
 
 function M.return_to_list()
 	local current_buf = vim.api.nvim_get_current_buf()
-	M.show_memos_list({ force_refresh = true })
+	M.show_memos_list()
 	if vim.api.nvim_buf_is_valid(current_buf) and not vim.bo[current_buf].modified then
 		pcall(vim.api.nvim_buf_delete, current_buf, { force = false })
 	end
@@ -1005,7 +1005,7 @@ function M.save_or_create_dispatcher(opts)
 				end
 				vim.notify("Memo created.")
 				if post_save_ui then
-					M.show_memos_list({ force_refresh = true })
+					M.show_memos_list()
 				else
 					M.refresh_list_silently()
 				end
