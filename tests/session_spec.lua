@@ -57,4 +57,33 @@ describe("memos.ui ListSession encapsulation", function()
 
 		assert.are.same(0, #s1.memos_cache)
 	end)
+
+	it("should run show_memos_list and trigger api:list_memos successfully", function()
+		local list_called = false
+		local api_mod = require("memos.api")
+		local original_list_memos = api_mod.Client.list_memos
+		
+		api_mod.Client.list_memos = function(self, opts, callback)
+			list_called = true
+			callback({
+				memos = {
+					{ name = "memo-1", content = "test memo content" }
+				},
+				next_page_token = ""
+			}, nil)
+		end
+
+		ui.show_memos_list()
+
+		local s = ui.get_session(vim.api.nvim_get_current_buf())
+		vim.wait(1000, function()
+			return #s.memos_cache > 0
+		end)
+
+		assert.is_true(list_called, "API list_memos was not invoked")
+		assert.are.same(1, #s.memos_cache)
+
+		-- Restore original
+		api_mod.Client.list_memos = original_list_memos
+	end)
 end)

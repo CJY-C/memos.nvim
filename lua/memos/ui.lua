@@ -188,11 +188,13 @@ local function count_normal_windows()
 	return count
 end
 
-local function set_list_lines(lines)
-	local buf = ensure_list_buf()
-	vim.bo[buf].modifiable = true
-	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-	vim.bo[buf].modifiable = false
+function ListSession:set_list_lines(lines)
+	local buf = self.buf
+	if buf and vim.api.nvim_buf_is_valid(buf) then
+		vim.bo[buf].modifiable = true
+		vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+		vim.bo[buf].modifiable = false
+	end
 end
 
 local function first_line(content)
