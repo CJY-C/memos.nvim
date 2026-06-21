@@ -420,7 +420,7 @@ function M.show_memos_list(opts)
 		set_keymap(buf, keys.edit_memo_vsplit, '<Cmd>lua require("memos.ui").edit_selected_memo_vsplit()<CR>')
 		set_keymap(buf, keys.add_memo, '<Cmd>lua require("memos.ui").add_memo_command()<CR>')
 		set_keymap(buf, "i", '<Cmd>lua require("memos.ui").add_memo_command()<CR>')
-		set_keymap(buf, "n", '<Cmd>lua require("memos.ui").new_template_command()<CR>')
+		set_keymap(buf, "n", '<Cmd>lua require("memos.ui").new_memo_or_template_command()<CR>')
 		set_keymap(buf, keys.search_memos, '<Cmd>lua require("memos.ui").search_memos()<CR>')
 		set_keymap(buf, keys.copy_memo_id, '<Cmd>lua require("memos.ui").copy_selected_memo_id()<CR>')
 		set_keymap(buf, keys.toggle_pin, '<Cmd>lua require("memos.ui").toggle_selected_memo_pin()<CR>')
@@ -698,6 +698,10 @@ function M.copy_selected_memo_id()
 end
 
 function M.toggle_selected_memo_pin()
+	if current_list_state == "TEMPLATES" then
+		vim.notify("Pinning is not supported for templates.", vim.log.levels.WARN)
+		return
+	end
 	local item = current_list_item()
 	local memo = item and item.kind == "memo" and memos_cache[item.index] or nil
 	if not memo or not memo.name or memo.name == "" then
@@ -721,6 +725,10 @@ function M.toggle_selected_memo_pin()
 end
 
 function M.archive_selected_memo()
+	if current_list_state == "TEMPLATES" then
+		vim.notify("Archiving is not supported for templates.", vim.log.levels.WARN)
+		return
+	end
 	local item = current_list_item()
 	local memo = item and item.kind == "memo" and memos_cache[item.index] or nil
 	if not memo or not memo.name or memo.name == "" then
@@ -787,6 +795,10 @@ function M.remove_cached_memo_at(index)
 end
 
 function M.edit_selected_memo_visibility()
+	if current_list_state == "TEMPLATES" then
+		vim.notify("Visibility editing is not supported for templates.", vim.log.levels.WARN)
+		return
+	end
 	local item = current_list_item()
 	local memo = item and item.kind == "memo" and memos_cache[item.index] or nil
 	if not memo or not memo.name or memo.name == "" then
@@ -816,6 +828,10 @@ function M.edit_selected_memo_visibility()
 end
 
 function M.edit_selected_memo_create_time()
+	if current_list_state == "TEMPLATES" then
+		vim.notify("Create time editing is not supported for templates.", vim.log.levels.WARN)
+		return
+	end
 	local item = current_list_item()
 	local memo = item and item.kind == "memo" and memos_cache[item.index] or nil
 	if not memo or not memo.name or memo.name == "" then
@@ -1048,9 +1064,11 @@ function M.add_memo_command()
 	end
 end
 
-function M.new_template_command()
+function M.new_memo_or_template_command()
 	if current_list_state == "TEMPLATES" then
 		require("memos.template").template_create()
+	else
+		M.create_memo_in_buffer()
 	end
 end
 

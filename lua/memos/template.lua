@@ -191,19 +191,18 @@ function M.template_create()
 	end)
 end
 
-function M.template_edit_selected(memo)
+function M.template_edit_selected(memo, open_cmd)
 	if not memo or not memo.name then
 		return
 	end
 	vim.schedule(function()
-		vim.cmd("enew")
-		local bufnr = vim.api.nvim_get_current_buf()
+		local ui = require("memos.ui")
+		local bufnr = ui.open_edit_buffer(memo.content or "", open_cmd)
 		vim.b[bufnr].memos_template_mode = true
 		vim.b[bufnr].memos_template_name = memo.name
 		local buf_name = build_template_buffer_name(memo.name, memo.content)
 		pcall(vim.api.nvim_buf_set_name, bufnr, buf_name)
-		vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, vim.split(memo.content or "", "\n"))
-		require("memos.ui").setup_buffer_for_editing()
+		ui.setup_buffer_for_editing()
 	end)
 end
 

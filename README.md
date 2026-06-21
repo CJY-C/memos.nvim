@@ -80,56 +80,53 @@ The env file must be readable by the user running Neovim.
 
 | Command | Description |
 | --- | --- |
-| `:Memos` | Toggle the memo list |
-| `:MemosCreate` | Open a new memo buffer |
-| `:MemosTemplate` | Open the template list view |
-| `:MemosSave` | Save the current memo buffer / template |
+| `:Memos` | Toggle the main Memos list buffer (opens to the default state, e.g. `NORMAL`). |
+| `:MemosCreate` | Open a new buffer to compose a new normal memo. |
+| `:MemosTemplate` | Open the Memos template list buffer directly (switches state to `TEMPLATES`). |
+| `:MemosSave` | Save the current memo or template buffer. (Can also be executed via `:w` in memo/template buffers). |
 
 ## Keymaps
 
-List buffer:
+The plugin provides keymaps inside the list buffer and inside the memo composition buffers.
+
+### List Buffer Keymaps
+
+The list buffer behaves as an interactive dashboard that supports three viewing modes (toggled with `A` and `T`):
+- **Normal View**: Displays your active memos.
+- **Archive View**: Displays your archived memos.
+- **Template View**: Displays your memo templates (cached in `~/.local/share/nvim/memos.nvim/memos_templates.json`).
+
+The table below lists all list-view keymaps. Note that some keys adjust behavior depending on the active viewing mode:
+
+| Key | Description | Behavior in Normal / Archive View | Behavior in Template View (`T`) |
+| --- | --- | --- | --- |
+| `<CR>` | **Edit / Split** | Opens the memo under cursor for editing. | Opens the template under cursor for editing. |
+| `e` | **Edit** | Opens the memo under cursor for editing. | Opens the template under cursor for editing. |
+| `o` | **Horizontal Split** | Edits the memo in a horizontal split. | Edits the template in a horizontal split. |
+| `v` | **Vertical Split** | Edits the memo in a vertical split. | Edits the template in a vertical split. |
+| `a` / `i` | **New / Instantiate** | Opens a blank buffer to compose a new normal memo. | Instantiates a new normal memo *from* the template under the cursor (strips `#type/template`). |
+| `n` | **New** | Opens a blank buffer to compose a new normal memo. | Opens a blank buffer to compose a new template. |
+| `D` | **Delete** | Deletes the selected memo (requires confirmation). | Deletes the selected template both locally and on the server. |
+| `r` | **Refresh / Sync** | Refreshes the list from the remote server. | Syncs all templates from the remote server to your local cache. |
+| `s` | **Search** | Prompts to search memos on the server using CEL query. | Prompts to filter cached templates locally (instant search). |
+| `T` | **Toggle Templates** | Switches the view to **Template View**. | Switches the view back to **Normal View**. |
+| `A` | **Toggle Archive** | Toggles the view between **Normal** and **Archive** views. | Switches the view to **Archive View**. |
+| `y` | **Copy ID** | Copies the selected memo name (e.g. `memos/123`) to system clipboard. | Copies the selected template name to system clipboard. |
+| `p` | **Pin** | Toggles pinning state of the memo. | *Unsupported* (displays warning). |
+| `x` | **Archive** | Toggles archiving state of the memo. | *Unsupported* (displays warning). |
+| `V` | **Visibility** | Prompts to edit memo visibility (`PRIVATE`, etc.). | *Unsupported* (displays warning). |
+| `t` | **Create Time** | Prompts to edit the creation timestamp. | *Unsupported* (displays warning). |
+| `.` | **Next Page** | Loads the next page of memos (pagination). | *Unsupported* (all templates are loaded locally). |
+| `q` | **Quit** | Closes the list buffer. | Closes the list buffer. |
+
+### Memo / Template Buffer Keymaps
+
+These keymaps are set up inside the buffer when writing a memo or template:
 
 | Key | Description |
 | --- | --- |
-| `<CR>` | Edit selected memo / template |
-| `o` | Edit selected memo in a horizontal split |
-| `v` | Edit selected memo in a vertical split |
-| `a` | Create memo (in Normal/Archive view) or create from template (in Template view) |
-| `i` | Create from template (in Template view) |
-| `e` | Edit selected template (in Template view) |
-| `n` | Create a new template (in Template view) |
-| `s` | Search/filter memos on the server (or filter templates locally in Template view) |
-| `y` | Copy selected memo ID |
-| `p` | Toggle selected memo pin |
-| `D` | Delete selected memo / template after confirmation |
-| `x` | Archive or restore selected memo |
-| `A` | Toggle Normal/Archive view |
-| `T` | Toggle Normal/Template view |
-| `V` | Edit selected memo visibility |
-| `t` | Edit selected memo create time |
-| `r` | Refresh list / Sync templates from remote server |
-| `.` | Load next page |
-| `q` | Quit list |
-
-### Template View Mode
-
-When viewing templates (activated by pressing `T` or executing `:MemosTemplate`):
-- Memos are filtered to templates (archived memos containing `#type/template`).
-- Keymaps are overridden:
-  - `a` / `i`: Instantiates a new normal memo from the template under the cursor (the `#type/template` tag is stripped from the new memo content).
-  - `e` / `<CR>`: Edits the selected template.
-  - `D`: Deletes the selected template both locally and on the server.
-  - `r`: Performs a remote sync to download all template memos.
-  - `s`: Filters templates locally by search query.
-  - `n`: Creates a new template. When saved, it is archived on the remote server with `#type/template` appended.
-
-
-Memo buffer:
-
-| Key | Description |
-| --- | --- |
-| `<leader>ms` | Save memo |
-| `<Esc>` | Return to list |
+| `<leader>ms` | Save the current buffer to the remote server and sync local cache. |
+| `<Esc>` | Return to the list view (unsaved buffers are kept modified). |
 
 ## Configuration
 
