@@ -140,3 +140,15 @@ When parsing relations between memos (e.g. for outgoing and incoming link calcul
   - When calculating alignment gaps for rendering right-aligned link indicators, always use `vim.fn.strdisplaywidth(str)` instead of `#str` (byte length). This ensures correct alignment columns when memo titles contain CJK or multi-byte characters.
   - When passing columns to Neovim highlighting APIs (e.g. `vim.api.nvim_buf_add_highlight`), continue using byte length `#str` since Neovim expects byte-indexed offsets.
 
+---
+
+## 8. UI Consistency & Loading Indicators
+
+To maintain visual feedback for network activity and ensure a consistent user experience:
+- **Active Refresh State**: When any background request is initiated—whether it is the main memo list fetch (`list_memos`) or fetching missing relation details for expanded nodes—the session's refresh state must transition to `"refreshing"` (via `self:set_refresh_state("refreshing")`). This ensures that the header line displays the `(Refreshing...)` hint.
+- **Coordination of Active Fetches**: The status indicator must remain `"refreshing"` as long as there is any in-flight fetch request. We track this using:
+  - `self.main_list_fetching`: A boolean flag representing the main list API fetch.
+  - `self.in_flight_relations`: A table mapping memo resource names currently being fetched in the background.
+- **Helper Coordination**: Use `has_active_fetches(self)` to dynamically check if either of these is active. The transition back to `"idle"` must only occur when both operations are fully complete.
+
+

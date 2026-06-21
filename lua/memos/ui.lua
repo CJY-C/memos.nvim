@@ -39,6 +39,7 @@ function ListSession.new(bufnr)
 		expanded_incoming = {},
 		relation_details_cache = {},
 		in_flight_relations = {},
+		main_list_fetching = false,
 	}, ListSession)
 end
 
@@ -79,8 +80,22 @@ function ListSession:load_state_cache(state)
 	self.last_refresh_at = c.last_refresh_at
 end
 
+local function has_active_fetches(self)
+	if self.main_list_fetching then
+		return true
+	end
+	for _, _ in pairs(self.in_flight_relations or {}) do
+		return true
+	end
+	return false
+end
+
 function ListSession:set_refresh_state(state, err)
-	self.list_refresh_state = state or "idle"
+	local target_state = state or "idle"
+	if target_state == "idle" and has_active_fetches(self) then
+		target_state = "refreshing"
+	end
+	self.list_refresh_state = target_state
 	if self.list_refresh_state == "failed" then
 		self.last_refresh_error = tostring(err or "Unknown error")
 	elseif self.list_refresh_state == "idle" then
@@ -90,10 +105,8 @@ function ListSession:set_refresh_state(state, err)
 end
 
 function ListSession:mark_refresh_success()
-	self.list_refresh_state = "idle"
-	self.last_refresh_error = nil
 	self.last_refresh_at = os.time()
-	redraw_status()
+	self:set_refresh_state("idle")
 end
 
 local function format_time(value, with_seconds)
@@ -614,6 +627,7 @@ function ListSession:fetch_memos(opts)
 		end
 	end
 
+	self.main_list_fetching = true
 	self:set_refresh_state("refreshing")
 
 	api:list_memos({
@@ -624,6 +638,7 @@ function ListSession:fetch_memos(opts)
 		filter = filter_param,
 	}, function(data, err)
 		vim.schedule(function()
+			self.main_list_fetching = false
 			if not data then
 				if self.current_list_state == req_state then
 					self:set_refresh_state("failed", err)
@@ -975,6 +990,7 @@ function ListSession:fetch_missing_relations(names)
 		if not found then
 			if not self.in_flight_relations[name] then
 				self.in_flight_relations[name] = true
+				self:set_refresh_state("refreshing")
 				api:get_memo(name, function(memo_data, err)
 					vim.schedule(function()
 						self.in_flight_relations[name] = nil
@@ -989,6 +1005,7 @@ function ListSession:fetch_missing_relations(names)
 								update_time = "",
 							}
 						end
+						self:set_refresh_state("idle")
 						self:render_cached_memos()
 					end)
 				end)

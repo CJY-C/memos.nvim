@@ -213,4 +213,47 @@ describe("memos.ui relations", function()
 		assert.are.same(2, #s.memos_cache[1].relations)
 		assert.are.same("memos/3", s.memos_cache[1].relations[2].relatedMemo.name)
 	end)
+
+	it("should show refreshing status while fetch_missing_relations is loading in background", function()
+		local api = require("memos.api")
+		local old_get_memo = api.Client.get_memo
+
+		ui.bind_list_keymaps(buf)
+		local s = ui.get_session(buf)
+		s.memos_cache = {}
+
+		local get_memo_callback = nil
+		api.Client.get_memo = function(self_api, name, callback)
+			get_memo_callback = callback
+		end
+
+		-- Verify initial state
+		assert.are.same("idle", s.list_refresh_state)
+
+		-- Trigger fetching a missing relation
+		s:fetch_missing_relations({ "memos/99" })
+
+		-- Verify it transitions to refreshing status
+		assert.are.same("refreshing", s.list_refresh_state)
+		assert.is_not_nil(get_memo_callback)
+
+		-- Resolve the fetch
+		get_memo_callback({
+			name = "memos/99",
+			content = "Resolved Memo Content",
+			state = "NORMAL"
+		}, nil)
+
+		-- Allow scheduled code to run
+		vim.wait(500, function()
+			return s.list_refresh_state == "idle"
+		end)
+
+		-- Restore mocks
+		api.Client.get_memo = old_get_memo
+
+		-- Verify final state
+		assert.are.same("idle", s.list_refresh_state)
+		assert.are.same("Resolved Memo Content", s.relation_details_cache["memos/99"].content)
+	end)
 end)
