@@ -49,8 +49,8 @@ List buffer:
   a              Create memo (in Normal/Archive) or create from template (in Template view)
   i              Create from template (in Template view)
   e              Edit selected template (in Template view)
-  n              Create a new template (in Template view)
-  s              Search/filter memos on the server (or filter templates locally)
+  n              Create memo (in Normal/Archive) or create a new template (in Template view)
+  s              Search/filter memos or templates on the server
   y              Copy selected memo ID
   p              Toggle selected memo pin
   D              Delete selected memo / template after confirmation
@@ -59,7 +59,7 @@ List buffer:
   T              Toggle Normal/Template view
   V              Edit selected memo visibility
   t              Edit selected memo create time
-  r              Refresh list / Sync templates from remote server
+  r              Refresh list
   .              Load next page
   q              Quit list
 <
@@ -69,9 +69,10 @@ keymaps are overridden to support template operations:
 - `a` or `i` instantiates a new normal memo using the selected template (with the
   `#type/template` tag stripped).
 - `e` or `<CR>` edits the selected template.
-- `D` deletes the template from the local cache and the remote server.
-- `r` downloads and syncs templates from the remote server.
-- `s` filters templates locally by search query.
+- `o` or `v` edits the selected template in a horizontal or vertical split.
+- `D` deletes the template from the remote server.
+- `r` refreshes the template list from the remote server.
+- `s` searches templates on the remote server.
 - `n` opens a new template buffer. When saved, it is archived on the server.
 
 Memo buffer:
@@ -103,6 +104,7 @@ Example:
     keymaps = {
       list = {
         add_memo = "a",
+        new_memo = "n",
         edit_memo = "<CR>",
         edit_memo_split = "o",
         edit_memo_vsplit = "v",

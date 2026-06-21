@@ -343,43 +343,24 @@ end
 
 local function fetch_memos(opts)
 	opts = opts or {}
+	local state_param = current_list_state
+	local filter_param = current_filter
+
 	if current_list_state == "TEMPLATES" then
-		local template = require("memos.template")
-		local data = template.read_local_templates()
-		local templates = template.normalize_templates(data.templates)
-
-		if #templates == 0 and not opts.no_auto_sync then
-			set_refresh_state("refreshing")
-			template.sync_templates(function(success, synced_tpls)
-				vim.schedule(function()
-					if success then
-						mark_refresh_success()
-						local filtered = template.filter_templates(synced_tpls, current_filter)
-						memos_cache = filtered
-						render_cached_memos()
-					else
-						set_refresh_state("failed", "Failed to sync templates")
-						memos_cache = {}
-						render_cached_memos()
-					end
-				end)
-			end)
-			return
+		state_param = "ARCHIVED"
+		if current_filter and current_filter ~= "" then
+			filter_param = "content.contains('#type/template') && (" .. current_filter .. ")"
+		else
+			filter_param = "content.contains('#type/template')"
 		end
-
-		local filtered = template.filter_templates(templates, current_filter)
-		memos_cache = filtered
-		mark_refresh_success()
-		render_cached_memos()
-		return
 	end
 
 	api.list_memos({
 		page_size = config.page_size,
 		page_token = opts.page_token,
-		state = current_list_state,
+		state = state_param,
 		order_by = config.list_order_by,
-		filter = current_filter,
+		filter = filter_param,
 	}, function(data, err)
 		if not data then
 			vim.schedule(function()
@@ -401,9 +382,10 @@ end
 function M.show_memos_list(opts)
 	opts = opts or {}
 	focus_list_buf()
-	if #memos_cache == 0 then
+	if #memos_cache == 0 or opts.force_refresh then
 		set_refresh_state("refreshing")
-		set_list_lines({ "Loading memos..." })
+		local loading_text = current_list_state == "TEMPLATES" and "Loading templates..." or "Loading memos..."
+		set_list_lines({ loading_text })
 		fetch_memos({ append = false })
 	else
 		set_refresh_state("refreshing")
@@ -420,7 +402,7 @@ function M.show_memos_list(opts)
 		set_keymap(buf, keys.edit_memo_vsplit, '<Cmd>lua require("memos.ui").edit_selected_memo_vsplit()<CR>')
 		set_keymap(buf, keys.add_memo, '<Cmd>lua require("memos.ui").add_memo_command()<CR>')
 		set_keymap(buf, "i", '<Cmd>lua require("memos.ui").add_memo_command()<CR>')
-		set_keymap(buf, "n", '<Cmd>lua require("memos.ui").new_memo_or_template_command()<CR>')
+		set_keymap(buf, keys.new_memo or "n", '<Cmd>lua require("memos.ui").new_memo_or_template_command()<CR>')
 		set_keymap(buf, keys.search_memos, '<Cmd>lua require("memos.ui").search_memos()<CR>')
 		set_keymap(buf, keys.copy_memo_id, '<Cmd>lua require("memos.ui").copy_selected_memo_id()<CR>')
 		set_keymap(buf, keys.toggle_pin, '<Cmd>lua require("memos.ui").toggle_selected_memo_pin()<CR>')
@@ -442,20 +424,6 @@ function M.search_memos()
 		if input == nil then
 			return
 		end
-		if current_list_state == "TEMPLATES" then
-			current_filter = vim.trim(input)
-			memos_cache = {}
-			list_items = {}
-			redraw_status()
-			focus_list_buf()
-			if current_filter == "" then
-				vim.notify("Templates search cleared.")
-			else
-				vim.notify("Templates search filter applied.")
-			end
-			fetch_memos({ append = false, no_auto_sync = true })
-			return
-		end
 
 		local next_filter = M.build_search_filter(input)
 		current_filter = next_filter
@@ -466,11 +434,15 @@ function M.search_memos()
 		last_refresh_error = nil
 		redraw_status()
 		focus_list_buf()
-		set_list_lines({ next_filter == "" and "Loading memos..." or "Loading filtered memos..." })
+
+		local entity_name = current_list_state == "TEMPLATES" and "templates" or "memos"
+		local loading_text = next_filter == "" and ("Loading " .. entity_name .. "...") or ("Loading filtered " .. entity_name .. "...")
+		set_list_lines({ loading_text })
+
 		if next_filter == "" then
-			vim.notify("Memos search cleared.")
+			vim.notify(current_list_state == "TEMPLATES" and "Templates search cleared." or "Memos search cleared.")
 		else
-			vim.notify("Memos search filter applied.")
+			vim.notify(current_list_state == "TEMPLATES" and "Templates search filter applied." or "Memos search filter applied.")
 		end
 		fetch_memos({ append = false })
 	end)
@@ -667,7 +639,7 @@ local function edit_selected_memo_with(open_cmd)
 	local memo = item.kind == "memo" and memos_cache[item.index] or nil
 	if memo then
 		if current_list_state == "TEMPLATES" then
-			require("memos.template").template_edit_selected(memo)
+			require("memos.template").template_edit_selected(memo, open_cmd)
 		else
 			M.open_memo_for_edit(memo, open_cmd)
 		end
@@ -1073,26 +1045,7 @@ function M.new_memo_or_template_command()
 end
 
 function M.refresh_list_command()
-	if current_list_state == "TEMPLATES" then
-		set_refresh_state("refreshing")
-		set_list_lines({ "Syncing templates..." })
-		require("memos.template").sync_templates(function(success, synced_tpls)
-			vim.schedule(function()
-				if success then
-					mark_refresh_success()
-					local filtered = require("memos.template").filter_templates(synced_tpls, current_filter)
-					memos_cache = filtered
-					render_cached_memos()
-					vim.notify("Templates synced from remote.")
-				else
-					set_refresh_state("failed", "Failed to sync templates")
-					render_cached_memos()
-				end
-			end)
-		end)
-	else
-		M.show_memos_list({ force_refresh = true })
-	end
+	M.show_memos_list({ force_refresh = true })
 end
 
 function M.show_templates_list()

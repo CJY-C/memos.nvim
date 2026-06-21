@@ -18,6 +18,7 @@ M.config = {
 	keymaps = {
 		list = {
 			add_memo = "a",
+			new_memo = "n",
 			edit_memo = "<CR>",
 			edit_memo_split = "o",
 			edit_memo_vsplit = "v",

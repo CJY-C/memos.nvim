@@ -4,24 +4,12 @@ local M = {}
 
 local TEMPLATE_TAG = "#type/template"
 
-local function get_config()
-	return require("memos").config
-end
-
 local function is_non_empty(str)
 	return type(str) == "string" and str ~= ""
 end
 
 local function now_iso()
 	return os.date("!%Y-%m-%dT%H:%M:%SZ")
-end
-
-local function template_dir()
-	return vim.fn.stdpath("data") .. "/memos.nvim"
-end
-
-local function template_file_path()
-	return template_dir() .. "/memos_templates.json"
 end
 
 function M.strip_template_tag(content)
@@ -68,118 +56,6 @@ local function build_template_buffer_name(memo_name, content)
 	return string.format("memos/template_%s_%s.md", id_part:sub(1, 40), title)
 end
 
-function M.normalize_templates(raw)
-	local out = {}
-	if type(raw) ~= "table" then
-		return out
-	end
-	for _, item in ipairs(raw) do
-		if type(item) == "table" and type(item.name) == "string" and item.name ~= "" then
-			table.insert(out, {
-				name = item.name,
-				content = type(item.content) == "string" and item.content or "",
-				updated_at = type(item.updated_at) == "string" and item.updated_at or "",
-			})
-		end
-	end
-	return out
-end
-
-function M.read_local_templates()
-	local path = template_file_path()
-	if vim.fn.filereadable(path) ~= 1 then
-		return { templates = {} }
-	end
-	local lines = vim.fn.readfile(path)
-	if not lines or #lines == 0 then
-		return { templates = {} }
-	end
-	local ok, decoded = pcall(vim.json.decode, table.concat(lines, "\n"))
-	if not ok or type(decoded) ~= "table" then
-		return { templates = {} }
-	end
-	return {
-		templates = M.normalize_templates(decoded.templates),
-	}
-end
-
-function M.write_local_templates(data)
-	local ok_mkdir = pcall(vim.fn.mkdir, template_dir(), "p")
-	if not ok_mkdir then
-		return false
-	end
-	local payload = { templates = M.normalize_templates(data.templates) }
-	local ok_write = pcall(vim.fn.writefile, { vim.json.encode(payload) }, template_file_path())
-	return ok_write
-end
-
-function M.sync_templates(callback)
-	local ok, err = pcall(function()
-		api.list_memos({
-			state = "ARCHIVED",
-			filter = "content.contains('#type/template')",
-			page_size = 100,
-		}, function(data, err, response)
-			vim.schedule(function()
-				if not data then
-					if callback then
-						callback(false, err)
-					else
-						vim.notify("Failed to sync templates: " .. tostring(err), vim.log.levels.ERROR)
-					end
-					return
-				end
-				local templates = {}
-				for _, memo in ipairs(data.memos or {}) do
-					if memo.name and memo.name ~= "" then
-						table.insert(templates, {
-							name = memo.name,
-							content = memo.content or "",
-							updated_at = memo.update_time or memo.create_time or "",
-						})
-					end
-				end
-				local data_to_write = { templates = templates }
-				if M.write_local_templates(data_to_write) then
-					if callback then
-						callback(true, templates)
-					else
-						vim.notify("Memos templates synced successfully. Total: " .. #templates)
-					end
-				else
-					if callback then
-						callback(false, "Failed to write local templates file")
-					else
-						vim.notify("Failed to save synced templates locally.", vim.log.levels.ERROR)
-					end
-				end
-			end)
-		end)
-	end)
-	if not ok then
-		if callback then
-			callback(false, tostring(err))
-		else
-			vim.notify("Error starting template sync: " .. tostring(err), vim.log.levels.ERROR)
-		end
-	end
-end
-
-function M.filter_templates(templates, filter)
-	if not filter or filter == "" then
-		return templates
-	end
-	local query = string.lower(filter)
-	local out = {}
-	for _, tpl in ipairs(templates) do
-		local content = string.lower(tpl.content or "")
-		if content:find(query, 1, true) then
-			table.insert(out, tpl)
-		end
-	end
-	return out
-end
-
 function M.template_create()
 	vim.schedule(function()
 		vim.cmd("enew")
@@ -219,20 +95,10 @@ function M.template_delete_selected(memo, index)
 		api.delete_memo(memo.name, function(success, err)
 			vim.schedule(function()
 				if success then
-					local data = M.read_local_templates()
-					local templates = M.normalize_templates(data.templates)
-					local remaining = {}
-					for _, tpl in ipairs(templates) do
-						if tpl.name ~= memo.name then
-							table.insert(remaining, tpl)
-						end
-					end
-					M.write_local_templates({ templates = remaining })
-					
-					-- Remove from UI list cache as well
 					local ui = require("memos.ui")
 					ui.remove_cached_memo_at(index)
 					vim.notify("Template deleted.")
+					ui.refresh_list_silently()
 				else
 					vim.notify("Failed to delete template from server: " .. tostring(err), vim.log.levels.ERROR)
 				end
@@ -253,27 +119,6 @@ function M.save_template_buffer(bufnr, content, callback)
 					callback(false, nil, err)
 					return
 				end
-				-- Update local JSON file
-				local data = M.read_local_templates()
-				local templates = M.normalize_templates(data.templates)
-				local found = false
-				local now = now_iso()
-				for _, tpl in ipairs(templates) do
-					if tpl.name == memo_name then
-						tpl.content = tagged_content
-						tpl.updated_at = now
-						found = true
-						break
-					end
-				end
-				if not found then
-					table.insert(templates, {
-						name = memo_name,
-						content = tagged_content,
-						updated_at = now,
-					})
-				end
-				M.write_local_templates({ templates = templates })
 				callback(true, {
 					name = memo_name,
 					buffer_name = build_template_buffer_name(memo_name, content),
@@ -299,15 +144,6 @@ function M.save_template_buffer(bufnr, content, callback)
 							return
 						end
 
-						-- Save local
-						local data = M.read_local_templates()
-						local templates = M.normalize_templates(data.templates)
-						table.insert(templates, {
-							name = new_memo.name,
-							content = tagged_content,
-							updated_at = new_memo.update_time or new_memo.create_time or now_iso(),
-						})
-						M.write_local_templates({ templates = templates })
 						callback(true, {
 							name = new_memo.name,
 							buffer_name = build_template_buffer_name(new_memo.name, content),

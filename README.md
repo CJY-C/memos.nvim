@@ -94,7 +94,7 @@ The plugin provides keymaps inside the list buffer and inside the memo compositi
 The list buffer behaves as an interactive dashboard that supports three viewing modes (toggled with `A` and `T`):
 - **Normal View**: Displays your active memos.
 - **Archive View**: Displays your archived memos.
-- **Template View**: Displays your memo templates (cached in `~/.local/share/nvim/memos.nvim/memos_templates.json`).
+- **Template View**: Displays your archived memo templates (filtered by `#type/template`) fetched from the remote server.
 
 The table below lists all list-view keymaps. Note that some keys adjust behavior depending on the active viewing mode:
 
@@ -106,9 +106,9 @@ The table below lists all list-view keymaps. Note that some keys adjust behavior
 | `v` | **Vertical Split** | Edits the memo in a vertical split. | Edits the template in a vertical split. |
 | `a` / `i` | **New / Instantiate** | Opens a blank buffer to compose a new normal memo. | Instantiates a new normal memo *from* the template under the cursor (strips `#type/template`). |
 | `n` | **New** | Opens a blank buffer to compose a new normal memo. | Opens a blank buffer to compose a new template. |
-| `D` | **Delete** | Deletes the selected memo (requires confirmation). | Deletes the selected template both locally and on the server. |
-| `r` | **Refresh / Sync** | Refreshes the list from the remote server. | Syncs all templates from the remote server to your local cache. |
-| `s` | **Search** | Prompts to search memos on the server using CEL query. | Prompts to filter cached templates locally (instant search). |
+| `D` | **Delete** | Deletes the selected memo (requires confirmation). | Deletes the selected template from the remote server. |
+| `r` | **Refresh** | Refreshes the list from the remote server. | Refreshes the template list from the remote server. |
+| `s` | **Search** | Prompts to search memos on the server using CEL query. | Prompts to search templates on the server using CEL query. |
 | `T` | **Toggle Templates** | Switches the view to **Template View**. | Switches the view back to **Normal View**. |
 | `A` | **Toggle Archive** | Toggles the view between **Normal** and **Archive** views. | Switches the view to **Archive View**. |
 | `y` | **Copy ID** | Copies the selected memo name (e.g. `memos/123`) to system clipboard. | Copies the selected template name to system clipboard. |
@@ -116,7 +116,7 @@ The table below lists all list-view keymaps. Note that some keys adjust behavior
 | `x` | **Archive** | Toggles archiving state of the memo. | *Unsupported* (displays warning). |
 | `V` | **Visibility** | Prompts to edit memo visibility (`PRIVATE`, etc.). | *Unsupported* (displays warning). |
 | `t` | **Create Time** | Prompts to edit the creation timestamp. | *Unsupported* (displays warning). |
-| `.` | **Next Page** | Loads the next page of memos (pagination). | *Unsupported* (all templates are loaded locally). |
+| `.` | **Next Page** | Loads the next page of memos (pagination). | Loads the next page of templates (pagination). |
 | `q` | **Quit** | Closes the list buffer. | Closes the list buffer. |
 
 ### Memo / Template Buffer Keymaps
@@ -149,6 +149,7 @@ require("memos").setup({
   keymaps = {
     list = {
       add_memo = "a",
+      new_memo = "n",
       edit_memo = "<CR>",
       edit_memo_split = "o",
       edit_memo_vsplit = "v",
@@ -158,6 +159,7 @@ require("memos").setup({
       delete_memo = "D",
       archive_memo = "x",
       toggle_archive_view = "A",
+      toggle_template_view = "T",
       edit_visibility = "V",
       edit_create_time = "T",
       refresh_list = "r",
