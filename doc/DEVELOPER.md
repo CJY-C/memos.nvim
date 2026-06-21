@@ -86,3 +86,35 @@ Always keep the common user paths request-light:
 - **Create Memo**: Exactly **1** HTTP request.
 - **Update Memo**: Exactly **1** HTTP request.
 - Avoid cascading or sequential HTTP calls unless absolutely necessary.
+
+---
+
+## 6. Defensive Programming in Async Contexts & Unit Tests
+
+### Defensive Buffer Operations
+When writing to or modifying buffers inside `vim.schedule()` callbacks, **always verify buffer validity** using `vim.api.nvim_buf_is_valid(buf)`. Because these callbacks run asynchronously, the user or testing framework may close the buffer before the callback executes, which can lead to `Invalid buffer id` crashes.
+```lua
+function ListSession:set_list_lines(lines)
+	local buf = self.buf
+	if buf and vim.api.nvim_buf_is_valid(buf) then
+		vim.bo[buf].modifiable = true
+		vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+		vim.bo[buf].modifiable = false
+	end
+end
+```
+
+### Dealing with Multi-level `vim.schedule` in Unit Tests
+If the production code schedules an async callback that in turn schedules another UI update (multi-level `vim.schedule` nesting), testing assertions executed immediately after the trigger might run before the entire queue of scheduled functions completes.
+In Plenary Busted unit tests, use `vim.wait(timeout, condition_fn)` to allow the Neovim event loop to process scheduled tasks before making assertions:
+```lua
+ui.show_memos_list()
+
+local s = ui.get_session(vim.api.nvim_get_current_buf())
+-- Wait up to 1 second for scheduled render callbacks to run and cache to populate
+vim.wait(1000, function()
+	return #s.memos_cache > 0
+end)
+
+assert.are.same(1, #s.memos_cache)
+```
