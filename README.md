@@ -116,6 +116,9 @@ The table below lists all list-view keymaps. Note that some keys adjust behavior
 | `x` | **Archive** | Toggles archiving state of the memo. | *Unsupported* (displays warning). |
 | `V` | **Visibility** | Prompts to edit memo visibility (`PRIVATE`, etc.). | *Unsupported* (displays warning). |
 | `t` | **Create Time** | Prompts to edit the creation timestamp. | *Unsupported* (displays warning). |
+| `<Tab>` / `zo` | **Toggle Outgoing** | Toggles expansion of outgoing relations (expands downwards). | *Unsupported*. |
+| `<S-Tab>` / `zi` | **Toggle Incoming** | Toggles expansion of incoming relations/backlinks (expands upwards). | *Unsupported*. |
+| `zM` | **Collapse All** | Collapses all active memo expansions in the view. | *Unsupported*. |
 | `.` | **Next Page** | Loads the next page of memos (pagination). | Loads the next page of templates (pagination). |
 | `q` | **Quit** | Closes the list buffer. | Closes the list buffer. |
 
@@ -165,6 +168,11 @@ require("memos").setup({
       refresh_list = "r",
       next_page = ".",
       quit = "q",
+      toggle_expand = "<Tab>",
+      toggle_expand_incoming = "<S-Tab>",
+      fold_outgoing = "zo",
+      fold_incoming = "zi",
+      fold_all = "zM",
     },
     buffer = {
       save = "<leader>ms",

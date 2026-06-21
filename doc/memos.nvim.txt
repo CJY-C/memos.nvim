@@ -61,6 +61,9 @@ List buffer:
   t              Edit selected memo create time
   r              Refresh list
   .              Load next page
+  <Tab> or zo    Toggle outgoing relations expansion (expand down)
+  <S-Tab> or zi  Toggle incoming relations expansion (expand up)
+  zM             Collapse all active expansions
   q              Quit list
 <
 
@@ -120,6 +123,11 @@ Example:
         refresh_list = "r",
         next_page = ".",
         quit = "q",
+        toggle_expand = "<Tab>",
+        toggle_expand_incoming = "<S-Tab>",
+        fold_outgoing = "zo",
+        fold_incoming = "zi",
+        fold_all = "zM",
       },
       buffer = {
         save = "<leader>ms",

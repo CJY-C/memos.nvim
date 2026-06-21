@@ -222,6 +222,21 @@ function Client:list_memos(opts, callback)
 	end)
 end
 
+function Client:get_memo(memo_name, callback)
+	local host = self:get_host()
+	self:run_curl({
+		"-X",
+		"GET",
+		host .. "/api/v1/" .. memo_name,
+	}, function(response)
+		if not response.ok then
+			callback(nil, parse_api_error(response), response)
+			return
+		end
+		callback(normalize_memo(decode_json(response.body)), nil, response)
+	end)
+end
+
 function Client:create_memo(content, callback)
 	local host = self:get_host()
 	local json_data = vim.json.encode({

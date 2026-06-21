@@ -34,6 +34,11 @@ M.config = {
 			refresh_list = "r",
 			next_page = ".",
 			quit = "q",
+			toggle_expand = "<Tab>",
+			toggle_expand_incoming = "<S-Tab>",
+			fold_outgoing = "zo",
+			fold_incoming = "zi",
+			fold_all = "zM",
 		},
 		buffer = {
 			save = "<leader>ms",

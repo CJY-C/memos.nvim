@@ -11,6 +11,11 @@ local list_buf = nil
 local last_float_buf = nil
 local sessions = {}
 
+local ns_id = vim.api.nvim_create_namespace("memos_list_highlights")
+
+vim.api.nvim_set_hl(0, "MemosOutgoingLink", { link = "Label", default = true })
+vim.api.nvim_set_hl(0, "MemosIncomingLink", { link = "Special", default = true })
+
 local ListSession = {}
 ListSession.__index = ListSession
 
@@ -30,6 +35,10 @@ function ListSession.new(bufnr)
 			ARCHIVED = { memos = {}, page_token = nil, filter = "", last_refresh_at = nil },
 			TEMPLATES = { memos = {}, page_token = nil, filter = "", last_refresh_at = nil },
 		},
+		expanded_outgoing = {},
+		expanded_incoming = {},
+		relation_details_cache = {},
+		in_flight_relations = {},
 	}, ListSession)
 end
 
@@ -353,6 +362,12 @@ function ListSession:bind_list_keymaps()
 	set_map(keys.next_page, '<Cmd>lua require("memos.ui").load_next_page()<CR>')
 	set_map(keys.quit, '<Cmd>lua require("memos.ui").quit_memos_list()<CR>')
 
+	set_map(keys.toggle_expand or "<Tab>", '<Cmd>lua require("memos.ui").toggle_expand_selected()<CR>')
+	set_map(keys.toggle_expand_incoming or "<S-Tab>", '<Cmd>lua require("memos.ui").toggle_expand_incoming_selected()<CR>')
+	set_map(keys.fold_outgoing or "zo", '<Cmd>lua require("memos.ui").toggle_expand_selected()<CR>')
+	set_map(keys.fold_incoming or "zi", '<Cmd>lua require("memos.ui").toggle_expand_incoming_selected()<CR>')
+	set_map(keys.fold_all or "zM", '<Cmd>lua require("memos.ui").collapse_all()<CR>')
+
 	vim.b[buf].memos_bound_keys = bound
 end
 
@@ -423,30 +438,132 @@ function ListSession:render_cached_memos()
 		self.list_items = {}
 
 		local lines = {}
+		local line_hls = {}
 		local keys = config.keymaps.list
-		table.insert(lines, self:list_header_line())
-		self.list_items[#lines] = { kind = "header" }
-		if self.current_filter ~= "" then
-			table.insert(lines, "Filter: " .. self.current_filter)
-			self.list_items[#lines] = { kind = "filter" }
-		end
-		if #self.memos_cache == 0 then
-			local message = self.current_filter == "" and "No memos." or "No memos match the current filter."
-			table.insert(lines, string.format("%s Press '%s' to refresh, '%s' to add, '%s' to quit.", message, keys.refresh_list, keys.add_memo, keys.quit))
-			self.list_items[#lines] = { kind = "empty" }
-		else
-			for index, memo in ipairs(self.memos_cache) do
-				table.insert(lines, self:format_memo_line(index, memo))
-				self.list_items[#lines] = { kind = "memo", index = index }
+
+		local function add_line(content, item_meta, hls)
+			table.insert(lines, content)
+			self.list_items[#lines] = item_meta
+			if hls and #hls > 0 then
+				line_hls[#lines] = hls
 			end
 		end
-		if self.current_page_token ~= "" then
-			table.insert(lines, "...")
-			self.list_items[#lines] = { kind = "load_more" }
-			table.insert(lines, string.format("Press '%s' to load more", keys.next_page))
-			self.list_items[#lines] = { kind = "load_more" }
+
+		add_line(self:list_header_line(), { kind = "header" })
+		if self.current_filter ~= "" then
+			add_line("Filter: " .. self.current_filter, { kind = "filter" })
 		end
+
+		if #self.memos_cache == 0 then
+			local message = self.current_filter == "" and "No memos." or "No memos match the current filter."
+			add_line(
+				string.format("%s Press '%s' to refresh, '%s' to add, '%s' to quit.", message, keys.refresh_list, keys.add_memo, keys.quit),
+				{ kind = "empty" }
+			)
+		else
+			for index, memo in ipairs(self.memos_cache) do
+				-- A. Render incoming relations above (expand up)
+				if self.expanded_incoming[memo.name] then
+					local incoming_names = self:get_incoming_relation_names(memo)
+					for rel_idx, target_name in ipairs(incoming_names) do
+						local rel_memo = self:get_cached_relation_memo(target_name)
+						if rel_memo then
+							local line_str, hls = self:format_incoming_relation_line(index, rel_idx, rel_memo)
+							add_line(line_str, {
+								kind = "relation",
+								parent_index = index,
+								relation_index = rel_idx,
+								relation_type = "incoming",
+								memo = rel_memo
+							}, hls)
+						else
+							local line_str = string.format("   ┌── %d.i%d. Loading %s...", index, rel_idx, target_name)
+							local prefix = "   ┌── "
+							local highlight_len = #prefix + #tostring(index) + 2 + #tostring(rel_idx) + 2
+							add_line(line_str, {
+								kind = "relation_loading",
+								parent_index = index,
+								relation_name = target_name,
+								relation_type = "incoming"
+							}, {
+								{
+									hl_group = "MemosIncomingLink",
+									start_col = 0,
+									end_col = highlight_len
+								}
+							})
+						end
+					end
+				end
+
+				-- B. Render parent memo line
+				local parent_str, parent_hls = self:format_memo_line(index, memo)
+				add_line(parent_str, { kind = "memo", index = index }, parent_hls)
+
+				-- C. Render outgoing relations below (expand down)
+				if self.expanded_outgoing[memo.name] then
+					local outgoing_names = self:get_outgoing_relation_names(memo)
+					for rel_idx, target_name in ipairs(outgoing_names) do
+						local rel_memo = self:get_cached_relation_memo(target_name)
+						if rel_memo then
+							local line_str, hls = self:format_outgoing_relation_line(index, rel_idx, rel_memo)
+							add_line(line_str, {
+								kind = "relation",
+								parent_index = index,
+								relation_index = rel_idx,
+								relation_type = "outgoing",
+								memo = rel_memo
+							}, hls)
+						else
+							local line_str = string.format("   └── %d.o%d. Loading %s...", index, rel_idx, target_name)
+							local prefix = "   └── "
+							local highlight_len = #prefix + #tostring(index) + 2 + #tostring(rel_idx) + 2
+							add_line(line_str, {
+								kind = "relation_loading",
+								parent_index = index,
+								relation_name = target_name,
+								relation_type = "outgoing"
+							}, {
+								{
+									hl_group = "MemosOutgoingLink",
+									start_col = 0,
+									end_col = highlight_len
+								}
+							})
+						end
+					end
+				end
+			end
+		end
+
+		if self.current_page_token ~= "" then
+			add_line("...", { kind = "load_more" })
+			add_line(string.format("Press '%s' to load more", keys.next_page), { kind = "load_more" })
+		end
+
 		self:set_list_lines(lines)
+
+		-- Apply namespace highlights
+		if self.buf and vim.api.nvim_buf_is_valid(self.buf) then
+			vim.api.nvim_buf_clear_namespace(self.buf, ns_id, 0, -1)
+			for line_num, hls in pairs(line_hls) do
+				for _, hl in ipairs(hls) do
+					vim.api.nvim_buf_add_highlight(self.buf, ns_id, hl.hl_group, line_num - 1, hl.start_col, hl.end_col)
+				end
+			end
+		end
+
+		-- Automatically check if any expanded memos have missing relation details
+		for _, memo in ipairs(self.memos_cache) do
+			if self.expanded_outgoing[memo.name] then
+				local outgoing_names = self:get_outgoing_relation_names(memo)
+				self:fetch_missing_relations(outgoing_names)
+			end
+			if self.expanded_incoming[memo.name] then
+				local incoming_names = self:get_incoming_relation_names(memo)
+				self:fetch_missing_relations(incoming_names)
+			end
+		end
 	end)
 end
 
@@ -526,7 +643,7 @@ function ListSession:format_memo_line(index, memo)
 	if self.current_list_state == "TEMPLATES" then
 		local title = memo_title(memo)
 		title = require("memos.template").strip_template_tag(title)
-		return string.format("%d. [T] %s", index, title)
+		return string.format("%d. [T] %s", index, title), {}
 	end
 
 	local date = display_date(memo)
@@ -538,11 +655,328 @@ function ListSession:format_memo_line(index, memo)
 		badge_str = "[" .. table.concat(badges, ",") .. "] "
 	end
 
+	local line_without_indicator
 	if config.list_style == "compact" then
-		return string.format("%d. %s%s", index, badge_str, title)
+		line_without_indicator = string.format("%d. %s%s", index, badge_str, title)
+	else
+		line_without_indicator = string.format("%d. [%s] %s%s", index, date, badge_str, title)
 	end
 
-	return string.format("%d. [%s] %s%s", index, date, badge_str, title)
+	-- 1. Compute counts
+	local outgoing_set = {}
+	local incoming_set = {}
+
+	if type(memo.relations) == "table" then
+		for _, rel in ipairs(memo.relations) do
+			local source = rel.memo or rel.memoName
+			local target = rel.relatedMemo or rel.related_memo or rel.relatedMemoName
+			if source and target then
+				if source == memo.name or source == tostring(memo.id) then
+					outgoing_set[target] = true
+				elseif target == memo.name or target == tostring(memo.id) then
+					incoming_set[source] = true
+				end
+			end
+		end
+	end
+
+	for _, other in ipairs(self.memos_cache) do
+		if type(other.relations) == "table" then
+			for _, rel in ipairs(other.relations) do
+				local source = rel.memo or rel.memoName
+				local target = rel.relatedMemo or rel.related_memo or rel.relatedMemoName
+				if source and target then
+					if source == other.name or source == tostring(other.id) then
+						if target == memo.name or target == tostring(memo.id) then
+							incoming_set[source] = true
+						end
+					end
+				end
+			end
+		end
+	end
+
+	local outgoing_count = 0
+	for _ in pairs(outgoing_set) do outgoing_count = outgoing_count + 1 end
+	local incoming_count = 0
+	for _ in pairs(incoming_set) do incoming_count = incoming_count + 1 end
+
+	-- 2. Build indicator and highlights
+	local hls = {}
+	local full_line = line_without_indicator
+
+	if outgoing_count > 0 or incoming_count > 0 then
+		local link_indicator = ""
+		local width = vim.o.columns
+		local win = self.buf and vim.fn.bufwinid(self.buf) or -1
+		if win ~= -1 and vim.api.nvim_win_is_valid(win) then
+			width = vim.api.nvim_win_get_width(win)
+		end
+		local target_width = width - 3
+		if target_width < 40 then
+			target_width = 40
+		end
+
+		local gap = target_width - #line_without_indicator
+		local gap_str = ""
+
+		local parts = {}
+		table.insert(parts, "[")
+		local current_len = 1
+
+		if outgoing_count > 0 then
+			local out_str = string.format("→ %d", outgoing_count)
+			table.insert(parts, out_str)
+			table.insert(hls, {
+				hl_group = "MemosOutgoingLink",
+				start_offset = current_len,
+				end_offset = current_len + #out_str
+			})
+			current_len = current_len + #out_str
+		end
+
+		if outgoing_count > 0 and incoming_count > 0 then
+			table.insert(parts, ", ")
+			current_len = current_len + 2
+		end
+
+		if incoming_count > 0 then
+			local in_str = string.format("← %d", incoming_count)
+			table.insert(parts, in_str)
+			table.insert(hls, {
+				hl_group = "MemosIncomingLink",
+				start_offset = current_len,
+				end_offset = current_len + #in_str
+			})
+			current_len = current_len + #in_str
+		end
+
+		table.insert(parts, "]")
+		link_indicator = table.concat(parts, "")
+
+		gap = gap - #link_indicator
+		if gap > 0 then
+			gap_str = string.rep(" ", gap)
+		else
+			gap_str = " "
+		end
+
+		full_line = line_without_indicator .. gap_str .. link_indicator
+
+		local offset_shift = #line_without_indicator + #gap_str
+		for _, hl in ipairs(hls) do
+			hl.start_col = hl.start_offset + offset_shift
+			hl.end_col = hl.end_offset + offset_shift
+		end
+	end
+
+	return full_line, hls
+end
+
+function ListSession:get_cached_relation_memo(name)
+	for _, m in ipairs(self.memos_cache) do
+		if m.name == name or tostring(m.id) == name then
+			return m
+		end
+	end
+	return self.relation_details_cache[name]
+end
+
+function ListSession:format_incoming_relation_line(parent_idx, rel_idx, rel_memo)
+	local prefix = "   ┌── "
+	local idx_str = string.format("%d.i%d", parent_idx, rel_idx)
+	local date = display_date(rel_memo)
+	local badges = memo_badges(rel_memo)
+	local title = memo_title(rel_memo)
+	local badge_str = #badges > 0 and ("[" .. table.concat(badges, ",") .. "] ") or ""
+	local line
+	if config.list_style == "compact" then
+		line = string.format("%s%s. %s%s", prefix, idx_str, badge_str, title)
+	else
+		line = string.format("%s%s. [%s] %s%s", prefix, idx_str, date, badge_str, title)
+	end
+	local prefix_len = #prefix
+	local highlight_len = prefix_len + #idx_str + 2
+	local hls = {
+		{
+			hl_group = "MemosIncomingLink",
+			start_col = 0,
+			end_col = highlight_len
+		}
+	}
+	return line, hls
+end
+
+function ListSession:format_outgoing_relation_line(parent_idx, rel_idx, rel_memo)
+	local prefix = "   └── "
+	local idx_str = string.format("%d.o%d", parent_idx, rel_idx)
+	local date = display_date(rel_memo)
+	local badges = memo_badges(rel_memo)
+	local title = memo_title(rel_memo)
+	local badge_str = #badges > 0 and ("[" .. table.concat(badges, ",") .. "] ") or ""
+	local line
+	if config.list_style == "compact" then
+		line = string.format("%s%s. %s%s", prefix, idx_str, badge_str, title)
+	else
+		line = string.format("%s%s. [%s] %s%s", prefix, idx_str, date, badge_str, title)
+	end
+	local prefix_len = #prefix
+	local highlight_len = prefix_len + #idx_str + 2
+	local hls = {
+		{
+			hl_group = "MemosOutgoingLink",
+			start_col = 0,
+			end_col = highlight_len
+		}
+	}
+	return line, hls
+end
+
+function ListSession:get_outgoing_relation_names(memo)
+	local names = {}
+	local seen = {}
+	if type(memo.relations) == "table" then
+		for _, rel in ipairs(memo.relations) do
+			local source = rel.memo or rel.memoName
+			local target = rel.relatedMemo or rel.related_memo or rel.relatedMemoName
+			if source and target then
+				if (source == memo.name or source == tostring(memo.id)) and not seen[target] then
+					seen[target] = true
+					table.insert(names, target)
+				end
+			end
+		end
+	end
+	return names
+end
+
+function ListSession:get_incoming_relation_names(memo)
+	local names = {}
+	local seen = {}
+	if type(memo.relations) == "table" then
+		for _, rel in ipairs(memo.relations) do
+			local source = rel.memo or rel.memoName
+			local target = rel.relatedMemo or rel.related_memo or rel.relatedMemoName
+			if source and target then
+				if (target == memo.name or target == tostring(memo.id)) and not seen[source] then
+					seen[source] = true
+					table.insert(names, source)
+				end
+			end
+		end
+	end
+	for _, other in ipairs(self.memos_cache) do
+		if type(other.relations) == "table" then
+			for _, rel in ipairs(other.relations) do
+				local source = rel.memo or rel.memoName
+				local target = rel.relatedMemo or rel.related_memo or rel.relatedMemoName
+				if source and target then
+					if source == other.name or source == tostring(other.id) then
+						if target == memo.name or target == tostring(memo.id) then
+							if not seen[source] then
+								seen[source] = true
+								table.insert(names, source)
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+	return names
+end
+
+function ListSession:toggle_expand_outgoing()
+	local item = self:current_list_item()
+	if not item or item.kind ~= "memo" then
+		return
+	end
+	local memo = self.memos_cache[item.index]
+	if not memo then
+		return
+	end
+	local outgoing_names = self:get_outgoing_relation_names(memo)
+	if #outgoing_names == 0 then
+		vim.notify("No outgoing relations to expand.", vim.log.levels.INFO)
+		return
+	end
+
+	if self.expanded_outgoing[memo.name] then
+		self.expanded_outgoing[memo.name] = nil
+	else
+		self.expanded_outgoing[memo.name] = true
+		self:fetch_missing_relations(outgoing_names)
+	end
+	self:render_cached_memos()
+end
+
+function ListSession:toggle_expand_incoming()
+	local item = self:current_list_item()
+	if not item or item.kind ~= "memo" then
+		return
+	end
+	local memo = self.memos_cache[item.index]
+	if not memo then
+		return
+	end
+	local incoming_names = self:get_incoming_relation_names(memo)
+	if #incoming_names == 0 then
+		vim.notify("No incoming relations to expand.", vim.log.levels.INFO)
+		return
+	end
+
+	if self.expanded_incoming[memo.name] then
+		self.expanded_incoming[memo.name] = nil
+	else
+		self.expanded_incoming[memo.name] = true
+		self:fetch_missing_relations(incoming_names)
+	end
+	self:render_cached_memos()
+end
+
+function ListSession:collapse_all()
+	self.expanded_outgoing = {}
+	self.expanded_incoming = {}
+	self:render_cached_memos()
+	vim.notify("Collapsed all memo expansions.")
+end
+
+function ListSession:fetch_missing_relations(names)
+	for _, name in ipairs(names) do
+		local found = false
+		for _, m in ipairs(self.memos_cache) do
+			if m.name == name or tostring(m.id) == name then
+				found = true
+				break
+			end
+		end
+		if not found and self.relation_details_cache[name] then
+			found = true
+		end
+
+		if not found then
+			if not self.in_flight_relations[name] then
+				self.in_flight_relations[name] = true
+				api:get_memo(name, function(memo_data, err)
+					vim.schedule(function()
+						self.in_flight_relations[name] = nil
+						if memo_data then
+							self.relation_details_cache[name] = memo_data
+						else
+							self.relation_details_cache[name] = {
+								name = name,
+								content = "Failed to load relation: " .. tostring(err),
+								state = "NORMAL",
+								create_time = "",
+								update_time = "",
+							}
+						end
+						self:render_cached_memos()
+					end)
+				end)
+			end
+		end
+	end
 end
 
 function M.show_memos_list(opts)
@@ -807,6 +1241,30 @@ function ListSession:current_list_item()
 	return self.list_items[line]
 end
 
+function ListSession:get_memo_from_item(item)
+	if not item then
+		return nil
+	end
+	if item.kind == "memo" then
+		return self.memos_cache[item.index]
+	elseif item.kind == "relation" then
+		return item.memo
+	end
+	return nil
+end
+
+function ListSession:remove_memo_from_cache(memo_name)
+	for idx, m in ipairs(self.memos_cache) do
+		if m.name == memo_name then
+			table.remove(self.memos_cache, idx)
+			break
+		end
+	end
+	self.relation_details_cache[memo_name] = nil
+	self.expanded_outgoing[memo_name] = nil
+	self.expanded_incoming[memo_name] = nil
+end
+
 function ListSession:edit_selected_memo_with(open_cmd)
 	local item = self:current_list_item()
 	if not item then
@@ -816,7 +1274,7 @@ function ListSession:edit_selected_memo_with(open_cmd)
 		self:load_next_page()
 		return
 	end
-	local memo = item.kind == "memo" and self.memos_cache[item.index] or nil
+	local memo = self:get_memo_from_item(item)
 	if memo then
 		if self.current_list_state == "TEMPLATES" then
 			require("memos.template").template_edit_selected(memo, open_cmd)
@@ -828,7 +1286,7 @@ end
 
 function ListSession:copy_selected_memo_id()
 	local item = self:current_list_item()
-	local memo = item and item.kind == "memo" and self.memos_cache[item.index] or nil
+	local memo = self:get_memo_from_item(item)
 	if not memo or not memo.name or memo.name == "" then
 		vim.notify("No memo ID on the current line.", vim.log.levels.INFO)
 		return
@@ -843,7 +1301,7 @@ function ListSession:toggle_selected_memo_pin()
 		return
 	end
 	local item = self:current_list_item()
-	local memo = item and item.kind == "memo" and self.memos_cache[item.index] or nil
+	local memo = self:get_memo_from_item(item)
 	if not memo or not memo.name or memo.name == "" then
 		vim.notify("No memo on the current line.", vim.log.levels.INFO)
 		return
@@ -870,7 +1328,7 @@ function ListSession:archive_selected_memo()
 		return
 	end
 	local item = self:current_list_item()
-	local memo = item and item.kind == "memo" and self.memos_cache[item.index] or nil
+	local memo = self:get_memo_from_item(item)
 	if not memo or not memo.name or memo.name == "" then
 		vim.notify("No memo on the current line.", vim.log.levels.INFO)
 		return
@@ -880,7 +1338,7 @@ function ListSession:archive_selected_memo()
 	api:update_memo_state(memo.name, next_state, function(success, err)
 		vim.schedule(function()
 			if success then
-				table.remove(self.memos_cache, item.index)
+				self:remove_memo_from_cache(memo.name)
 				self:render_cached_memos()
 				vim.notify(next_state == "ARCHIVED" and "Memo archived." or "Memo restored.")
 				self:refresh_list_silently()
@@ -893,7 +1351,7 @@ end
 
 function ListSession:delete_selected_memo()
 	local item = self:current_list_item()
-	local memo = item and item.kind == "memo" and self.memos_cache[item.index] or nil
+	local memo = self:get_memo_from_item(item)
 	if not memo or not memo.name or memo.name == "" then
 		vim.notify("Select a memo line to delete.", vim.log.levels.INFO)
 		return
@@ -915,7 +1373,7 @@ function ListSession:delete_selected_memo()
 		api:delete_memo(memo.name, function(success, err)
 			vim.schedule(function()
 				if success then
-					table.remove(self.memos_cache, item.index)
+					self:remove_memo_from_cache(memo.name)
 					self:render_cached_memos()
 					vim.notify("Memo deleted.")
 					self:refresh_list_silently()
@@ -933,7 +1391,7 @@ function ListSession:edit_selected_memo_visibility()
 		return
 	end
 	local item = self:current_list_item()
-	local memo = item and item.kind == "memo" and self.memos_cache[item.index] or nil
+	local memo = self:get_memo_from_item(item)
 	if not memo or not memo.name or memo.name == "" then
 		vim.notify("No memo on the current line.", vim.log.levels.INFO)
 		return
@@ -966,7 +1424,7 @@ function ListSession:edit_selected_memo_create_time()
 		return
 	end
 	local item = self:current_list_item()
-	local memo = item and item.kind == "memo" and self.memos_cache[item.index] or nil
+	local memo = self:get_memo_from_item(item)
 	if not memo or not memo.name or memo.name == "" then
 		vim.notify("No memo on the current line.", vim.log.levels.INFO)
 		return
@@ -1006,6 +1464,27 @@ function ListSession:refresh_list_silently()
 			self:render_cached_memos()
 		end
 		self:fetch_memos({ append = false })
+	end
+end
+
+function M.toggle_expand_selected()
+	local s = get_active_session()
+	if s then
+		s:toggle_expand_outgoing()
+	end
+end
+
+function M.toggle_expand_incoming_selected()
+	local s = get_active_session()
+	if s then
+		s:toggle_expand_incoming()
+	end
+end
+
+function M.collapse_all()
+	local s = get_active_session()
+	if s then
+		s:collapse_all()
 	end
 end
 
