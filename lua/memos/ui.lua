@@ -1,5 +1,9 @@
 local api = require("memos.api").new(function() return require("memos").config end)
-local config = require("memos").config
+local config = setmetatable({}, {
+	__index = function(_, k)
+		return require("memos").config[k]
+	end,
+})
 
 local M = {}
 
@@ -118,6 +122,13 @@ local function ensure_list_buf()
 	vim.bo[list_buf].filetype = "memos_list"
 	vim.bo[list_buf].modifiable = false
 	vim.bo[list_buf].swapfile = false
+
+	vim.api.nvim_create_autocmd("BufEnter", {
+		buffer = list_buf,
+		callback = function()
+			M.bind_list_keymaps(list_buf)
+		end,
+	})
 	return list_buf
 end
 
@@ -273,6 +284,47 @@ local function set_keymap(buf, key, rhs)
 		return
 	end
 	vim.api.nvim_buf_set_keymap(buf, "n", key, rhs, { noremap = true, silent = true })
+end
+
+function M.bind_list_keymaps(buf)
+	local keys = config.keymaps.list
+
+	-- Clear previously bound keys to prevent ghost mappings
+	if vim.b[buf].memos_bound_keys then
+		for _, key in ipairs(vim.b[buf].memos_bound_keys) do
+			pcall(vim.api.nvim_buf_del_keymap, buf, "n", key)
+		end
+	end
+
+	local bound = {}
+	local function set_map(key, lhs)
+		if key and key ~= "" then
+			set_keymap(buf, key, lhs)
+			table.insert(bound, key)
+		end
+	end
+
+	set_map(keys.edit_memo, '<Cmd>lua require("memos.ui").edit_selected_memo()<CR>')
+	set_map("e", '<Cmd>lua require("memos.ui").edit_selected_memo()<CR>')
+	set_map(keys.edit_memo_split, '<Cmd>lua require("memos.ui").edit_selected_memo_split()<CR>')
+	set_map(keys.edit_memo_vsplit, '<Cmd>lua require("memos.ui").edit_selected_memo_vsplit()<CR>')
+	set_map(keys.add_memo, '<Cmd>lua require("memos.ui").add_memo_command()<CR>')
+	set_map("i", '<Cmd>lua require("memos.ui").add_memo_command()<CR>')
+	set_map(keys.new_memo or "n", '<Cmd>lua require("memos.ui").new_memo_or_template_command()<CR>')
+	set_map(keys.search_memos, '<Cmd>lua require("memos.ui").search_memos()<CR>')
+	set_map(keys.copy_memo_id, '<Cmd>lua require("memos.ui").copy_selected_memo_id()<CR>')
+	set_map(keys.toggle_pin, '<Cmd>lua require("memos.ui").toggle_selected_memo_pin()<CR>')
+	set_map(keys.delete_memo, '<Cmd>lua require("memos.ui").delete_selected_memo()<CR>')
+	set_map(keys.archive_memo, '<Cmd>lua require("memos.ui").archive_selected_memo()<CR>')
+	set_map(keys.toggle_archive_view, '<Cmd>lua require("memos.ui").toggle_archive_view()<CR>')
+	set_map(keys.toggle_template_view, '<Cmd>lua require("memos.ui").toggle_template_view()<CR>')
+	set_map(keys.edit_visibility, '<Cmd>lua require("memos.ui").edit_selected_memo_visibility()<CR>')
+	set_map(keys.edit_create_time, '<Cmd>lua require("memos.ui").edit_selected_memo_create_time()<CR>')
+	set_map(keys.refresh_list, '<Cmd>lua require("memos.ui").refresh_list_command()<CR>')
+	set_map(keys.next_page, '<Cmd>lua require("memos.ui").load_next_page()<CR>')
+	set_map(keys.quit, '<Cmd>lua require("memos.ui").quit_memos_list()<CR>')
+
+	vim.b[buf].memos_bound_keys = bound
 end
 
 local function copy_text(text)
@@ -445,29 +497,7 @@ function M.show_memos_list(opts)
 	end
 
 	local buf = ensure_list_buf()
-	if not vim.b[buf].memos_list_keymaps then
-		local keys = config.keymaps.list
-		set_keymap(buf, keys.edit_memo, '<Cmd>lua require("memos.ui").edit_selected_memo()<CR>')
-		set_keymap(buf, "e", '<Cmd>lua require("memos.ui").edit_selected_memo()<CR>')
-		set_keymap(buf, keys.edit_memo_split, '<Cmd>lua require("memos.ui").edit_selected_memo_split()<CR>')
-		set_keymap(buf, keys.edit_memo_vsplit, '<Cmd>lua require("memos.ui").edit_selected_memo_vsplit()<CR>')
-		set_keymap(buf, keys.add_memo, '<Cmd>lua require("memos.ui").add_memo_command()<CR>')
-		set_keymap(buf, "i", '<Cmd>lua require("memos.ui").add_memo_command()<CR>')
-		set_keymap(buf, keys.new_memo or "n", '<Cmd>lua require("memos.ui").new_memo_or_template_command()<CR>')
-		set_keymap(buf, keys.search_memos, '<Cmd>lua require("memos.ui").search_memos()<CR>')
-		set_keymap(buf, keys.copy_memo_id, '<Cmd>lua require("memos.ui").copy_selected_memo_id()<CR>')
-		set_keymap(buf, keys.toggle_pin, '<Cmd>lua require("memos.ui").toggle_selected_memo_pin()<CR>')
-		set_keymap(buf, keys.delete_memo, '<Cmd>lua require("memos.ui").delete_selected_memo()<CR>')
-		set_keymap(buf, keys.archive_memo, '<Cmd>lua require("memos.ui").archive_selected_memo()<CR>')
-		set_keymap(buf, keys.toggle_archive_view, '<Cmd>lua require("memos.ui").toggle_archive_view()<CR>')
-		set_keymap(buf, keys.toggle_template_view, '<Cmd>lua require("memos.ui").toggle_template_view()<CR>')
-		set_keymap(buf, keys.edit_visibility, '<Cmd>lua require("memos.ui").edit_selected_memo_visibility()<CR>')
-		set_keymap(buf, keys.edit_create_time, '<Cmd>lua require("memos.ui").edit_selected_memo_create_time()<CR>')
-		set_keymap(buf, keys.refresh_list, '<Cmd>lua require("memos.ui").refresh_list_command()<CR>')
-		set_keymap(buf, keys.next_page, '<Cmd>lua require("memos.ui").load_next_page()<CR>')
-		set_keymap(buf, keys.quit, '<Cmd>lua require("memos.ui").quit_memos_list()<CR>')
-		vim.b[buf].memos_list_keymaps = true
-	end
+	M.bind_list_keymaps(buf)
 end
 
 function M.search_memos()
