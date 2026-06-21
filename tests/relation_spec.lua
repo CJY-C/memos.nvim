@@ -123,10 +123,10 @@ describe("memos.ui relations", function()
 		assert.are.same("memos/2", resolved.name)
 	end)
 
-	it("should parse clipboard registry, prompt user, merge relations, and update cache via api:set_memo_relations", function()
+	it("should parse clipboard registry, display selection menu, and update cache via api:set_memo_relations", function()
 		local api = require("memos.api")
-		local old_input = vim.fn.input
 		local old_getreg = vim.fn.getreg
+		local old_select = vim.ui.select
 		local old_set_memo_relations = api.Client.set_memo_relations
 
 		ui.bind_list_keymaps(buf)
@@ -151,7 +151,7 @@ describe("memos.ui relations", function()
 		end)
 		vim.api.nvim_win_set_cursor(0, { 2, 0 }) -- Select Memo 1
 
-		local input_called = false
+		local select_called = false
 		local set_relations_called = false
 		local api_relations_arg = nil
 
@@ -163,12 +163,12 @@ describe("memos.ui relations", function()
 			return ""
 		end
 
-		-- Mock vim.fn.input to return the target memo
-		vim.fn.input = function(prompt, default)
-			assert.are.same("Add relation to target memo ID: ", prompt)
-			assert.are.same("memos/3", default)
-			input_called = true
-			return "memos/3"
+		-- Mock vim.ui.select to choose clipboard option
+		vim.ui.select = function(items, opts, on_choice)
+			select_called = true
+			assert.are.same("Select memo to relate (or input ID):", opts.prompt)
+			assert.are.same("[Use Clipboard: memos/3]", items[1])
+			on_choice("[Use Clipboard: memos/3]")
 		end
 
 		-- Mock api:set_memo_relations
@@ -194,11 +194,11 @@ describe("memos.ui relations", function()
 
 		-- Restore mocks
 		vim.fn.getreg = old_getreg
-		vim.fn.input = old_input
+		vim.ui.select = old_select
 		api.Client.set_memo_relations = old_set_memo_relations
 
 		-- Assertions
-		assert.is_true(input_called)
+		assert.is_true(select_called)
 		assert.is_true(set_relations_called)
 		assert.is_true(refresh_called)
 
@@ -340,5 +340,155 @@ describe("memos.ui relations", function()
 		-- Remaining relations should be empty
 		assert.are.same(0, #api_relations_arg)
 		assert.are.same(0, #s.memos_cache[1].relations)
+	end)
+
+	it("should allow fuzzy selecting a cached memo option directly", function()
+		local api = require("memos.api")
+		local old_select = vim.ui.select
+		local old_set_memo_relations = api.Client.set_memo_relations
+
+		ui.bind_list_keymaps(buf)
+		local s = ui.get_session(buf)
+
+		-- Setup memo cache with a parent and another memo
+		s.memos_cache = {
+			{
+				name = "memos/1",
+				id = 1,
+				content = "Parent memo",
+				relations = {}
+			},
+			{
+				name = "memos/2",
+				id = 2,
+				content = "Fuzzy target memo"
+			}
+		}
+
+		vim.api.nvim_set_current_buf(buf)
+		s:render_cached_memos()
+		vim.wait(500, function()
+			return s.list_items[2] ~= nil
+		end)
+		vim.api.nvim_win_set_cursor(0, { 2, 0 }) -- Select Memo 1
+
+		local select_called = false
+		local set_relations_called = false
+		local api_relations_arg = nil
+
+		-- Mock vim.ui.select to choose the cached memo choice
+		vim.ui.select = function(items, opts, on_choice)
+			select_called = true
+			-- The second memo in cache should be formatted as a choice
+			local expected_choice = "memos/2 - Fuzzy target memo"
+			local found = false
+			for _, item in ipairs(items) do
+				if item == expected_choice then
+					found = true
+				end
+			end
+			assert.is_true(found)
+			on_choice(expected_choice)
+		end
+
+		-- Mock api:set_memo_relations
+		api.Client.set_memo_relations = function(self_api, memo_name, relations, callback)
+			assert.are.same("memos/1", memo_name)
+			set_relations_called = true
+			api_relations_arg = relations
+			callback(true, nil)
+		end
+
+		local refresh_called = false
+		s.refresh_list_silently = function()
+			refresh_called = true
+		end
+
+		s:add_relation()
+
+		vim.wait(500, function()
+			return refresh_called
+		end)
+
+		vim.ui.select = old_select
+		api.Client.set_memo_relations = old_set_memo_relations
+
+		assert.is_true(select_called)
+		assert.is_true(set_relations_called)
+		assert.is_true(refresh_called)
+		assert.are.same(1, #api_relations_arg)
+		assert.are.same("memos/2", api_relations_arg[1].relatedMemo.name)
+	end)
+
+	it("should fallback to manual input prompt if manual choice is selected", function()
+		local api = require("memos.api")
+		local old_select = vim.ui.select
+		local old_input = vim.fn.input
+		local old_set_memo_relations = api.Client.set_memo_relations
+
+		ui.bind_list_keymaps(buf)
+		local s = ui.get_session(buf)
+
+		s.memos_cache = {
+			{
+				name = "memos/1",
+				id = 1,
+				content = "Parent memo",
+				relations = {}
+			}
+		}
+
+		vim.api.nvim_set_current_buf(buf)
+		s:render_cached_memos()
+		vim.wait(500, function()
+			return s.list_items[2] ~= nil
+		end)
+		vim.api.nvim_win_set_cursor(0, { 2, 0 }) -- Select Memo 1
+
+		local select_called = false
+		local input_called = false
+		local set_relations_called = false
+		local api_relations_arg = nil
+
+		vim.ui.select = function(items, opts, on_choice)
+			select_called = true
+			-- Manual input should be at the bottom
+			assert.are.same("[Input memo ID manually]", items[#items])
+			on_choice("[Input memo ID manually]")
+		end
+
+		vim.fn.input = function(prompt, default)
+			input_called = true
+			assert.are.same("Add relation to target memo ID: ", prompt)
+			return "memos/99"
+		end
+
+		api.Client.set_memo_relations = function(self_api, memo_name, relations, callback)
+			set_relations_called = true
+			api_relations_arg = relations
+			callback(true, nil)
+		end
+
+		local refresh_called = false
+		s.refresh_list_silently = function()
+			refresh_called = true
+		end
+
+		s:add_relation()
+
+		vim.wait(500, function()
+			return refresh_called
+		end)
+
+		vim.ui.select = old_select
+		vim.fn.input = old_input
+		api.Client.set_memo_relations = old_set_memo_relations
+
+		assert.is_true(select_called)
+		assert.is_true(input_called)
+		assert.is_true(set_relations_called)
+		assert.is_true(refresh_called)
+		assert.are.same(1, #api_relations_arg)
+		assert.are.same("memos/99", api_relations_arg[1].relatedMemo.name)
 	end)
 end)
