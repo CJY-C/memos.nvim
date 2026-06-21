@@ -86,4 +86,27 @@ describe("memos.ui ListSession encapsulation", function()
 		-- Restore original
 		api_mod.Client.list_memos = original_list_memos
 	end)
+
+	it("should open edit buffer via pure Lua split/vsplit window API without vim.cmd split", function()
+		local original_open_win = vim.api.nvim_open_win
+		local open_win_opts = nil
+		
+		vim.api.nvim_open_win = function(buf, enter, opts)
+			open_win_opts = opts
+			return original_open_win(buf, enter, opts)
+		end
+
+		local buf = ui.open_edit_buffer("test text content", "vsplit")
+		
+		assert.is_not_nil(open_win_opts)
+		assert.are.same("right", open_win_opts.split)
+		
+		-- Delete the created buffer
+		if vim.api.nvim_buf_is_valid(buf) then
+			vim.api.nvim_buf_delete(buf, { force = true })
+		end
+		
+		-- Restore
+		vim.api.nvim_open_win = original_open_win
+	end)
 end)

@@ -660,7 +660,8 @@ function M.quit_memos_list()
 		return
 	end
 	if current_buf == list_buf then
-		vim.cmd("enew")
+		local new_buf = vim.api.nvim_create_buf(true, false)
+		vim.api.nvim_win_set_buf(0, new_buf)
 	end
 end
 
@@ -686,36 +687,47 @@ function M.open_edit_buffer(content, open_cmd)
 		if close_source_float and vim.api.nvim_win_is_valid(source_win) then
 			pcall(vim.api.nvim_win_close, source_win, true)
 		end
-		vim.cmd(open_cmd)
+
 		local buf = vim.api.nvim_create_buf(false, true)
-		vim.api.nvim_set_current_buf(buf)
+		local split_dir = open_cmd == "vsplit" and "right" or "below"
+		vim.api.nvim_open_win(buf, true, {
+			split = split_dir,
+		})
+
 		if type(content) == "string" then
-			vim.api.nvim_buf_set_lines(0, 0, -1, false, vim.split(content, "\n"))
+			vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(content, "\n"))
 		end
-		return vim.api.nvim_get_current_buf()
+		return buf
 	end
 
+	local buf = vim.api.nvim_create_buf(false, true)
 	local used_float = false
 	if config.window and config.window.enable_float then
 		local float_win = find_memos_float_window()
 		if float_win then
 			vim.api.nvim_set_current_win(float_win)
-			vim.cmd("enew")
+			vim.api.nvim_win_set_buf(float_win, buf)
 			used_float = true
 		else
-			local buf = vim.api.nvim_create_buf(false, true)
 			create_float_window(buf)
 			vim.api.nvim_set_current_buf(buf)
 			used_float = true
 		end
 	end
 	if not used_float then
-		vim.cmd(open_cmd or "enew")
+		local split_dir = (open_cmd == "vsplit" and "right") or (open_cmd == "split" and "below") or nil
+		if split_dir then
+			vim.api.nvim_open_win(buf, true, {
+				split = split_dir,
+			})
+		else
+			vim.api.nvim_win_set_buf(0, buf)
+		end
 	end
 	if type(content) == "string" then
-		vim.api.nvim_buf_set_lines(0, 0, -1, false, vim.split(content, "\n"))
+		vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(content, "\n"))
 	end
-	return vim.api.nvim_get_current_buf()
+	return buf
 end
 
 function M.setup_buffer_for_editing()
