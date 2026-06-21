@@ -9,38 +9,40 @@ local M = {}
 
 local list_buf = nil
 local last_float_buf = nil
-local memos_cache = {}
-local list_items = {}
-local current_page_token = nil
-local current_filter = ""
-local current_list_state = config.list_state or "NORMAL"
-local list_refresh_state = "idle"
-local last_refresh_at = nil
-local last_refresh_error = nil
+local sessions = {}
 
-local caches = {
-	NORMAL = { memos = {}, page_token = nil, filter = "", last_refresh_at = nil },
-	ARCHIVED = { memos = {}, page_token = nil, filter = "", last_refresh_at = nil },
-	TEMPLATES = { memos = {}, page_token = nil, filter = "", last_refresh_at = nil },
-}
+local ListSession = {}
+ListSession.__index = ListSession
 
-local function save_current_state_cache()
-	local state = current_list_state
-	caches[state] = {
-		memos = vim.deepcopy(memos_cache),
-		page_token = current_page_token,
-		filter = current_filter,
-		last_refresh_at = last_refresh_at,
-	}
+function ListSession.new(bufnr)
+	return setmetatable({
+		buf = bufnr,
+		memos_cache = {},
+		list_items = {},
+		current_page_token = nil,
+		current_filter = "",
+		current_list_state = config.list_state or "NORMAL",
+		list_refresh_state = "idle",
+		last_refresh_at = nil,
+		last_refresh_error = nil,
+		caches = {
+			NORMAL = { memos = {}, page_token = nil, filter = "", last_refresh_at = nil },
+			ARCHIVED = { memos = {}, page_token = nil, filter = "", last_refresh_at = nil },
+			TEMPLATES = { memos = {}, page_token = nil, filter = "", last_refresh_at = nil },
+		},
+	}, ListSession)
 end
 
-local function load_state_cache(state)
-	current_list_state = state
-	local c = caches[state] or { memos = {}, page_token = nil, filter = "", last_refresh_at = nil }
-	memos_cache = vim.deepcopy(c.memos)
-	current_page_token = c.page_token
-	current_filter = c.filter
-	last_refresh_at = c.last_refresh_at
+local function get_active_session()
+	local bufnr = vim.api.nvim_get_current_buf()
+	if sessions[bufnr] then
+		return sessions[bufnr]
+	end
+	if bufnr == list_buf then
+		sessions[bufnr] = ListSession.new(bufnr)
+		return sessions[bufnr]
+	end
+	return nil
 end
 
 local function redraw_status()
@@ -49,20 +51,39 @@ local function redraw_status()
 	end)
 end
 
-local function set_refresh_state(state, err)
-	list_refresh_state = state or "idle"
-	if list_refresh_state == "failed" then
-		last_refresh_error = tostring(err or "Unknown error")
-	elseif list_refresh_state == "idle" then
-		last_refresh_error = nil
+function ListSession:save_current_state_cache()
+	local state = self.current_list_state
+	self.caches[state] = {
+		memos = vim.deepcopy(self.memos_cache),
+		page_token = self.current_page_token,
+		filter = self.current_filter,
+		last_refresh_at = self.last_refresh_at,
+	}
+end
+
+function ListSession:load_state_cache(state)
+	self.current_list_state = state
+	local c = self.caches[state] or { memos = {}, page_token = nil, filter = "", last_refresh_at = nil }
+	self.memos_cache = vim.deepcopy(c.memos)
+	self.current_page_token = c.page_token
+	self.current_filter = c.filter
+	self.last_refresh_at = c.last_refresh_at
+end
+
+function ListSession:set_refresh_state(state, err)
+	self.list_refresh_state = state or "idle"
+	if self.list_refresh_state == "failed" then
+		self.last_refresh_error = tostring(err or "Unknown error")
+	elseif self.list_refresh_state == "idle" then
+		self.last_refresh_error = nil
 	end
 	redraw_status()
 end
 
-local function mark_refresh_success()
-	list_refresh_state = "idle"
-	last_refresh_error = nil
-	last_refresh_at = os.time()
+function ListSession:mark_refresh_success()
+	self.list_refresh_state = "idle"
+	self.last_refresh_error = nil
+	self.last_refresh_at = os.time()
 	redraw_status()
 end
 
@@ -123,10 +144,15 @@ local function ensure_list_buf()
 	vim.bo[list_buf].modifiable = false
 	vim.bo[list_buf].swapfile = false
 
+	sessions[list_buf] = ListSession.new(list_buf)
+
 	vim.api.nvim_create_autocmd("BufEnter", {
 		buffer = list_buf,
 		callback = function()
-			M.bind_list_keymaps(list_buf)
+			local s = sessions[list_buf]
+			if s then
+				s:bind_list_keymaps()
+			end
 		end,
 	})
 	return list_buf
@@ -286,7 +312,8 @@ local function set_keymap(buf, key, rhs)
 	vim.api.nvim_buf_set_keymap(buf, "n", key, rhs, { noremap = true, silent = true })
 end
 
-function M.bind_list_keymaps(buf)
+function ListSession:bind_list_keymaps()
+	local buf = self.buf
 	local keys = config.keymaps.list
 
 	-- Clear previously bound keys to prevent ghost mappings
@@ -327,6 +354,15 @@ function M.bind_list_keymaps(buf)
 	vim.b[buf].memos_bound_keys = bound
 end
 
+function M.bind_list_keymaps(buf)
+	local s = sessions[buf]
+	if not s then
+		s = ListSession.new(buf)
+		sessions[buf] = s
+	end
+	s:bind_list_keymaps()
+end
+
 local function copy_text(text)
 	if vim.fn.has("clipboard") == 1 then
 		local ok = pcall(vim.fn.setreg, "+", text)
@@ -338,16 +374,16 @@ local function copy_text(text)
 	return '"'
 end
 
-local function list_status_line()
-	local refreshed = format_time(last_refresh_at, true)
-	if list_refresh_state == "refreshing" then
+function ListSession:list_status_line()
+	local refreshed = format_time(self.last_refresh_at, true)
+	if self.list_refresh_state == "refreshing" then
 		if refreshed then
 			return "Updated " .. refreshed .. " (Refreshing...)"
 		else
 			return "Refreshing..."
 		end
 	end
-	if list_refresh_state == "failed" then
+	if self.list_refresh_state == "failed" then
 		if refreshed then
 			return "Updated " .. refreshed .. " (Refresh failed)"
 		else
@@ -360,15 +396,15 @@ local function list_status_line()
 	return nil
 end
 
-local function list_header_line()
-	local left = "View: " .. current_list_state
-	local right = list_status_line()
+function ListSession:list_header_line()
+	local left = "View: " .. self.current_list_state
+	local right = self:list_status_line()
 	if not right then
 		return left
 	end
 
 	local width = vim.o.columns
-	local win = list_buf and vim.fn.bufwinid(list_buf) or -1
+	local win = self.buf and vim.fn.bufwinid(self.buf) or -1
 	if win ~= -1 and vim.api.nvim_win_is_valid(win) then
 		width = vim.api.nvim_win_get_width(win)
 	end
@@ -380,66 +416,68 @@ local function list_header_line()
 	return left .. " " .. right
 end
 
-local function render_cached_memos()
+function ListSession:render_cached_memos()
 	vim.schedule(function()
-		list_items = {}
+		self.list_items = {}
 
 		local lines = {}
 		local keys = config.keymaps.list
-		table.insert(lines, list_header_line())
-		list_items[#lines] = { kind = "header" }
-		if current_filter ~= "" then
-			table.insert(lines, "Filter: " .. current_filter)
-			list_items[#lines] = { kind = "filter" }
+		table.insert(lines, self:list_header_line())
+		self.list_items[#lines] = { kind = "header" }
+		if self.current_filter ~= "" then
+			table.insert(lines, "Filter: " .. self.current_filter)
+			self.list_items[#lines] = { kind = "filter" }
 		end
-		if #memos_cache == 0 then
-			local message = current_filter == "" and "No memos." or "No memos match the current filter."
+		if #self.memos_cache == 0 then
+			local message = self.current_filter == "" and "No memos." or "No memos match the current filter."
 			table.insert(lines, string.format("%s Press '%s' to refresh, '%s' to add, '%s' to quit.", message, keys.refresh_list, keys.add_memo, keys.quit))
-			list_items[#lines] = { kind = "empty" }
+			self.list_items[#lines] = { kind = "empty" }
 		else
-			for index, memo in ipairs(memos_cache) do
-				table.insert(lines, M.format_memo_line(index, memo))
-				list_items[#lines] = { kind = "memo", index = index }
+			for index, memo in ipairs(self.memos_cache) do
+				table.insert(lines, self:format_memo_line(index, memo))
+				self.list_items[#lines] = { kind = "memo", index = index }
 			end
 		end
-		if current_page_token ~= "" then
+		if self.current_page_token ~= "" then
 			table.insert(lines, "...")
-			list_items[#lines] = { kind = "load_more" }
+			self.list_items[#lines] = { kind = "load_more" }
 			table.insert(lines, string.format("Press '%s' to load more", keys.next_page))
-			list_items[#lines] = { kind = "load_more" }
+			self.list_items[#lines] = { kind = "load_more" }
 		end
-		set_list_lines(lines)
+		self:set_list_lines(lines)
 	end)
 end
 
-function M.render_memos(data, append)
+function ListSession:render_memos(data, append)
 	if not data then
 		vim.notify("API returned no data.", vim.log.levels.WARN)
 		return
 	end
 	if append then
-		vim.list_extend(memos_cache, data.memos or {})
+		vim.list_extend(self.memos_cache, data.memos or {})
 	else
-		memos_cache = data.memos or {}
+		self.memos_cache = data.memos or {}
 	end
-	current_page_token = data.next_page_token or ""
-	render_cached_memos()
+	self.current_page_token = data.next_page_token or ""
+	self:render_cached_memos()
 end
 
-local function fetch_memos(opts)
+function ListSession:fetch_memos(opts)
 	opts = opts or {}
-	local req_state = current_list_state
+	local req_state = self.current_list_state
 	local state_param = req_state
-	local filter_param = current_filter
+	local filter_param = self.current_filter
 
 	if req_state == "TEMPLATES" then
 		state_param = "ARCHIVED"
-		if current_filter and current_filter ~= "" then
-			filter_param = "content.contains('#type/template') && (" .. current_filter .. ")"
+		if self.current_filter and self.current_filter ~= "" then
+			filter_param = "content.contains('#type/template') && (" .. self.current_filter .. ")"
 		else
 			filter_param = "content.contains('#type/template')"
 		end
 	end
+
+	self:set_refresh_state("refreshing")
 
 	api:list_memos({
 		page_size = config.page_size,
@@ -450,10 +488,10 @@ local function fetch_memos(opts)
 	}, function(data, err)
 		vim.schedule(function()
 			if not data then
-				if current_list_state == req_state then
-					set_refresh_state("failed", err)
-					if #memos_cache > 0 then
-						render_cached_memos()
+				if self.current_list_state == req_state then
+					self:set_refresh_state("failed", err)
+					if #self.memos_cache > 0 then
+						self:render_cached_memos()
 					end
 				end
 				vim.notify("Failed to fetch memos: " .. tostring(err), vim.log.levels.ERROR)
@@ -461,14 +499,14 @@ local function fetch_memos(opts)
 			end
 
 			local is_append = opts.append == true
-			if current_list_state == req_state then
+			if self.current_list_state == req_state then
 				if not opts.append then
-					mark_refresh_success()
+					self:mark_refresh_success()
 				end
-				M.render_memos(data, is_append)
+				self:render_memos(data, is_append)
 			else
 				-- Update the background cache slot directly
-				local c = caches[req_state]
+				local c = self.caches[req_state]
 				if not is_append then
 					c.memos = data.memos or {}
 					c.last_refresh_at = os.time()
@@ -482,60 +520,113 @@ local function fetch_memos(opts)
 	end)
 end
 
-function M.show_memos_list(opts)
-	opts = opts or {}
-	focus_list_buf()
-	if #memos_cache == 0 or opts.force_refresh then
-		set_refresh_state("refreshing")
-		local loading_text = "Loading " .. current_list_state:lower() .. "..."
-		set_list_lines({ loading_text })
-		fetch_memos({ append = false })
-	else
-		set_refresh_state("refreshing")
-		render_cached_memos()
-		fetch_memos({ append = false })
+function ListSession:format_memo_line(index, memo)
+	if self.current_list_state == "TEMPLATES" then
+		local title = memo_title(memo)
+		title = require("memos.template").strip_template_tag(title)
+		return string.format("%d. [T] %s", index, title)
 	end
 
-	local buf = ensure_list_buf()
-	M.bind_list_keymaps(buf)
+	local date = display_date(memo)
+	local badges = memo_badges(memo)
+	local title = memo_title(memo)
+
+	local badge_str = ""
+	if #badges > 0 then
+		badge_str = "[" .. table.concat(badges, ",") .. "] "
+	end
+
+	if config.list_style == "compact" then
+		return string.format("%d. %s%s", index, badge_str, title)
+	end
+
+	return string.format("%d. [%s] %s%s", index, date, badge_str, title)
 end
 
-function M.search_memos()
+function M.show_memos_list(opts)
+	opts = opts or {}
+	local buf = ensure_list_buf()
+	local s = sessions[buf]
+	if not s then
+		return
+	end
+
+	focus_list_buf()
+	if #s.memos_cache == 0 or opts.force_refresh then
+		s:set_refresh_state("refreshing")
+		local loading_text = "Loading " .. s.current_list_state:lower() .. "..."
+		s:set_list_lines({ loading_text })
+		s:fetch_memos({ append = false })
+	else
+		s:set_refresh_state("refreshing")
+		s:render_cached_memos()
+		s:fetch_memos({ append = false })
+	end
+
+	s:bind_list_keymaps()
+end
+
+function ListSession:search_memos()
 	vim.ui.input({ prompt = "Search memos (empty clears): " }, function(input)
 		if input == nil then
 			return
 		end
 
 		local next_filter = M.build_search_filter(input)
-		current_filter = next_filter
-		memos_cache = {}
-		list_items = {}
-		current_page_token = nil
-		list_refresh_state = "idle"
-		last_refresh_error = nil
+		self.current_filter = next_filter
+		self.memos_cache = {}
+		self.list_items = {}
+		self.current_page_token = nil
+		self.list_refresh_state = "idle"
+		self.last_refresh_error = nil
 		redraw_status()
 		focus_list_buf()
 
-		local entity_name = current_list_state == "TEMPLATES" and "templates" or "memos"
+		local entity_name = self.current_list_state == "TEMPLATES" and "templates" or "memos"
 		local loading_text = next_filter == "" and ("Loading " .. entity_name .. "...") or ("Loading filtered " .. entity_name .. "...")
-		set_list_lines({ loading_text })
+		self:set_list_lines({ loading_text })
 
 		if next_filter == "" then
-			vim.notify(current_list_state == "TEMPLATES" and "Templates search cleared." or "Memos search cleared.")
+			vim.notify(self.current_list_state == "TEMPLATES" and "Templates search cleared." or "Memos search cleared.")
 		else
-			vim.notify(current_list_state == "TEMPLATES" and "Templates search filter applied." or "Memos search filter applied.")
+			vim.notify(self.current_list_state == "TEMPLATES" and "Templates search filter applied." or "Memos search filter applied.")
 		end
-		fetch_memos({ append = false })
+		self:fetch_memos({ append = false })
 	end)
 end
 
-function M.toggle_archive_view()
-	save_current_state_cache()
-	local next_state = current_list_state == "ARCHIVED" and "NORMAL" or "ARCHIVED"
-	load_state_cache(next_state)
+function ListSession:toggle_archive_view()
+	self:save_current_state_cache()
+	local next_state = self.current_list_state == "ARCHIVED" and "NORMAL" or "ARCHIVED"
+	self:load_state_cache(next_state)
 	redraw_status()
 	focus_list_buf()
 	M.show_memos_list()
+end
+
+function ListSession:load_next_page()
+	if not self.current_page_token or self.current_page_token == "" then
+		vim.notify("No more pages to load.", vim.log.levels.INFO)
+		return
+	end
+	self:fetch_memos({
+		page_token = self.current_page_token,
+		append = true,
+	})
+end
+
+function M.search_memos()
+	local s = get_active_session()
+	if s then
+		s:search_memos()
+	end
+end
+
+function M.toggle_archive_view()
+	local s = get_active_session()
+	if s then
+		s:toggle_archive_view()
+	end
 end
 
 function M.toggle_memos_list()
@@ -572,14 +663,10 @@ function M.quit_memos_list()
 end
 
 function M.load_next_page()
-	if not current_page_token or current_page_token == "" then
-		vim.notify("No more pages to load.", vim.log.levels.INFO)
-		return
+	local s = get_active_session()
+	if s then
+		s:load_next_page()
 	end
-	fetch_memos({
-		page_token = current_page_token,
-		append = true,
-	})
 end
 
 function M.open_edit_buffer(content, open_cmd)
@@ -701,23 +788,23 @@ function M.create_memo_in_buffer(content)
 	M.setup_buffer_for_editing()
 end
 
-local function current_list_item()
+function ListSession:current_list_item()
 	local line = vim.api.nvim_win_get_cursor(0)[1]
-	return list_items[line]
+	return self.list_items[line]
 end
 
-local function edit_selected_memo_with(open_cmd)
-	local item = current_list_item()
+function ListSession:edit_selected_memo_with(open_cmd)
+	local item = self:current_list_item()
 	if not item then
 		return
 	end
 	if item.kind == "load_more" then
-		M.load_next_page()
+		self:load_next_page()
 		return
 	end
-	local memo = item.kind == "memo" and memos_cache[item.index] or nil
+	local memo = item.kind == "memo" and self.memos_cache[item.index] or nil
 	if memo then
-		if current_list_state == "TEMPLATES" then
+		if self.current_list_state == "TEMPLATES" then
 			require("memos.template").template_edit_selected(memo, open_cmd)
 		else
 			M.open_memo_for_edit(memo, open_cmd)
@@ -725,21 +812,9 @@ local function edit_selected_memo_with(open_cmd)
 	end
 end
 
-function M.edit_selected_memo()
-	edit_selected_memo_with("enew")
-end
-
-function M.edit_selected_memo_split()
-	edit_selected_memo_with("split")
-end
-
-function M.edit_selected_memo_vsplit()
-	edit_selected_memo_with("vsplit")
-end
-
-function M.copy_selected_memo_id()
-	local item = current_list_item()
-	local memo = item and item.kind == "memo" and memos_cache[item.index] or nil
+function ListSession:copy_selected_memo_id()
+	local item = self:current_list_item()
+	local memo = item and item.kind == "memo" and self.memos_cache[item.index] or nil
 	if not memo or not memo.name or memo.name == "" then
 		vim.notify("No memo ID on the current line.", vim.log.levels.INFO)
 		return
@@ -748,13 +823,13 @@ function M.copy_selected_memo_id()
 	vim.notify("Copied memo ID to " .. register .. ": " .. memo.name)
 end
 
-function M.toggle_selected_memo_pin()
-	if current_list_state == "TEMPLATES" then
+function ListSession:toggle_selected_memo_pin()
+	if self.current_list_state == "TEMPLATES" then
 		vim.notify("Pinning is not supported for templates.", vim.log.levels.WARN)
 		return
 	end
-	local item = current_list_item()
-	local memo = item and item.kind == "memo" and memos_cache[item.index] or nil
+	local item = self:current_list_item()
+	local memo = item and item.kind == "memo" and self.memos_cache[item.index] or nil
 	if not memo or not memo.name or memo.name == "" then
 		vim.notify("No memo on the current line.", vim.log.levels.INFO)
 		return
@@ -765,9 +840,9 @@ function M.toggle_selected_memo_pin()
 		vim.schedule(function()
 			if success then
 				memo.pinned = next_pinned
-				render_cached_memos()
+				self:render_cached_memos()
 				vim.notify(next_pinned and "Memo pinned." or "Memo unpinned.")
-				M.refresh_list_silently()
+				self:refresh_list_silently()
 			else
 				vim.notify("Failed to update memo pin: " .. tostring(err), vim.log.levels.ERROR)
 			end
@@ -775,26 +850,26 @@ function M.toggle_selected_memo_pin()
 	end)
 end
 
-function M.archive_selected_memo()
-	if current_list_state == "TEMPLATES" then
+function ListSession:archive_selected_memo()
+	if self.current_list_state == "TEMPLATES" then
 		vim.notify("Archiving is not supported for templates.", vim.log.levels.WARN)
 		return
 	end
-	local item = current_list_item()
-	local memo = item and item.kind == "memo" and memos_cache[item.index] or nil
+	local item = self:current_list_item()
+	local memo = item and item.kind == "memo" and self.memos_cache[item.index] or nil
 	if not memo or not memo.name or memo.name == "" then
 		vim.notify("No memo on the current line.", vim.log.levels.INFO)
 		return
 	end
 
-	local next_state = current_list_state == "ARCHIVED" and "NORMAL" or "ARCHIVED"
+	local next_state = self.current_list_state == "ARCHIVED" and "NORMAL" or "ARCHIVED"
 	api:update_memo_state(memo.name, next_state, function(success, err)
 		vim.schedule(function()
 			if success then
-				table.remove(memos_cache, item.index)
-				render_cached_memos()
+				table.remove(self.memos_cache, item.index)
+				self:render_cached_memos()
 				vim.notify(next_state == "ARCHIVED" and "Memo archived." or "Memo restored.")
-				M.refresh_list_silently()
+				self:refresh_list_silently()
 			else
 				vim.notify("Failed to update memo state: " .. tostring(err), vim.log.levels.ERROR)
 			end
@@ -802,15 +877,15 @@ function M.archive_selected_memo()
 	end)
 end
 
-function M.delete_selected_memo()
-	local item = current_list_item()
-	local memo = item and item.kind == "memo" and memos_cache[item.index] or nil
+function ListSession:delete_selected_memo()
+	local item = self:current_list_item()
+	local memo = item and item.kind == "memo" and self.memos_cache[item.index] or nil
 	if not memo or not memo.name or memo.name == "" then
 		vim.notify("Select a memo line to delete.", vim.log.levels.INFO)
 		return
 	end
 
-	if current_list_state == "TEMPLATES" then
+	if self.current_list_state == "TEMPLATES" then
 		require("memos.template").template_delete_selected(memo, item.index)
 		return
 	end
@@ -826,10 +901,10 @@ function M.delete_selected_memo()
 		api:delete_memo(memo.name, function(success, err)
 			vim.schedule(function()
 				if success then
-					table.remove(memos_cache, item.index)
-					render_cached_memos()
+					table.remove(self.memos_cache, item.index)
+					self:render_cached_memos()
 					vim.notify("Memo deleted.")
-					M.refresh_list_silently()
+					self:refresh_list_silently()
 				else
 					vim.notify("Failed to delete memo: " .. tostring(err), vim.log.levels.ERROR)
 				end
@@ -838,20 +913,13 @@ function M.delete_selected_memo()
 	end)
 end
 
-function M.remove_cached_memo_at(index)
-	if type(index) == "number" and memos_cache[index] then
-		table.remove(memos_cache, index)
-		render_cached_memos()
-	end
-end
-
-function M.edit_selected_memo_visibility()
-	if current_list_state == "TEMPLATES" then
+function ListSession:edit_selected_memo_visibility()
+	if self.current_list_state == "TEMPLATES" then
 		vim.notify("Visibility editing is not supported for templates.", vim.log.levels.WARN)
 		return
 	end
-	local item = current_list_item()
-	local memo = item and item.kind == "memo" and memos_cache[item.index] or nil
+	local item = self:current_list_item()
+	local memo = item and item.kind == "memo" and self.memos_cache[item.index] or nil
 	if not memo or not memo.name or memo.name == "" then
 		vim.notify("No memo on the current line.", vim.log.levels.INFO)
 		return
@@ -867,9 +935,9 @@ function M.edit_selected_memo_visibility()
 			vim.schedule(function()
 				if success then
 					memo.visibility = choice
-					render_cached_memos()
+					self:render_cached_memos()
 					vim.notify("Memo visibility set to " .. choice .. ".")
-					M.refresh_list_silently()
+					self:refresh_list_silently()
 				else
 					vim.notify("Failed to update memo visibility: " .. tostring(err), vim.log.levels.ERROR)
 				end
@@ -878,13 +946,13 @@ function M.edit_selected_memo_visibility()
 	end)
 end
 
-function M.edit_selected_memo_create_time()
-	if current_list_state == "TEMPLATES" then
+function ListSession:edit_selected_memo_create_time()
+	if self.current_list_state == "TEMPLATES" then
 		vim.notify("Create time editing is not supported for templates.", vim.log.levels.WARN)
 		return
 	end
-	local item = current_list_item()
-	local memo = item and item.kind == "memo" and memos_cache[item.index] or nil
+	local item = self:current_list_item()
+	local memo = item and item.kind == "memo" and self.memos_cache[item.index] or nil
 	if not memo or not memo.name or memo.name == "" then
 		vim.notify("No memo on the current line.", vim.log.levels.INFO)
 		return
@@ -906,9 +974,9 @@ function M.edit_selected_memo_create_time()
 			vim.schedule(function()
 				if success then
 					memo.create_time = next_create_time
-					render_cached_memos()
+					self:render_cached_memos()
 					vim.notify("Memo create_time updated.")
-					M.refresh_list_silently()
+					self:refresh_list_silently()
 				else
 					vim.notify("Failed to update memo create_time: " .. tostring(err), vim.log.levels.ERROR)
 				end
@@ -917,13 +985,91 @@ function M.edit_selected_memo_create_time()
 	end)
 end
 
-function M.refresh_list_silently()
-	if list_buf and vim.api.nvim_buf_is_valid(list_buf) then
-		set_refresh_state("refreshing")
-		if #memos_cache > 0 then
-			render_cached_memos()
+function ListSession:refresh_list_silently()
+	if self.buf and vim.api.nvim_buf_is_valid(self.buf) then
+		self:set_refresh_state("refreshing")
+		if #self.memos_cache > 0 then
+			self:render_cached_memos()
 		end
-		fetch_memos({ append = false })
+		self:fetch_memos({ append = false })
+	end
+end
+
+function M.edit_selected_memo()
+	local s = get_active_session()
+	if s then
+		s:edit_selected_memo_with("enew")
+	end
+end
+
+function M.edit_selected_memo_split()
+	local s = get_active_session()
+	if s then
+		s:edit_selected_memo_with("split")
+	end
+end
+
+function M.edit_selected_memo_vsplit()
+	local s = get_active_session()
+	if s then
+		s:edit_selected_memo_with("vsplit")
+	end
+end
+
+function M.copy_selected_memo_id()
+	local s = get_active_session()
+	if s then
+		s:copy_selected_memo_id()
+	end
+end
+
+function M.toggle_selected_memo_pin()
+	local s = get_active_session()
+	if s then
+		s:toggle_selected_memo_pin()
+	end
+end
+
+function M.archive_selected_memo()
+	local s = get_active_session()
+	if s then
+		s:archive_selected_memo()
+	end
+end
+
+function M.delete_selected_memo()
+	local s = get_active_session()
+	if s then
+		s:delete_selected_memo()
+	end
+end
+
+function M.remove_cached_memo_at(index)
+	local s = get_active_session()
+	if s and type(index) == "number" and s.memos_cache[index] then
+		table.remove(s.memos_cache, index)
+		s:render_cached_memos()
+	end
+end
+
+function M.edit_selected_memo_visibility()
+	local s = get_active_session()
+	if s then
+		s:edit_selected_memo_visibility()
+	end
+end
+
+function M.edit_selected_memo_create_time()
+	local s = get_active_session()
+	if s then
+		s:edit_selected_memo_create_time()
+	end
+end
+
+function M.refresh_list_silently()
+	local s = get_active_session()
+	if s then
+		s:refresh_list_silently()
 	end
 end
 
@@ -1047,35 +1193,36 @@ function M.save_or_create_dispatcher(opts)
 	end)
 end
 
+function ListSession:toggle_template_view()
+	self:save_current_state_cache()
+	local next_state = self.current_list_state == "TEMPLATES" and "NORMAL" or "TEMPLATES"
+	self:load_state_cache(next_state)
+	redraw_status()
+	focus_list_buf()
+	M.show_memos_list()
+end
+
 function M.on_account_switched()
-	caches = {
-		NORMAL = { memos = {}, page_token = nil, filter = "", last_refresh_at = nil },
-		ARCHIVED = { memos = {}, page_token = nil, filter = "", last_refresh_at = nil },
-		TEMPLATES = { memos = {}, page_token = nil, filter = "", last_refresh_at = nil },
-	}
-	memos_cache = {}
-	list_items = {}
-	current_page_token = nil
-	current_filter = ""
-	current_list_state = config.list_state or "NORMAL"
-	list_refresh_state = "idle"
-	last_refresh_at = nil
-	last_refresh_error = nil
+	sessions = {}
 	if list_buf and vim.api.nvim_buf_is_valid(list_buf) and vim.fn.bufwinid(list_buf) ~= -1 then
+		sessions[list_buf] = ListSession.new(list_buf)
 		M.show_memos_list({ force_refresh = true })
 	end
 end
 
-local function status_text(with_seconds)
-	local refreshed = format_time(last_refresh_at, with_seconds)
-	if list_refresh_state == "refreshing" then
+local function status_text(s, with_seconds)
+	if not s then
+		return ""
+	end
+	local refreshed = format_time(s.last_refresh_at, with_seconds)
+	if s.list_refresh_state == "refreshing" then
 		if refreshed then
 			return "Memos refreshing (Updated " .. refreshed .. ")"
 		else
 			return "Memos refreshing"
 		end
 	end
-	if list_refresh_state == "failed" then
+	if s.list_refresh_state == "failed" then
 		if refreshed then
 			return "Memos failed (Updated " .. refreshed .. ")"
 		else
@@ -1089,31 +1236,40 @@ local function status_text(with_seconds)
 end
 
 function M.status()
+	local s = get_active_session()
+	if not s then
+		return {
+			state = "idle",
+			text = "",
+			last_refresh_at = nil,
+			last_error = nil,
+		}
+	end
 	return {
-		state = list_refresh_state,
-		text = status_text(true),
-		last_refresh_at = last_refresh_at,
-		last_error = last_refresh_error,
+		state = s.list_refresh_state,
+		text = status_text(s, true),
+		last_refresh_at = s.last_refresh_at,
+		last_error = s.last_refresh_error,
 	}
 end
 
 function M.statusline()
-	return status_text(false)
+	local s = get_active_session()
+	return status_text(s, false)
 end
 
 function M.toggle_template_view()
-	save_current_state_cache()
-	local next_state = current_list_state == "TEMPLATES" and "NORMAL" or "TEMPLATES"
-	load_state_cache(next_state)
-	redraw_status()
-	focus_list_buf()
-	M.show_memos_list()
+	local s = get_active_session()
+	if s then
+		s:toggle_template_view()
+	end
 end
 
 function M.add_memo_command()
-	if current_list_state == "TEMPLATES" then
-		local item = current_list_item()
-		local tpl = item and item.kind == "memo" and memos_cache[item.index] or nil
+	local s = get_active_session()
+	if s and s.current_list_state == "TEMPLATES" then
+		local item = s:current_list_item()
+		local tpl = item and item.kind == "memo" and s.memos_cache[item.index] or nil
 		if tpl then
 			local content = require("memos.template").strip_template_tag(tpl.content or "")
 			M.create_memo_in_buffer(content)
@@ -1126,7 +1282,8 @@ function M.add_memo_command()
 end
 
 function M.new_memo_or_template_command()
-	if current_list_state == "TEMPLATES" then
+	local s = get_active_session()
+	if s and s.current_list_state == "TEMPLATES" then
 		require("memos.template").template_create()
 	else
 		M.create_memo_in_buffer()
@@ -1138,11 +1295,19 @@ function M.refresh_list_command()
 end
 
 function M.show_templates_list()
-	save_current_state_cache()
-	load_state_cache("TEMPLATES")
+	local buf = ensure_list_buf()
+	local s = sessions[buf]
+	if s then
+		s:save_current_state_cache()
+		s:load_state_cache("TEMPLATES")
+	end
 	redraw_status()
 	focus_list_buf()
 	M.show_memos_list()
+end
+
+function M.get_session(bufnr)
+	return sessions[bufnr]
 end
 
 return M
