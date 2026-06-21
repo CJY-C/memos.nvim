@@ -120,38 +120,40 @@ function M.sync_templates(callback)
 			filter = "content.contains('#type/template')",
 			page_size = 100,
 		}, function(data, err, response)
-			if not data then
-				if callback then
-					callback(false, err)
+			vim.schedule(function()
+				if not data then
+					if callback then
+						callback(false, err)
+					else
+						vim.notify("Failed to sync templates: " .. tostring(err), vim.log.levels.ERROR)
+					end
+					return
+				end
+				local templates = {}
+				for _, memo in ipairs(data.memos or {}) do
+					if memo.name and memo.name ~= "" then
+						table.insert(templates, {
+							name = memo.name,
+							content = memo.content or "",
+							updated_at = memo.update_time or memo.create_time or "",
+						})
+					end
+				end
+				local data_to_write = { templates = templates }
+				if M.write_local_templates(data_to_write) then
+					if callback then
+						callback(true, templates)
+					else
+						vim.notify("Memos templates synced successfully. Total: " .. #templates)
+					end
 				else
-					vim.notify("Failed to sync templates: " .. tostring(err), vim.log.levels.ERROR)
+					if callback then
+						callback(false, "Failed to write local templates file")
+					else
+						vim.notify("Failed to save synced templates locally.", vim.log.levels.ERROR)
+					end
 				end
-				return
-			end
-			local templates = {}
-			for _, memo in ipairs(data.memos or {}) do
-				if memo.name and memo.name ~= "" then
-					table.insert(templates, {
-						name = memo.name,
-						content = memo.content or "",
-						updated_at = memo.update_time or memo.create_time or "",
-					})
-				end
-			end
-			local data_to_write = { templates = templates }
-			if M.write_local_templates(data_to_write) then
-				if callback then
-					callback(true, templates)
-				else
-					vim.notify("Memos templates synced successfully. Total: " .. #templates)
-				end
-			else
-				if callback then
-					callback(false, "Failed to write local templates file")
-				else
-					vim.notify("Failed to save synced templates locally.", vim.log.levels.ERROR)
-				end
-			end
+			end)
 		end)
 	end)
 	if not ok then
@@ -247,56 +249,73 @@ function M.save_template_buffer(bufnr, content, callback)
 	if memo_name and memo_name ~= "" then
 		-- Update existing template
 		api.update_memo(memo_name, tagged_content, function(success, err, response)
-			if not success then
-				callback(false, nil, err)
-				return
-			end
-			-- Update local JSON file
-			local data = M.read_local_templates()
-			local templates = M.normalize_templates(data.templates)
-			local found = false
-			local now = now_iso()
-			for _, tpl in ipairs(templates) do
-				if tpl.name == memo_name then
-					tpl.content = tagged_content
-					tpl.updated_at = now
-					found = true
-					break
+			vim.schedule(function()
+				if not success then
+					callback(false, nil, err)
+					return
 				end
-			end
-			if not found then
-				table.insert(templates, {
+				-- Update local JSON file
+				local data = M.read_local_templates()
+				local templates = M.normalize_templates(data.templates)
+				local found = false
+				local now = now_iso()
+				for _, tpl in ipairs(templates) do
+					if tpl.name == memo_name then
+						tpl.content = tagged_content
+						tpl.updated_at = now
+						found = true
+						break
+					end
+				end
+				if not found then
+					table.insert(templates, {
+						name = memo_name,
+						content = tagged_content,
+						updated_at = now,
+					})
+				end
+				M.write_local_templates({ templates = templates })
+				callback(true, {
 					name = memo_name,
-					content = tagged_content,
-					updated_at = now,
-				})
-			end
-			M.write_local_templates({ templates = templates })
-			callback(true, {
-				name = memo_name,
-				buffer_name = build_template_buffer_name(memo_name, content),
-			}, nil)
+					buffer_name = build_template_buffer_name(memo_name, content),
+				}, nil)
+			end)
 		end)
 	else
 		-- Create new template
-		api.create_memo(tagged_content, "ARCHIVED", function(new_memo, err, response)
-			if not new_memo or not new_memo.name then
-				callback(false, nil, err or "Failed to create template memo on server")
-				return
-			end
-			-- Save local
-			local data = M.read_local_templates()
-			local templates = M.normalize_templates(data.templates)
-			table.insert(templates, {
-				name = new_memo.name,
-				content = tagged_content,
-				updated_at = new_memo.update_time or new_memo.create_time or now_iso(),
-			})
-			M.write_local_templates({ templates = templates })
-			callback(true, {
-				name = new_memo.name,
-				buffer_name = build_template_buffer_name(new_memo.name, content),
-			}, nil)
+		api.create_memo(tagged_content, function(new_memo, err, response)
+			vim.schedule(function()
+				if not new_memo or not new_memo.name then
+					callback(false, nil, err or "Failed to create template memo on server")
+					return
+				end
+
+				-- Now archive it!
+				api.update_memo_state(new_memo.name, "ARCHIVED", function(state_success, state_err)
+					vim.schedule(function()
+						if not state_success then
+							-- Delete the leaked normal memo to stay clean
+							api.delete_memo(new_memo.name, function() end)
+							callback(false, nil, state_err or "Failed to archive template memo on server")
+							return
+						end
+
+						-- Save local
+						local data = M.read_local_templates()
+						local templates = M.normalize_templates(data.templates)
+						table.insert(templates, {
+							name = new_memo.name,
+							content = tagged_content,
+							updated_at = new_memo.update_time or new_memo.create_time or now_iso(),
+						})
+						M.write_local_templates({ templates = templates })
+						callback(true, {
+							name = new_memo.name,
+							buffer_name = build_template_buffer_name(new_memo.name, content),
+						}, nil)
+					end)
+				end)
+			end)
 		end)
 	end
 end

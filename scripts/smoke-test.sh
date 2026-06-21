@@ -11,7 +11,7 @@ fi
 echo "==> Running headless load check..."
 nvim --headless -u NONE \
   -i NONE \
-  "+set rtp+=${ROOT_DIR}" \
+  "+set rtp^=${ROOT_DIR}" \
   "+lua require('memos').setup({})" \
   +qa
 

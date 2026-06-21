@@ -111,7 +111,7 @@ fi
 
 nvim --headless -u NONE \
   -i NONE \
-  "+set rtp+=${ROOT_DIR}" \
+  "+set rtp^=${ROOT_DIR}" \
   "+lua local env_file = os.getenv('MEMOS_ENV_FILE'); require('memos').setup({ env_file = env_file })" \
   "+lua require('memos.latency').run({})" \
   +qa
