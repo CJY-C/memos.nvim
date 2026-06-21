@@ -14,6 +14,31 @@ local list_refresh_state = "idle"
 local last_refresh_at = nil
 local last_refresh_error = nil
 
+local caches = {
+	NORMAL = { memos = {}, page_token = nil, filter = "", last_refresh_at = nil },
+	ARCHIVED = { memos = {}, page_token = nil, filter = "", last_refresh_at = nil },
+	TEMPLATES = { memos = {}, page_token = nil, filter = "", last_refresh_at = nil },
+}
+
+local function save_current_state_cache()
+	local state = current_list_state
+	caches[state] = {
+		memos = vim.deepcopy(memos_cache),
+		page_token = current_page_token,
+		filter = current_filter,
+		last_refresh_at = last_refresh_at,
+	}
+end
+
+local function load_state_cache(state)
+	current_list_state = state
+	local c = caches[state] or { memos = {}, page_token = nil, filter = "", last_refresh_at = nil }
+	memos_cache = vim.deepcopy(c.memos)
+	current_page_token = c.page_token
+	current_filter = c.filter
+	last_refresh_at = c.last_refresh_at
+end
+
 local function redraw_status()
 	vim.schedule(function()
 		pcall(vim.cmd, "redrawstatus")
@@ -343,10 +368,11 @@ end
 
 local function fetch_memos(opts)
 	opts = opts or {}
-	local state_param = current_list_state
+	local req_state = current_list_state
+	local state_param = req_state
 	local filter_param = current_filter
 
-	if current_list_state == "TEMPLATES" then
+	if req_state == "TEMPLATES" then
 		state_param = "ARCHIVED"
 		if current_filter and current_filter ~= "" then
 			filter_param = "content.contains('#type/template') && (" .. current_filter .. ")"
@@ -362,20 +388,37 @@ local function fetch_memos(opts)
 		order_by = config.list_order_by,
 		filter = filter_param,
 	}, function(data, err)
-		if not data then
-			vim.schedule(function()
-				set_refresh_state("failed", err)
-				if #memos_cache > 0 then
-					render_cached_memos()
+		vim.schedule(function()
+			if not data then
+				if current_list_state == req_state then
+					set_refresh_state("failed", err)
+					if #memos_cache > 0 then
+						render_cached_memos()
+					end
 				end
 				vim.notify("Failed to fetch memos: " .. tostring(err), vim.log.levels.ERROR)
-			end)
-			return
-		end
-		if not opts.append then
-			mark_refresh_success()
-		end
-		M.render_memos(data, opts.append == true)
+				return
+			end
+
+			local is_append = opts.append == true
+			if current_list_state == req_state then
+				if not opts.append then
+					mark_refresh_success()
+				end
+				M.render_memos(data, is_append)
+			else
+				-- Update the background cache slot directly
+				local c = caches[req_state]
+				if not is_append then
+					c.memos = data.memos or {}
+					c.last_refresh_at = os.time()
+				else
+					c.memos = c.memos or {}
+					vim.list_extend(c.memos, data.memos or {})
+				end
+				c.page_token = data.next_page_token or ""
+			end
+		end)
 	end)
 end
 
@@ -384,7 +427,7 @@ function M.show_memos_list(opts)
 	focus_list_buf()
 	if #memos_cache == 0 or opts.force_refresh then
 		set_refresh_state("refreshing")
-		local loading_text = current_list_state == "TEMPLATES" and "Loading templates..." or "Loading memos..."
+		local loading_text = "Loading " .. current_list_state:lower() .. "..."
 		set_list_lines({ loading_text })
 		fetch_memos({ append = false })
 	else
@@ -449,14 +492,12 @@ function M.search_memos()
 end
 
 function M.toggle_archive_view()
-	current_list_state = current_list_state == "ARCHIVED" and "NORMAL" or "ARCHIVED"
-	memos_cache = {}
-	list_items = {}
-	current_page_token = nil
-	set_refresh_state("refreshing")
+	save_current_state_cache()
+	local next_state = current_list_state == "ARCHIVED" and "NORMAL" or "ARCHIVED"
+	load_state_cache(next_state)
+	redraw_status()
 	focus_list_buf()
-	set_list_lines({ "Loading " .. current_list_state:lower() .. " memos..." })
-	fetch_memos({ append = false })
+	M.show_memos_list()
 end
 
 function M.toggle_memos_list()
@@ -969,6 +1010,11 @@ function M.save_or_create_dispatcher(opts)
 end
 
 function M.on_account_switched()
+	caches = {
+		NORMAL = { memos = {}, page_token = nil, filter = "", last_refresh_at = nil },
+		ARCHIVED = { memos = {}, page_token = nil, filter = "", last_refresh_at = nil },
+		TEMPLATES = { memos = {}, page_token = nil, filter = "", last_refresh_at = nil },
+	}
 	memos_cache = {}
 	list_items = {}
 	current_page_token = nil
@@ -1010,15 +1056,12 @@ function M.statusline()
 end
 
 function M.toggle_template_view()
-	current_list_state = current_list_state == "TEMPLATES" and "NORMAL" or "TEMPLATES"
-	memos_cache = {}
-	list_items = {}
-	current_page_token = nil
-	current_filter = ""
+	save_current_state_cache()
+	local next_state = current_list_state == "TEMPLATES" and "NORMAL" or "TEMPLATES"
+	load_state_cache(next_state)
 	redraw_status()
 	focus_list_buf()
-	set_list_lines({ "Loading " .. current_list_state:lower() .. "..." })
-	fetch_memos({ append = false })
+	M.show_memos_list()
 end
 
 function M.add_memo_command()
@@ -1049,12 +1092,11 @@ function M.refresh_list_command()
 end
 
 function M.show_templates_list()
-	current_list_state = "TEMPLATES"
-	memos_cache = {}
-	list_items = {}
-	current_page_token = nil
-	current_filter = ""
-	M.show_memos_list({ force_refresh = true })
+	save_current_state_cache()
+	load_state_cache("TEMPLATES")
+	redraw_status()
+	focus_list_buf()
+	M.show_memos_list()
 end
 
 return M
