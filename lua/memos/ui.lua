@@ -260,6 +260,15 @@ function M.build_search_filter(input)
 	return table.concat(parts, " && ")
 end
 
+local function get_name_from_relation_field(field)
+	if type(field) == "string" then
+		return field
+	elseif type(field) == "table" then
+		return field.name or field.memo_name or ""
+	end
+	return ""
+end
+
 local function display_date(memo)
 	local value = memo.update_time or memo.create_time or ""
 	if value == "" then
@@ -668,9 +677,9 @@ function ListSession:format_memo_line(index, memo)
 
 	if type(memo.relations) == "table" then
 		for _, rel in ipairs(memo.relations) do
-			local source = rel.memo or rel.memoName
-			local target = rel.relatedMemo or rel.related_memo or rel.relatedMemoName
-			if source and target then
+			local source = get_name_from_relation_field(rel.memo or rel.memoName)
+			local target = get_name_from_relation_field(rel.relatedMemo or rel.related_memo or rel.relatedMemoName)
+			if source ~= "" and target ~= "" then
 				if source == memo.name or source == tostring(memo.id) then
 					outgoing_set[target] = true
 				elseif target == memo.name or target == tostring(memo.id) then
@@ -683,9 +692,9 @@ function ListSession:format_memo_line(index, memo)
 	for _, other in ipairs(self.memos_cache) do
 		if type(other.relations) == "table" then
 			for _, rel in ipairs(other.relations) do
-				local source = rel.memo or rel.memoName
-				local target = rel.relatedMemo or rel.related_memo or rel.relatedMemoName
-				if source and target then
+				local source = get_name_from_relation_field(rel.memo or rel.memoName)
+				local target = get_name_from_relation_field(rel.relatedMemo or rel.related_memo or rel.relatedMemoName)
+				if source ~= "" and target ~= "" then
 					if source == other.name or source == tostring(other.id) then
 						if target == memo.name or target == tostring(memo.id) then
 							incoming_set[source] = true
@@ -837,9 +846,9 @@ function ListSession:get_outgoing_relation_names(memo)
 	local seen = {}
 	if type(memo.relations) == "table" then
 		for _, rel in ipairs(memo.relations) do
-			local source = rel.memo or rel.memoName
-			local target = rel.relatedMemo or rel.related_memo or rel.relatedMemoName
-			if source and target then
+			local source = get_name_from_relation_field(rel.memo or rel.memoName)
+			local target = get_name_from_relation_field(rel.relatedMemo or rel.related_memo or rel.relatedMemoName)
+			if source ~= "" and target ~= "" then
 				if (source == memo.name or source == tostring(memo.id)) and not seen[target] then
 					seen[target] = true
 					table.insert(names, target)
@@ -855,9 +864,9 @@ function ListSession:get_incoming_relation_names(memo)
 	local seen = {}
 	if type(memo.relations) == "table" then
 		for _, rel in ipairs(memo.relations) do
-			local source = rel.memo or rel.memoName
-			local target = rel.relatedMemo or rel.related_memo or rel.relatedMemoName
-			if source and target then
+			local source = get_name_from_relation_field(rel.memo or rel.memoName)
+			local target = get_name_from_relation_field(rel.relatedMemo or rel.related_memo or rel.relatedMemoName)
+			if source ~= "" and target ~= "" then
 				if (target == memo.name or target == tostring(memo.id)) and not seen[source] then
 					seen[source] = true
 					table.insert(names, source)
@@ -868,9 +877,9 @@ function ListSession:get_incoming_relation_names(memo)
 	for _, other in ipairs(self.memos_cache) do
 		if type(other.relations) == "table" then
 			for _, rel in ipairs(other.relations) do
-				local source = rel.memo or rel.memoName
-				local target = rel.relatedMemo or rel.related_memo or rel.relatedMemoName
-				if source and target then
+				local source = get_name_from_relation_field(rel.memo or rel.memoName)
+				local target = get_name_from_relation_field(rel.relatedMemo or rel.related_memo or rel.relatedMemoName)
+				if source ~= "" and target ~= "" then
 					if source == other.name or source == tostring(other.id) then
 						if target == memo.name or target == tostring(memo.id) then
 							if not seen[source] then
