@@ -172,18 +172,26 @@ local function focus_list_buf()
 	local win = vim.fn.bufwinid(buf)
 	if win ~= -1 then
 		vim.api.nvim_set_current_win(win)
-		return
-	end
-	if config.window and config.window.enable_float then
-		local float_win = find_memos_float_window()
-		if float_win then
-			vim.api.nvim_set_current_win(float_win)
-			vim.api.nvim_set_current_buf(buf)
-		else
-			create_float_window(buf)
-		end
 	else
-		vim.api.nvim_set_current_buf(buf)
+		if config.window and config.window.enable_float then
+			local float_win = find_memos_float_window()
+			if float_win then
+				vim.api.nvim_set_current_win(float_win)
+				vim.api.nvim_set_current_buf(buf)
+			else
+				create_float_window(buf)
+			end
+		else
+			vim.api.nvim_set_current_buf(buf)
+		end
+	end
+
+	local active_win = vim.fn.bufwinid(buf)
+	if active_win ~= -1 then
+		vim.wo[active_win].wrap = false
+		vim.wo[active_win].number = false
+		vim.wo[active_win].relativenumber = false
+		vim.wo[active_win].signcolumn = "no"
 	end
 end
 
@@ -726,8 +734,6 @@ function ListSession:format_memo_line(index, memo)
 			target_width = 40
 		end
 
-		local gap = target_width - #line_without_indicator
-		local gap_str = ""
 
 		local parts = {}
 		table.insert(parts, "[")
@@ -763,7 +769,9 @@ function ListSession:format_memo_line(index, memo)
 		table.insert(parts, "]")
 		link_indicator = table.concat(parts, "")
 
-		gap = gap - #link_indicator
+		local gap = target_width - vim.fn.strdisplaywidth(line_without_indicator) - vim.fn.strdisplaywidth(link_indicator)
+		local gap_str = ""
+
 		if gap > 0 then
 			gap_str = string.rep(" ", gap)
 		else

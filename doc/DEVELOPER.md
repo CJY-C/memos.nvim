@@ -118,3 +118,25 @@ end)
 
 assert.are.same(1, #s.memos_cache)
 ```
+
+---
+
+## 7. Memos API Relations Schema Handling
+
+When parsing relations between memos (e.g. for outgoing and incoming link calculations):
+- **Nested Schema Types**: Depending on the Memos server version, relation fields (`rel.memo` and `rel.relatedMemo`) in the JSON response may be represented either as plain resource strings (e.g. `"memos/123"`) or as nested tables/objects (e.g. `{ name = "memos/123", snippet = "" }`).
+- **Defensive Extraction**: Avoid direct string comparisons on these fields. Instead, use a helper function like `get_name_from_relation_field(field)` to extract the string value safely:
+  ```lua
+  local function get_name_from_relation_field(field)
+  	if type(field) == "string" then
+  		return field
+  	elseif type(field) == "table" then
+  		return field.name or field.memo_name or ""
+  	end
+  	return ""
+  end
+  ```
+- **Display Width vs. Byte Length**:
+  - When calculating alignment gaps for rendering right-aligned link indicators, always use `vim.fn.strdisplaywidth(str)` instead of `#str` (byte length). This ensures correct alignment columns when memo titles contain CJK or multi-byte characters.
+  - When passing columns to Neovim highlighting APIs (e.g. `vim.api.nvim_buf_add_highlight`), continue using byte length `#str` since Neovim expects byte-indexed offsets.
+
