@@ -695,11 +695,7 @@ function ListSession:fetch_memos(opts)
 
 			local is_append = opts.append == true
 			if self.current_list_state == req_state then
-				if not opts.append then
-					self:mark_refresh_success()
-				else
-					self:set_refresh_state("idle")
-				end
+				self:mark_refresh_success()
 				self:render_memos(data, is_append)
 			else
 				-- Update the background cache slot directly
