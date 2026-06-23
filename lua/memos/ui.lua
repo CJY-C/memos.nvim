@@ -697,6 +697,8 @@ function ListSession:fetch_memos(opts)
 			if self.current_list_state == req_state then
 				if not opts.append then
 					self:mark_refresh_success()
+				else
+					self:set_refresh_state("idle")
 				end
 				self:render_memos(data, is_append)
 			else
@@ -1140,6 +1142,7 @@ function ListSession:load_prev_page()
 		table.remove(self.memos_cache)
 	end
 	self.current_page_token = prev.page_token
+	self:set_refresh_state("idle")
 	self:render_cached_memos()
 	vim.notify("Returned to previous page view.")
 end
