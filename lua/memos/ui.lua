@@ -1242,8 +1242,8 @@ function M.setup_buffer_for_editing()
 	end, {})
 	vim.api.nvim_create_autocmd("BufWriteCmd", {
 		buffer = 0,
-		callback = function()
-			M.save_or_create_dispatcher({ post_save_ui = false })
+		callback = function(ev)
+			M.save_or_create_dispatcher({ post_save_ui = false, bufnr = ev.buf })
 		end,
 	})
 
@@ -1256,8 +1256,8 @@ function M.setup_buffer_for_editing()
 		vim.api.nvim_create_autocmd({ "InsertLeave", "CursorHold" }, {
 			group = group,
 			buffer = 0,
-			callback = function()
-				M.check_and_auto_save()
+			callback = function(ev)
+				M.check_and_auto_save(ev.buf)
 			end,
 		})
 	end
@@ -1885,20 +1885,24 @@ function M.return_to_list()
 	end
 end
 
-function M.check_and_auto_save()
-	if vim.b.memos_original_content == nil then
+function M.check_and_auto_save(buf)
+	buf = buf or vim.api.nvim_get_current_buf()
+	if not vim.api.nvim_buf_is_valid(buf) then
 		return
 	end
-	local content = table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), "\n")
-	if content ~= vim.b.memos_original_content then
-		M.save_or_create_dispatcher()
+	if vim.b[buf].memos_original_content == nil then
+		return
+	end
+	local content = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
+	if content ~= vim.b[buf].memos_original_content then
+		M.save_or_create_dispatcher({ bufnr = buf })
 	end
 end
 
 function M.save_or_create_dispatcher(opts)
 	opts = opts or {}
 	local post_save_ui = opts.post_save_ui ~= false
-	local bufnr = vim.api.nvim_get_current_buf()
+	local bufnr = opts.bufnr or vim.api.nvim_get_current_buf()
 	if vim.b[bufnr].memos_save_inflight then
 		vim.b[bufnr].memos_save_pending = true
 		return
