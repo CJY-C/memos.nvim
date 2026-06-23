@@ -140,6 +140,8 @@ Example:
       },
     },
   })
+
+  Note: You can map any keymap to false in setup() to disable it entirely (e.g. quit = false).
 <
 
 List search uses the Memos server-side filter parameter and issues one list

@@ -185,6 +185,7 @@ require("memos").setup({
     },
   },
 })
+-- Note: You can map any keymap to false in setup() to disable it entirely (e.g. quit = false).
 ```
 
 Credential priority is explicit `host`/`token`, then `env_file`, then `MEMOS_HOST`/`MEMOS_TOKEN`. The plugin does not persist accounts; configure credentials declaratively through nixvim, `env_file`, or process env.
