@@ -121,6 +121,7 @@ The table below lists all list-view keymaps. Note that some keys adjust behavior
 | `<S-Tab>` / `zi` | **Toggle Incoming** | Toggles expansion of incoming relations/backlinks (expands upwards). | *Unsupported*. |
 | `zM` | **Collapse All** | Collapses all active memo expansions in the view. | *Unsupported*. |
 | `.` | **Next Page** | Loads the next page of memos (pagination). | Loads the next page of templates (pagination). |
+| `,` | **Prev Page** | Returns to the previous page of memos (page history). | Returns to the previous page of templates (page history). |
 | `q` | **Quit** | Closes the list buffer. | Closes the list buffer. |
 
 ### Memo / Template Buffer Keymaps
@@ -170,6 +171,7 @@ require("memos").setup({
       edit_create_time = "T",
       refresh_list = "r",
       next_page = ".",
+      prev_page = ",",
       quit = "q",
       toggle_expand = "<Tab>",
       toggle_expand_incoming = "<S-Tab>",

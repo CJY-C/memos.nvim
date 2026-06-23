@@ -62,6 +62,7 @@ List buffer:
   t              Edit selected memo create time
   r              Refresh list
   .              Load next page
+  ,              Load previous page
   <Tab> or zo    Toggle outgoing relations expansion (expand down)
   <S-Tab> or zi  Toggle incoming relations expansion (expand up)
   zM             Collapse all active expansions
@@ -125,6 +126,7 @@ Example:
         edit_create_time = "t",
         refresh_list = "r",
         next_page = ".",
+        prev_page = ",",
         quit = "q",
         toggle_expand = "<Tab>",
         toggle_expand_incoming = "<S-Tab>",
