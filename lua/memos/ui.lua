@@ -396,7 +396,7 @@ function ListSession:bind_list_keymaps()
 
 	local bound = {}
 	local function set_map(key, lhs)
-		if key and key ~= "" then
+		if type(key) == "string" and key ~= "" then
 			set_keymap(buf, key, lhs)
 			table.insert(bound, key)
 		end

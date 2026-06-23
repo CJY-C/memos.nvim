@@ -66,4 +66,31 @@ describe("memos.ui dynamic keymaps", function()
 		assert.is_false(old_quit_mapped, "Old keymap 'q' was not cleared")
 		assert.is_true(new_quit_mapped, "New keymap 'x' was not registered")
 	end)
+
+	it("should skip binding keymaps that are set to false in config", function()
+		memos.setup({
+			keymaps = {
+				list = {
+					quit = false, -- Disable quit key
+					refresh_list = "r",
+				},
+			},
+		})
+
+		ui.bind_list_keymaps(buf)
+
+		local maps = vim.api.nvim_buf_get_keymap(buf, "n")
+		local quit_mapped = false
+		local refresh_mapped = false
+		for _, map in ipairs(maps) do
+			if map.lhs == "q" then
+				quit_mapped = true
+			elseif map.lhs == "r" then
+				refresh_mapped = true
+			end
+		end
+
+		assert.is_false(quit_mapped, "Keymap set to false should not be bound")
+		assert.is_true(refresh_mapped, "Other valid keymaps should still be bound")
+	end)
 end)
