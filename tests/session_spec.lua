@@ -109,4 +109,45 @@ describe("memos.ui ListSession encapsulation", function()
 		-- Restore
 		vim.api.nvim_open_win = original_open_win
 	end)
+
+	it("should track pagination history and allow returning to previous page view", function()
+		ui.bind_list_keymaps(buf1)
+		local s = ui.get_session(buf1)
+		s.memos_cache = { { name = "memos/1", content = "one" } }
+		s.current_page_token = "token-1"
+
+		local api_mod = require("memos.api")
+		local original_list_memos = api_mod.Client.list_memos
+		
+		api_mod.Client.list_memos = function(self, opts, callback)
+			callback({
+				memos = {
+					{ name = "memos/2", content = "two" }
+				},
+				next_page_token = "token-2"
+			}, nil)
+		end
+
+		s:fetch_memos({ append = true, page_token = "token-1" })
+		
+		vim.wait(1000, function()
+			return #s.memos_cache == 2
+		end)
+		
+		assert.are.same(2, #s.memos_cache)
+		assert.are.same("token-2", s.current_page_token)
+		assert.are.same(1, #s.page_history)
+		assert.are.same(1, s.page_history[1].memos_count)
+		assert.are.same("token-1", s.page_history[1].page_token)
+
+		-- Go back to previous page
+		s:load_prev_page()
+
+		assert.are.same(1, #s.memos_cache)
+		assert.are.same("memos/1", s.memos_cache[1].name)
+		assert.are.same("token-1", s.current_page_token)
+		assert.are.same(0, #s.page_history)
+
+		api_mod.Client.list_memos = original_list_memos
+	end)
 end)
