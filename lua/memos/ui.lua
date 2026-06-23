@@ -369,7 +369,8 @@ local function build_memo_buffer_name(memo, content)
 	if title == "" then
 		title = "memo"
 	end
-	return "memos/" .. memo.name:gsub("^memos/", "") .. "/" .. title:gsub("[/\\]", "_"):sub(1, 50) .. ".md"
+	local clean_title = title:gsub("[/\\]", "_")
+	return "memos/" .. memo.name:gsub("^memos/", "") .. "/" .. vim.fn.strcharpart(clean_title, 0, 50) .. ".md"
 end
 
 local function set_keymap(buf, key, rhs)
@@ -1407,7 +1408,7 @@ function ListSession:add_relation()
 			if title == "" then
 				title = "(No Content)"
 			end
-			local label = string.format("%s - %s", m.name, title:sub(1, 60))
+			local label = string.format("%s - %s", m.name, vim.fn.strcharpart(title, 0, 60))
 			table.insert(choices, label)
 			choice_map[label] = { type = "memo", value = m.name }
 		end

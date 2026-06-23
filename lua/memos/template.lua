@@ -47,7 +47,8 @@ local function extract_title(content)
 	if first_line == "" then
 		return "untitled"
 	end
-	return first_line:gsub("[/\\]", "_"):sub(1, 40)
+	local title = first_line:gsub("[/\\]", "_")
+	return vim.fn.strcharpart(title, 0, 40)
 end
 
 local function build_template_buffer_name(memo_name, content)
