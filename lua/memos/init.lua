@@ -35,6 +35,7 @@ M.config = {
 			edit_create_time = "t",
 			refresh_list = "r",
 			next_page = ".",
+			prev_page = ",",
 			quit = "q",
 			toggle_expand = "<Tab>",
 			toggle_expand_incoming = "<S-Tab>",

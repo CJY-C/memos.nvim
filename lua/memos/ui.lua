@@ -57,15 +57,16 @@ function ListSession.new(bufnr)
 		last_refresh_at = nil,
 		last_refresh_error = nil,
 		caches = {
-			NORMAL = { memos = {}, page_token = nil, filter = "", last_refresh_at = nil },
-			ARCHIVED = { memos = {}, page_token = nil, filter = "", last_refresh_at = nil },
-			TEMPLATES = { memos = {}, page_token = nil, filter = "", last_refresh_at = nil },
+			NORMAL = { memos = {}, page_token = nil, filter = "", last_refresh_at = nil, page_history = {} },
+			ARCHIVED = { memos = {}, page_token = nil, filter = "", last_refresh_at = nil, page_history = {} },
+			TEMPLATES = { memos = {}, page_token = nil, filter = "", last_refresh_at = nil, page_history = {} },
 		},
 		expanded_outgoing = {},
 		expanded_incoming = {},
 		relation_details_cache = {},
 		in_flight_relations = {},
 		main_list_fetching = false,
+		page_history = {},
 	}, ListSession)
 end
 
@@ -94,16 +95,18 @@ function ListSession:save_current_state_cache()
 		page_token = self.current_page_token,
 		filter = self.current_filter,
 		last_refresh_at = self.last_refresh_at,
+		page_history = vim.deepcopy(self.page_history or {}),
 	}
 end
 
 function ListSession:load_state_cache(state)
 	self.current_list_state = state
-	local c = self.caches[state] or { memos = {}, page_token = nil, filter = "", last_refresh_at = nil }
+	local c = self.caches[state] or { memos = {}, page_token = nil, filter = "", last_refresh_at = nil, page_history = {} }
 	self.memos_cache = vim.deepcopy(c.memos)
 	self.current_page_token = c.page_token
 	self.current_filter = c.filter
 	self.last_refresh_at = c.last_refresh_at
+	self.page_history = vim.deepcopy(c.page_history or {})
 end
 
 local function has_active_fetches(self)
@@ -418,6 +421,7 @@ function ListSession:bind_list_keymaps()
 	set_map(keys.edit_create_time, '<Cmd>lua require("memos.ui").edit_selected_memo_create_time()<CR>')
 	set_map(keys.refresh_list, '<Cmd>lua require("memos.ui").refresh_list_command()<CR>')
 	set_map(keys.next_page, '<Cmd>lua require("memos.ui").load_next_page()<CR>')
+	set_map(keys.prev_page, '<Cmd>lua require("memos.ui").load_prev_page()<CR>')
 	set_map(keys.quit, '<Cmd>lua require("memos.ui").quit_memos_list()<CR>')
 
 	set_map(keys.toggle_expand or "<Tab>", '<Cmd>lua require("memos.ui").toggle_expand_selected()<CR>')
@@ -654,6 +658,15 @@ function ListSession:fetch_memos(opts)
 		end
 	end
 
+	if opts.append then
+		table.insert(self.page_history, {
+			memos_count = #self.memos_cache,
+			page_token = self.current_page_token,
+		})
+	else
+		self.page_history = {}
+	end
+
 	self.main_list_fetching = true
 	self:set_refresh_state("refreshing")
 
@@ -669,6 +682,9 @@ function ListSession:fetch_memos(opts)
 			if not data then
 				if self.current_list_state == req_state then
 					self:set_refresh_state("failed", err)
+					if opts.append then
+						table.remove(self.page_history)
+					end
 					if #self.memos_cache > 0 then
 						self:render_cached_memos()
 					end
@@ -689,6 +705,7 @@ function ListSession:fetch_memos(opts)
 				if not is_append then
 					c.memos = data.memos or {}
 					c.last_refresh_at = os.time()
+					c.page_history = {}
 				else
 					c.memos = c.memos or {}
 					vim.list_extend(c.memos, data.memos or {})
@@ -1113,6 +1130,20 @@ function ListSession:load_next_page()
 	})
 end
 
+function ListSession:load_prev_page()
+	if not self.page_history or #self.page_history == 0 then
+		vim.notify("Already at the first page.", vim.log.levels.INFO)
+		return
+	end
+	local prev = table.remove(self.page_history)
+	while #self.memos_cache > prev.memos_count do
+		table.remove(self.memos_cache)
+	end
+	self.current_page_token = prev.page_token
+	self:render_cached_memos()
+	vim.notify("Returned to previous page view.")
+end
+
 function M.search_memos()
 	local s = get_active_session()
 	if s then
@@ -1165,6 +1196,13 @@ function M.load_next_page()
 	local s = get_active_session()
 	if s then
 		s:load_next_page()
+	end
+end
+
+function M.load_prev_page()
+	local s = get_active_session()
+	if s then
+		s:load_prev_page()
 	end
 end
 
