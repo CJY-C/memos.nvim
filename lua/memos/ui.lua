@@ -11,6 +11,32 @@ local list_buf = nil
 local last_float_buf = nil
 local sessions = {}
 
+local function match_memo_id_or_name(memo, val)
+	if not memo or not val or val == "" then
+		return false
+	end
+	if memo.name == val then
+		return true
+	end
+	if memo.id and tostring(memo.id) == val then
+		return true
+	end
+	return false
+end
+
+local function is_same_memo(memo1, memo2)
+	if not memo1 or not memo2 then
+		return false
+	end
+	if memo1.name == memo2.name and memo1.name ~= "" then
+		return true
+	end
+	if memo1.id and memo2.id and tostring(memo1.id) == tostring(memo2.id) then
+		return true
+	end
+	return false
+end
+
 local ns_id = vim.api.nvim_create_namespace("memos_list_highlights")
 
 vim.api.nvim_set_hl(0, "MemosOutgoingLink", { link = "Label", default = true })
@@ -704,9 +730,9 @@ function ListSession:format_memo_line(index, memo)
 			local source = get_name_from_relation_field(rel.memo or rel.memoName)
 			local target = get_name_from_relation_field(rel.relatedMemo or rel.related_memo or rel.relatedMemoName)
 			if source ~= "" and target ~= "" then
-				if source == memo.name or source == tostring(memo.id) then
+				if match_memo_id_or_name(memo, source) then
 					outgoing_set[target] = true
-				elseif target == memo.name or target == tostring(memo.id) then
+				elseif match_memo_id_or_name(memo, target) then
 					incoming_set[source] = true
 				end
 			end
@@ -719,8 +745,8 @@ function ListSession:format_memo_line(index, memo)
 				local source = get_name_from_relation_field(rel.memo or rel.memoName)
 				local target = get_name_from_relation_field(rel.relatedMemo or rel.related_memo or rel.relatedMemoName)
 				if source ~= "" and target ~= "" then
-					if source == other.name or source == tostring(other.id) then
-						if target == memo.name or target == tostring(memo.id) then
+					if match_memo_id_or_name(other, source) then
+						if match_memo_id_or_name(memo, target) then
 							incoming_set[source] = true
 						end
 					end
@@ -808,7 +834,7 @@ end
 
 function ListSession:get_cached_relation_memo(name)
 	for _, m in ipairs(self.memos_cache) do
-		if m.name == name or tostring(m.id) == name then
+		if match_memo_id_or_name(m, name) then
 			return m
 		end
 	end
@@ -873,7 +899,7 @@ function ListSession:get_outgoing_relation_names(memo)
 			local source = get_name_from_relation_field(rel.memo or rel.memoName)
 			local target = get_name_from_relation_field(rel.relatedMemo or rel.related_memo or rel.relatedMemoName)
 			if source ~= "" and target ~= "" then
-				if (source == memo.name or source == tostring(memo.id)) and not seen[target] then
+				if match_memo_id_or_name(memo, source) and not seen[target] then
 					seen[target] = true
 					table.insert(names, target)
 				end
@@ -891,7 +917,7 @@ function ListSession:get_incoming_relation_names(memo)
 			local source = get_name_from_relation_field(rel.memo or rel.memoName)
 			local target = get_name_from_relation_field(rel.relatedMemo or rel.related_memo or rel.relatedMemoName)
 			if source ~= "" and target ~= "" then
-				if (target == memo.name or target == tostring(memo.id)) and not seen[source] then
+				if match_memo_id_or_name(memo, target) and not seen[source] then
 					seen[source] = true
 					table.insert(names, source)
 				end
@@ -904,8 +930,8 @@ function ListSession:get_incoming_relation_names(memo)
 				local source = get_name_from_relation_field(rel.memo or rel.memoName)
 				local target = get_name_from_relation_field(rel.relatedMemo or rel.related_memo or rel.relatedMemoName)
 				if source ~= "" and target ~= "" then
-					if source == other.name or source == tostring(other.id) then
-						if target == memo.name or target == tostring(memo.id) then
+					if match_memo_id_or_name(other, source) then
+						if match_memo_id_or_name(memo, target) then
 							if not seen[source] then
 								seen[source] = true
 								table.insert(names, source)
@@ -978,7 +1004,7 @@ function ListSession:fetch_missing_relations(names)
 	for _, name in ipairs(names) do
 		local found = false
 		for _, m in ipairs(self.memos_cache) do
-			if m.name == name or tostring(m.id) == name then
+			if match_memo_id_or_name(m, name) then
 				found = true
 				break
 			end
@@ -1372,7 +1398,7 @@ function ListSession:add_relation()
 
 	-- 2. Cached memos list
 	for _, m in ipairs(self.memos_cache) do
-		if m.name ~= memo.name and tostring(m.id) ~= tostring(memo.id) then
+		if not is_same_memo(m, memo) then
 			local title = m.content:match("^([^\n]*)") or ""
 			title = vim.trim(title)
 			if title == "" then
@@ -1394,6 +1420,7 @@ function ListSession:add_relation()
 
 	vim.ui.select(choices, {
 		prompt = "Select memo to relate (or input ID):",
+		kind = "memos_relation",
 	}, function(choice)
 		if not choice then
 			return
@@ -1423,7 +1450,7 @@ function ListSession:add_relation()
 			target_name = "memos/" .. target_name
 		end
 
-		if target_name == memo.name or target_name == tostring(memo.id) then
+		if match_memo_id_or_name(memo, target_name) then
 			vim.notify("Cannot create a relation to the same memo.", vim.log.levels.ERROR)
 			return
 		end
@@ -1556,6 +1583,7 @@ function ListSession:delete_selected_memo()
 	local title = memo_title(memo)
 	vim.ui.select({ "Cancel", "Delete" }, {
 		prompt = "Delete memo: " .. title,
+		kind = "memos_delete",
 	}, function(choice)
 		if choice ~= "Delete" then
 			return
@@ -1620,6 +1648,7 @@ function ListSession:delete_selected_relation(item)
 	local prompt_msg = string.format("Unlink relation: %s -> %s?", source_memo_name, target_memo_name)
 	vim.ui.select({ "Cancel", "Unlink" }, {
 		prompt = prompt_msg,
+		kind = "memos_unlink",
 	}, function(choice)
 		if choice ~= "Unlink" then
 			return
@@ -1672,6 +1701,7 @@ function ListSession:edit_selected_memo_visibility()
 
 	vim.ui.select({ "PRIVATE", "PROTECTED", "PUBLIC" }, {
 		prompt = "Memo visibility:",
+		kind = "memos_visibility",
 	}, function(choice)
 		if not choice then
 			return

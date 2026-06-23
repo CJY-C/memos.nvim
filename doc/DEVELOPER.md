@@ -151,4 +151,23 @@ To maintain visual feedback for network activity and ensure a consistent user ex
   - `self.in_flight_relations`: A table mapping memo resource names currently being fetched in the background.
 - **Helper Coordination**: Use `has_active_fetches(self)` to dynamically check if either of these is active. The transition back to `"idle"` must only occur when both operations are fully complete.
 
+---
+
+## 9. Safe ID Comparisons & UI Select Customization
+
+### Safe ID and Name Comparisons (Avoiding `tostring(nil)` Bugs)
+- **Problem**: In Memos API v1, memo objects do not return an `id` field (only a resource `name`, e.g. `memos/123`). When compiling lists or filtering relations, using simple string conversions like `tostring(m.id)` results in `"nil"`. Comparing two `nil` values with `tostring` (e.g. `tostring(m.id) == tostring(memo.id)`) evaluates to `"nil" == "nil"`, which is `true`. This causes logic bugs like filtering out all cached memos.
+- **Guideline**: Avoid comparing raw stringified IDs directly if they can be nil. Always check if both IDs exist before comparing them, or use the project helper functions:
+  - `match_memo_id_or_name(memo, val)`: Safely checks if a memo matches a target name or ID string, ignoring nil IDs.
+  - `is_same_memo(memo1, memo2)`: Checks if two memo objects represent the same memo by comparing their `name` fields first, and only falling back to `id` comparison if both IDs exist.
+
+### Customizing UI Select Dialogs (`vim.ui.select`)
+- **Problem**: Default configurations of Neovim select plugins (e.g. `telescope-ui-select`, `dressing.nvim`) may open full-screen or oversized float windows for short prompt choices (e.g. visibility editing, deletion confirmation).
+- **Guideline**: Always supply a descriptive `kind` string inside the `opts` table when calling `vim.ui.select(items, opts, on_choice)`. This allows users to target specific prompts and define compact themes (e.g. `get_dropdown` or `get_cursor` layouts) in their config setup:
+  - `kind = "memos_relation"` for relation list picking.
+  - `kind = "memos_visibility"` for visibility settings.
+  - `kind = "memos_delete"` for deletion confirmation prompts.
+  - `kind = "memos_unlink"` for unlinking confirmation prompts.
+
+
 

@@ -88,6 +88,7 @@ function M.template_delete_selected(memo, index)
 	end
 	vim.ui.select({ "Cancel", "Delete" }, {
 		prompt = "Delete template: " .. extract_title(memo.content) .. "?",
+		kind = "memos_delete",
 	}, function(confirmation)
 		if confirmation ~= "Delete" then
 			return
