@@ -29,6 +29,11 @@ function Client:get_token()
 	return cfg and cfg.token or ""
 end
 
+function Client:get_timeout()
+	local cfg = type(self._config) == "function" and self._config() or self._config
+	return cfg and tonumber(cfg.timeout) or 10
+end
+
 local function url_encode(str)
 	local value = tostring(str or "")
 	value = value:gsub("\n", "\r\n")
@@ -95,12 +100,15 @@ end
 
 function Client:run_curl(args, callback)
 	local token = self:get_token()
+	local timeout = self:get_timeout()
 	local full_args = vim.deepcopy(args)
 
 	stats.requests = stats.requests + 1
 
 	table.insert(full_args, "-H")
 	table.insert(full_args, "Authorization: Bearer " .. token)
+	table.insert(full_args, "--max-time")
+	table.insert(full_args, tostring(timeout))
 	table.insert(full_args, "-sS")
 	table.insert(full_args, "-w")
 	table.insert(

@@ -5,6 +5,7 @@ M.config = {
 	token = nil,
 	env_file = nil,
 	page_size = 50,
+	timeout = 10,
 	list_state = "NORMAL",
 	list_order_by = "pinned desc, update_time desc",
 	list_style = "default",
