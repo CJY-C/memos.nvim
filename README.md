@@ -140,6 +140,7 @@ require("memos").setup({
   token = "your-token",
   env_file = nil,
   page_size = 50,
+  timeout = 10, -- Timeout for cURL requests in seconds
   list_state = "NORMAL",
   list_order_by = "pinned desc, update_time desc",
   list_style = "default",
