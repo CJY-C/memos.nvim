@@ -1554,6 +1554,7 @@ function ListSession:add_relation()
 				end
 			},
 			sorter = conf.generic_sorter({}),
+			previewer = false,
 			attach_mappings = function(prompt_bufnr, map)
 				actions.select_default:replace(function()
 					local picker = action_state.get_current_picker(prompt_bufnr)
