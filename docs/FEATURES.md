@@ -20,7 +20,7 @@ The following 5 optimizations are planned for future implementation, ordered by 
 
 ### [Priority 3] cURL Request Timeout Handling
 * **Description**: Add default or configurable connection/request timeout flags (e.g. `--max-time 10`) in the Plenary `Job` arguments in `api.lua`.
-* **Rationale**: Prevents the plugin's list view from remaining in a perpetual `(Refreshing...)` state when the Memos server is unresponsive or the network drops.
+* **Rationale**: Prevents the plugin's list view from remaining in a perpetual `Refreshing...` state when the Memos server is unresponsive or the network drops.
 * **Cost**: Zero HTTP requests.
 
 ### [Priority 4] Pagination History Caching (Prev Page Support)

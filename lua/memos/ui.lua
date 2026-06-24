@@ -456,18 +456,10 @@ end
 function ListSession:list_status_line()
 	local refreshed = format_time(self.last_refresh_at, true)
 	if self.list_refresh_state == "refreshing" then
-		if refreshed then
-			return "Updated " .. refreshed .. " (Refreshing...)"
-		else
-			return "Refreshing..."
-		end
+		return "Refreshing..."
 	end
 	if self.list_refresh_state == "failed" then
-		if refreshed then
-			return "Updated " .. refreshed .. " (Refresh failed)"
-		else
-			return "Refresh failed"
-		end
+		return "Refresh failed"
 	end
 	if refreshed then
 		return "Updated " .. refreshed
@@ -2061,18 +2053,10 @@ local function status_text(s, with_seconds)
 	end
 	local refreshed = format_time(s.last_refresh_at, with_seconds)
 	if s.list_refresh_state == "refreshing" then
-		if refreshed then
-			return "Memos refreshing (Updated " .. refreshed .. ")"
-		else
-			return "Memos refreshing"
-		end
+		return "Memos refreshing"
 	end
 	if s.list_refresh_state == "failed" then
-		if refreshed then
-			return "Memos failed (Updated " .. refreshed .. ")"
-		else
-			return "Memos failed"
-		end
+		return "Memos failed"
 	end
 	if refreshed then
 		return "Memos updated " .. refreshed
