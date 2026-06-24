@@ -1386,6 +1386,95 @@ function ListSession:copy_selected_memo_id()
 	vim.notify("Copied memo ID to " .. register .. ": " .. memo.name)
 end
 
+function ListSession:add_multiple_relations(memo, target_names)
+	if not target_names or #target_names == 0 then
+		return
+	end
+
+	local relations = {}
+	local existing_targets = {}
+	if type(memo.relations) == "table" then
+		for _, r in ipairs(memo.relations) do
+			local m_name = get_name_from_relation_field(r.memo or r.memoName)
+			local r_name = get_name_from_relation_field(r.relatedMemo or r.related_memo or r.relatedMemoName)
+			if m_name ~= "" and r_name ~= "" then
+				table.insert(relations, {
+					memo = { name = m_name },
+					relatedMemo = { name = r_name },
+					type = r.type or "REFERENCE"
+				})
+				if m_name == memo.name then
+					existing_targets[r_name] = true
+				end
+			end
+		end
+	end
+
+	local new_relations_to_add = {}
+	local added_count = 0
+	local self_link_attempt = false
+	local already_exists_count = 0
+
+	for _, target_name in ipairs(target_names) do
+		target_name = vim.trim(target_name)
+		if target_name ~= "" then
+			if not target_name:match("^memos/") then
+				target_name = "memos/" .. target_name
+			end
+
+			if match_memo_id_or_name(memo, target_name) then
+				self_link_attempt = true
+			elseif existing_targets[target_name] then
+				already_exists_count = already_exists_count + 1
+			else
+				local new_rel = {
+					memo = { name = memo.name },
+					relatedMemo = { name = target_name },
+					type = "REFERENCE"
+				}
+				table.insert(relations, new_rel)
+				table.insert(new_relations_to_add, new_rel)
+				existing_targets[target_name] = true
+				added_count = added_count + 1
+			end
+		end
+	end
+
+	if self_link_attempt and added_count == 0 then
+		vim.notify("Cannot create a relation to the same memo.", vim.log.levels.ERROR)
+		return
+	end
+
+	if added_count == 0 then
+		if already_exists_count > 0 then
+			vim.notify("Relation(s) already exist.", vim.log.levels.INFO)
+		end
+		return
+	end
+
+	api:set_memo_relations(memo.name, relations, function(success, err)
+		vim.schedule(function()
+			if success then
+				if not memo.relations then
+					memo.relations = {}
+				end
+				for _, new_rel in ipairs(new_relations_to_add) do
+					table.insert(memo.relations, new_rel)
+				end
+				self:render_cached_memos()
+				if added_count == 1 then
+					vim.notify("Relation added successfully.")
+				else
+					vim.notify(string.format("%d relations added successfully.", added_count))
+				end
+				self:refresh_list_silently()
+			else
+				vim.notify("Failed to add relation: " .. tostring(err), vim.log.levels.ERROR)
+			end
+		end)
+	end)
+end
+
 function ListSession:add_relation()
 	if self.current_list_state == "TEMPLATES" then
 		vim.notify("Relations are not supported for templates.", vim.log.levels.WARN)
@@ -1414,11 +1503,9 @@ function ListSession:add_relation()
 		return ""
 	end
 
-	-- Build selection options
 	local choices = {}
 	local choice_map = {}
 
-	-- 1. Clipboard option (first if present)
 	local clipboard_id = get_clipboard_memo_id()
 	if clipboard_id ~= "" then
 		local clip_label = string.format("[Use Clipboard: %s]", clipboard_id)
@@ -1426,7 +1513,6 @@ function ListSession:add_relation()
 		choice_map[clip_label] = { type = "clipboard", value = clipboard_id }
 	end
 
-	-- 2. Cached memos list
 	for _, m in ipairs(self.memos_cache) do
 		if not is_same_memo(m, memo) then
 			local title = m.content:match("^([^\n]*)") or ""
@@ -1443,10 +1529,69 @@ function ListSession:add_relation()
 		end
 	end
 
-	-- 3. Manual input option (at the bottom)
 	local manual_label = "[Input memo ID manually]"
 	table.insert(choices, manual_label)
 	choice_map[manual_label] = { type = "manual" }
+
+	local has_telescope, telescope = pcall(require, "telescope")
+	if has_telescope then
+		local pickers = require("telescope.pickers")
+		local finders = require("telescope.finders")
+		local conf = require("telescope.config").values
+		local actions = require("telescope.actions")
+		local action_state = require("telescope.actions.state")
+
+		pickers.new({}, {
+			prompt_title = "Select memo(s) to relate:",
+			finder = finders.new_table {
+				results = choices,
+				entry_maker = function(entry)
+					return {
+						value = entry,
+						display = entry,
+						ordinal = entry,
+					}
+				end
+			},
+			sorter = conf.generic_sorter({}),
+			attach_mappings = function(prompt_bufnr, map)
+				actions.select_default:replace(function()
+					local picker = action_state.get_current_picker(prompt_bufnr)
+					local selections = picker:get_multi_selection()
+					if vim.tbl_isempty(selections) then
+						local entry = action_state.get_selected_entry()
+						if entry then
+							selections = { entry }
+						else
+							selections = {}
+						end
+					end
+					actions.close(prompt_bufnr)
+
+					local target_names = {}
+					for _, sel in ipairs(selections) do
+						local info = choice_map[sel.value]
+						if info then
+							if info.type == "manual" then
+								local target_input = vim.fn.input("Add relation to target memo ID: ", "")
+								print(" ")
+								target_input = vim.trim(target_input or "")
+								if target_input ~= "" then
+									table.insert(target_names, target_input)
+								end
+							else
+								table.insert(target_names, info.value)
+							end
+						end
+					end
+
+					self:add_multiple_relations(memo, target_names)
+				end)
+				return true
+			end
+		}):find()
+		return
+	end
 
 	vim.ui.select(choices, {
 		prompt = "Select memo to relate (or input ID):",
@@ -1463,74 +1608,18 @@ function ListSession:add_relation()
 		local target_name = ""
 		if info.type == "manual" then
 			local target_input = vim.fn.input("Add relation to target memo ID: ", "")
-			print(" ") -- Clear command area
+			print(" ")
 			target_input = vim.trim(target_input or "")
 			if target_input == "" then
 				vim.notify("Relation addition cancelled.", vim.log.levels.INFO)
 				return
 			end
 			target_name = target_input
-		elseif info.type == "clipboard" then
-			target_name = info.value
-		elseif info.type == "memo" then
+		else
 			target_name = info.value
 		end
 
-		if not target_name:match("^memos/") then
-			target_name = "memos/" .. target_name
-		end
-
-		if match_memo_id_or_name(memo, target_name) then
-			vim.notify("Cannot create a relation to the same memo.", vim.log.levels.ERROR)
-			return
-		end
-
-		local relations = {}
-		local exists = false
-		if type(memo.relations) == "table" then
-			for _, r in ipairs(memo.relations) do
-				local m_name = get_name_from_relation_field(r.memo or r.memoName)
-				local r_name = get_name_from_relation_field(r.relatedMemo or r.related_memo or r.relatedMemoName)
-				if m_name ~= "" and r_name ~= "" then
-					table.insert(relations, {
-						memo = { name = m_name },
-						relatedMemo = { name = r_name },
-						type = r.type or "REFERENCE"
-					})
-					if m_name == memo.name and r_name == target_name then
-						exists = true
-					end
-				end
-			end
-		end
-
-		if exists then
-			vim.notify("Relation already exists.", vim.log.levels.INFO)
-			return
-		end
-
-		local new_relation = {
-			memo = { name = memo.name },
-			relatedMemo = { name = target_name },
-			type = "REFERENCE"
-		}
-		table.insert(relations, new_relation)
-
-		api:set_memo_relations(memo.name, relations, function(success, err)
-			vim.schedule(function()
-				if success then
-					if not memo.relations then
-						memo.relations = {}
-					end
-					table.insert(memo.relations, new_relation)
-					self:render_cached_memos()
-					vim.notify("Relation added successfully.")
-					self:refresh_list_silently()
-				else
-					vim.notify("Failed to add relation: " .. tostring(err), vim.log.levels.ERROR)
-				end
-			end)
-		end)
+		self:add_multiple_relations(memo, { target_name })
 	end)
 end
 

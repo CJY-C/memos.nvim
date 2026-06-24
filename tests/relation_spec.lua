@@ -491,4 +491,225 @@ describe("memos.ui relations", function()
 		assert.are.same(1, #api_relations_arg)
 		assert.are.same("memos/99", api_relations_arg[1].relatedMemo.name)
 	end)
+
+	it("should support multi-selection linking using Telescope", function()
+		local api = require("memos.api")
+		local old_set_memo_relations = api.Client.set_memo_relations
+
+		ui.bind_list_keymaps(buf)
+		local s = ui.get_session(buf)
+
+		s.memos_cache = {
+			{
+				name = "memos/1",
+				id = 1,
+				content = "Memo 1",
+				relations = {}
+			},
+			{
+				name = "memos/2",
+				id = 2,
+				content = "Memo 2",
+				relations = {}
+			},
+			{
+				name = "memos/3",
+				id = 3,
+				content = "Memo 3",
+				relations = {}
+			}
+		}
+
+		vim.api.nvim_set_current_buf(buf)
+		s:render_cached_memos()
+		vim.wait(500, function()
+			return s.list_items[2] ~= nil
+		end)
+		vim.api.nvim_win_set_cursor(0, { 2, 0 }) -- Select Memo 1
+
+		local mock_selections = {
+			{ value = "memos/2 - Memo 2" },
+			{ value = "memos/3 - Memo 3" }
+		}
+
+		package.loaded["telescope"] = {}
+		package.loaded["telescope.pickers"] = {
+			new = function(t, opts)
+				return {
+					find = function()
+						local map_fn = function() end
+						opts.attach_mappings(1, map_fn)
+					end
+				}
+			end
+		}
+		package.loaded["telescope.finders"] = {
+			new_table = function(opts) return opts end
+		}
+		package.loaded["telescope.config"] = {
+			values = {
+				generic_sorter = function() return {} end
+			}
+		}
+		package.loaded["telescope.actions"] = {
+			select_default = {
+				replace = function(self_act, callback)
+					callback()
+				end
+			},
+			close = function(prompt_bufnr) end
+		}
+		package.loaded["telescope.actions.state"] = {
+			get_current_picker = function(prompt_bufnr)
+				return {
+					get_multi_selection = function()
+						return mock_selections
+					end
+				}
+			end,
+			get_selected_entry = function()
+				return nil
+			end
+		}
+
+		local set_relations_called = false
+		local api_relations_arg = nil
+		api.Client.set_memo_relations = function(self_api, memo_name, relations, callback)
+			set_relations_called = true
+			api_relations_arg = relations
+			callback(true, nil)
+		end
+
+		local refresh_called = false
+		s.refresh_list_silently = function()
+			refresh_called = true
+		end
+
+		s:add_relation()
+
+		vim.wait(500, function()
+			return refresh_called
+		end)
+
+		-- Cleanup
+		package.loaded["telescope"] = nil
+		package.loaded["telescope.pickers"] = nil
+		package.loaded["telescope.finders"] = nil
+		package.loaded["telescope.config"] = nil
+		package.loaded["telescope.actions"] = nil
+		package.loaded["telescope.actions.state"] = nil
+		api.Client.set_memo_relations = old_set_memo_relations
+
+		assert.is_true(set_relations_called)
+		assert.is_true(refresh_called)
+		assert.are.same(2, #api_relations_arg)
+		assert.are.same("memos/2", api_relations_arg[1].relatedMemo.name)
+		assert.are.same("memos/3", api_relations_arg[2].relatedMemo.name)
+	end)
+
+	it("should fallback to single selection in Telescope if no items are marked", function()
+		local api = require("memos.api")
+		local old_set_memo_relations = api.Client.set_memo_relations
+
+		ui.bind_list_keymaps(buf)
+		local s = ui.get_session(buf)
+
+		s.memos_cache = {
+			{
+				name = "memos/1",
+				id = 1,
+				content = "Memo 1",
+				relations = {}
+			},
+			{
+				name = "memos/2",
+				id = 2,
+				content = "Memo 2",
+				relations = {}
+			}
+		}
+
+		vim.api.nvim_set_current_buf(buf)
+		s:render_cached_memos()
+		vim.wait(500, function()
+			return s.list_items[2] ~= nil
+		end)
+		vim.api.nvim_win_set_cursor(0, { 2, 0 }) -- Select Memo 1
+
+		local mock_selections = {}
+		local mock_selected_entry = { value = "memos/2 - Memo 2" }
+
+		package.loaded["telescope"] = {}
+		package.loaded["telescope.pickers"] = {
+			new = function(t, opts)
+				return {
+					find = function()
+						local map_fn = function() end
+						opts.attach_mappings(1, map_fn)
+					end
+				}
+			end
+		}
+		package.loaded["telescope.finders"] = {
+			new_table = function(opts) return opts end
+		}
+		package.loaded["telescope.config"] = {
+			values = {
+				generic_sorter = function() return {} end
+			}
+		}
+		package.loaded["telescope.actions"] = {
+			select_default = {
+				replace = function(self_act, callback)
+					callback()
+				end
+			},
+			close = function(prompt_bufnr) end
+		}
+		package.loaded["telescope.actions.state"] = {
+			get_current_picker = function(prompt_bufnr)
+				return {
+					get_multi_selection = function()
+						return mock_selections
+					end
+				}
+			end,
+			get_selected_entry = function()
+				return mock_selected_entry
+			end
+		}
+
+		local set_relations_called = false
+		local api_relations_arg = nil
+		api.Client.set_memo_relations = function(self_api, memo_name, relations, callback)
+			set_relations_called = true
+			api_relations_arg = relations
+			callback(true, nil)
+		end
+
+		local refresh_called = false
+		s.refresh_list_silently = function()
+			refresh_called = true
+		end
+
+		s:add_relation()
+
+		vim.wait(500, function()
+			return refresh_called
+		end)
+
+		-- Cleanup
+		package.loaded["telescope"] = nil
+		package.loaded["telescope.pickers"] = nil
+		package.loaded["telescope.finders"] = nil
+		package.loaded["telescope.config"] = nil
+		package.loaded["telescope.actions"] = nil
+		package.loaded["telescope.actions.state"] = nil
+		api.Client.set_memo_relations = old_set_memo_relations
+
+		assert.is_true(set_relations_called)
+		assert.is_true(refresh_called)
+		assert.are.same(1, #api_relations_arg)
+		assert.are.same("memos/2", api_relations_arg[1].relatedMemo.name)
+	end)
 end)
