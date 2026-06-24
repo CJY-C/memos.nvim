@@ -169,5 +169,23 @@ To maintain visual feedback for network activity and ensure a consistent user ex
   - `kind = "memos_delete"` for deletion confirmation prompts.
   - `kind = "memos_unlink"` for unlinking confirmation prompts.
 
+---
+
+## 10. Telescope Custom Picker Troubleshooting (Previewer Freeze)
+
+- **Problem**: When implementing a custom Telescope picker with custom string entries (such as `[Use Clipboard: memos/3]` or `memos/1 - nixos setup`), Telescope will by default attempt to run its file/buffer previewers on the highlighted entry. Because these entries are menu labels rather than real file paths on the disk, Telescope gets stuck searching for files or running file operations in the background, causing Neovim to freeze or stutter during item navigation/selection.
+- **Guideline**: When writing custom Telescope pickers for non-file text selections, always explicitly disable the previewer by setting `previewer = false` in the picker options:
+  ```lua
+  pickers.new(opts, {
+      prompt_title = "Title",
+      finder = finders.new_table { ... },
+      sorter = conf.generic_sorter(opts),
+      previewer = false, -- Disables previewer to prevent lag/freezes
+      attach_mappings = function(prompt_bufnr, map)
+          ...
+      end
+  }):find()
+  ```
+
 
 
