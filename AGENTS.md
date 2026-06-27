@@ -63,6 +63,7 @@
 ## Commit & Pull Request Guidelines
 
 - After completing a specific task or checklist item, stage and commit the related changes before proceeding to the next task.
-- Follow the repository's existing commit style: short, imperative subjects such as `fix bugs` or `update readme`.
-- Prefer scoped prefixes when useful, such as `feat:` or `fix:`, and call out breaking changes explicitly.
+- Continue the repository's current commit style. Inspect recent history with `git log --oneline` before committing and match the dominant pattern.
+- Prefer short, imperative Conventional Commit-style subjects used in this repo, such as `fix: disable previewer in custom telescope picker to avoid lag`, `feat: support multi-select memo relation linking via Telescope`, `docs: document keymap disabling options`, and `test: add unit test for pagination history backward paging`.
+- Use an unprefixed short imperative subject only when recent adjacent commits for the same type of work use that style. Call out breaking changes explicitly.
 - Pull requests should include purpose, user-facing impact, manual test steps, automated test results, and documentation updates when behavior changes.
