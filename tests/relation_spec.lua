@@ -3,8 +3,13 @@ local ui = require("memos.ui")
 
 describe("memos.ui relations", function()
 	local buf
+	local original_getreg
 
 	before_each(function()
+		original_getreg = vim.fn.getreg
+		vim.fn.getreg = function()
+			return ""
+		end
 		buf = vim.api.nvim_create_buf(false, true)
 		memos.setup({
 			host = "http://localhost:5230",
@@ -19,6 +24,7 @@ describe("memos.ui relations", function()
 	end)
 
 	after_each(function()
+		vim.fn.getreg = original_getreg
 		if vim.api.nvim_buf_is_valid(buf) then
 			vim.api.nvim_buf_delete(buf, { force = true })
 		end
