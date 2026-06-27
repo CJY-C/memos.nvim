@@ -136,6 +136,7 @@ When parsing relations between memos (e.g. for outgoing and incoming link calcul
   	return ""
   end
   ```
+- **Relation Indexing**: The list session maintains an in-memory relation index for the active cache. Mark it dirty whenever `memos_cache` or memo relations are replaced, appended, removed, or locally mutated. Rendering should use indexed lookups instead of scanning all memos for every row.
 - **Display Width vs. Byte Length**:
   - When calculating alignment gaps for rendering right-aligned link indicators, always use `vim.fn.strdisplaywidth(str)` instead of `#str` (byte length). This ensures correct alignment columns when memo titles contain CJK or multi-byte characters.
   - When passing columns to Neovim highlighting APIs (e.g. `vim.api.nvim_buf_add_highlight`), continue using byte length `#str` since Neovim expects byte-indexed offsets.
@@ -186,6 +187,5 @@ To maintain visual feedback for network activity and ensure a consistent user ex
       end
   }):find()
   ```
-
 
 

@@ -9,11 +9,11 @@ This document details the network request counts, endpoints, caching strategies,
 | Action / Feature | User-Perceived Latency | Network Request Count | Request Method & Endpoint | Cache / Optimization Strategy |
 | :--- | :--- | :--- | :--- | :--- |
 | **Open List View (`:Memos`)** | Sub-second (< 10ms) | **1** (async background) | `GET /api/v1/memos` | **In-memory Stale Cache**: Instantly draws previous session's list. Fetches fresh data asynchronously. |
-| **Pagination (`j` / `,`)** | ~100ms - 200ms | **1** | `GET /api/v1/memos?pageToken=...` | **Page Token Stack**: Caches previous page tokens in memory for instant backwards paging. |
+| **Pagination (`.` / `,`)** | ~100ms - 200ms | **1** | `GET /api/v1/memos?pageToken=...` | **Page Token Stack**: Caches previous page tokens in memory for instant backwards paging. |
 | **Create Memo** | Instant (~2ms write) + Async (~100ms) | **1** | `POST /api/v1/memos` | Asynchronous Plenary `Job` execution. User can close/edit splits immediately. |
 | **Save/Update Memo** | Instant (~2ms write) + Async (~100ms) | **1** | `PATCH /api/v1/memos/{id}` | Updates local editor state instantly. Background API execution. |
 | **Pin / Unpin Memo (`p`)** | Instant (< 5ms) | **1** (async background) | `PATCH /api/v1/memos/{id}` | Updates local line display and toggle pin state instantly. Background update. |
-| **Archive / Delete (`d` / `D`)** | Instant (< 5ms) | **1** (async background) | `PATCH /api/v1/memos/{id}` (Archive)<br>`DELETE /api/v1/memos/{id}` (Delete) | Instantly deletes line from buffer and local cache. Asynchronous remote update. |
+| **Archive / Delete (`x` / `D`)** | Instant (< 5ms) | **1** (async background) | `PATCH /api/v1/memos/{id}` (Archive)<br>`DELETE /api/v1/memos/{id}` (Delete) | Instantly deletes line from buffer and local cache. Asynchronous remote update. |
 | **Link Relations (`c`)** | Instant (~5ms) + Async (~100ms) | **2** | 1x `PATCH /api/v1/memos/{id}/relations`<br>1x `GET /api/v1/memos` (async list refresh) | **Batched PATCH**: Sends all newly selected relations in one request. Refreshes list silently. |
 | **Unlink Relation (`D` on rel)** | Instant (~5ms) + Async (~100ms) | **2** | 1x `PATCH /api/v1/memos/{id}/relations`<br>1x `GET /api/v1/memos` (async list refresh) | Filters out relation local cache instantly. Updates server and refreshes in background. |
 | **Expand Relations (`<Tab>`)** | Instant (cached) or ~100ms (uncached) | **0 to N** (only for uncached related nodes) | `GET /api/v1/memos/{relatedMemoId}` | **Lazy On-Demand Fetching**: Queries memo details only on cache miss. Caches results immediately. |
@@ -41,4 +41,5 @@ This document details the network request counts, endpoints, caching strategies,
 - **Architectural Goal**: Avoid fetching detail payloads for all related nodes upfront.
 - **Mechanism**:
   - The main list response returns relation metadata containing owner/target names but not the full content or titles of the related memos.
+  - The list session builds an in-memory relation index from the current cache so link counts and expansion rows can be rendered without rescanning every memo for every row.
   - When a user presses `<Tab>` to expand links, the plugin lazy-loads the target memo's details *only if* it is not already present in the local cache. Once fetched, the information is persisted so subsequent expansions are instant and require zero requests.
