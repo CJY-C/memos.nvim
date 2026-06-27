@@ -59,6 +59,43 @@ describe("memos.ui relations", function()
 		assert.are.same("MemosIncomingLink", hls[2].hl_group)
 	end)
 
+	it("should index relation names across schemas without duplicate or nil id matches", function()
+		ui.bind_list_keymaps(buf)
+		local s = ui.get_session(buf)
+		assert.is_not_nil(s)
+
+		s.memos_cache = {
+			{
+				name = "memos/1",
+				content = "Parent memo",
+				relations = {
+					{ memo = { name = "memos/1" }, relatedMemo = { name = "memos/2" }, type = "REFERENCE" },
+					{ memo = "memos/1", relatedMemo = "memos/2", type = "REFERENCE" },
+				}
+			},
+			{
+				name = "memos/2",
+				content = "Child memo",
+				relations = {
+					{ memo = { name = "memos/3" }, relatedMemo = { name = "memos/2" }, type = "REFERENCE" },
+				}
+			},
+			{
+				name = "memos/3",
+				content = "Sibling memo",
+			}
+		}
+		s:mark_relation_index_dirty()
+
+		local outgoing = s:get_outgoing_relation_names(s.memos_cache[1])
+		local incoming = s:get_incoming_relation_names(s.memos_cache[2])
+		local formatted = s:format_memo_line(3, s.memos_cache[3])
+
+		assert.are.same({ "memos/2" }, outgoing)
+		assert.are.same({ "memos/1", "memos/3" }, incoming)
+		assert.is_nil(formatted:match("←"))
+	end)
+
 	it("should toggle outgoing and incoming expansion and render child items", function()
 		ui.bind_list_keymaps(buf)
 		local s = ui.get_session(buf)

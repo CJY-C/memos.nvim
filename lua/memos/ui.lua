@@ -64,6 +64,12 @@ function ListSession.new(bufnr)
 		expanded_outgoing = {},
 		expanded_incoming = {},
 		relation_details_cache = {},
+		relation_index_dirty = true,
+		relation_index = {
+			memo_by_name = {},
+			outgoing_by_name = {},
+			incoming_by_name = {},
+		},
 		in_flight_relations = {},
 		main_list_fetching = false,
 		page_history = {},
@@ -107,6 +113,7 @@ function ListSession:load_state_cache(state)
 	self.current_filter = c.filter
 	self.last_refresh_at = c.last_refresh_at
 	self.page_history = vim.deepcopy(c.page_history or {})
+	self.relation_index_dirty = true
 end
 
 local function has_active_fetches(self)
@@ -319,6 +326,97 @@ local function get_name_from_relation_field(field)
 	return ""
 end
 
+local function memo_aliases(memo)
+	local aliases = {}
+	local seen = {}
+	local function add(value)
+		if type(value) == "string" and value ~= "" and not seen[value] then
+			seen[value] = true
+			table.insert(aliases, value)
+		end
+	end
+	add(memo and memo.name)
+	if memo and memo.id ~= nil then
+		add(tostring(memo.id))
+	end
+	return aliases
+end
+
+local function add_relation_name(bucket, key, value)
+	if key == "" or value == "" then
+		return
+	end
+	local entry = bucket[key]
+	if not entry then
+		entry = { names = {}, seen = {} }
+		bucket[key] = entry
+	end
+	if not entry.seen[value] then
+		entry.seen[value] = true
+		table.insert(entry.names, value)
+	end
+end
+
+function ListSession:mark_relation_index_dirty()
+	self.relation_index_dirty = true
+end
+
+function ListSession:rebuild_relation_index()
+	local index = {
+		memo_by_name = {},
+		outgoing_by_name = {},
+		incoming_by_name = {},
+	}
+
+	for _, memo in ipairs(self.memos_cache) do
+		for _, alias in ipairs(memo_aliases(memo)) do
+			index.memo_by_name[alias] = memo
+		end
+	end
+
+	for _, memo in ipairs(self.memos_cache) do
+		if type(memo.relations) == "table" then
+			for _, rel in ipairs(memo.relations) do
+				local source = get_name_from_relation_field(rel.memo or rel.memoName)
+				local target = get_name_from_relation_field(rel.relatedMemo or rel.related_memo or rel.relatedMemoName)
+				if source ~= "" and target ~= "" then
+					add_relation_name(index.outgoing_by_name, source, target)
+					add_relation_name(index.incoming_by_name, target, source)
+				end
+			end
+		end
+	end
+
+	self.relation_index = index
+	self.relation_index_dirty = false
+end
+
+function ListSession:ensure_relation_index()
+	if self.relation_index_dirty or not self.relation_index then
+		self:rebuild_relation_index()
+	end
+	return self.relation_index
+end
+
+function ListSession:get_indexed_relation_names(direction, memo)
+	local index = self:ensure_relation_index()
+	local bucket = direction == "incoming" and index.incoming_by_name or index.outgoing_by_name
+	local names = {}
+	local seen = {}
+	for _, alias in ipairs(memo_aliases(memo)) do
+		local entry = bucket[alias]
+		if entry then
+			for _, name in ipairs(entry.names) do
+				if not seen[name] then
+					seen[name] = true
+					table.insert(names, name)
+				end
+			end
+		end
+	end
+	return names
+end
+
 local function display_date(memo)
 	local value = memo.update_time or memo.create_time or ""
 	if value == "" then
@@ -487,6 +585,35 @@ function ListSession:list_header_line()
 	return left .. " " .. right
 end
 
+function ListSession:collect_missing_relation_names()
+	local names = {}
+	local seen = {}
+	local function add_missing(target_name)
+		if target_name == "" or seen[target_name] then
+			return
+		end
+		if self:get_cached_relation_memo(target_name) or self.in_flight_relations[target_name] then
+			return
+		end
+		seen[target_name] = true
+		table.insert(names, target_name)
+	end
+
+	for _, memo in ipairs(self.memos_cache) do
+		if self.expanded_outgoing[memo.name] then
+			for _, target_name in ipairs(self:get_outgoing_relation_names(memo)) do
+				add_missing(target_name)
+			end
+		end
+		if self.expanded_incoming[memo.name] then
+			for _, target_name in ipairs(self:get_incoming_relation_names(memo)) do
+				add_missing(target_name)
+			end
+		end
+	end
+	return names
+end
+
 function ListSession:render_cached_memos()
 	vim.schedule(function()
 		self.list_items = {}
@@ -607,16 +734,9 @@ function ListSession:render_cached_memos()
 			end
 		end
 
-		-- Automatically check if any expanded memos have missing relation details
-		for _, memo in ipairs(self.memos_cache) do
-			if self.expanded_outgoing[memo.name] then
-				local outgoing_names = self:get_outgoing_relation_names(memo)
-				self:fetch_missing_relations(outgoing_names)
-			end
-			if self.expanded_incoming[memo.name] then
-				local incoming_names = self:get_incoming_relation_names(memo)
-				self:fetch_missing_relations(incoming_names)
-			end
+		local missing_relation_names = self:collect_missing_relation_names()
+		if #missing_relation_names > 0 then
+			self:fetch_missing_relations(missing_relation_names)
 		end
 	end)
 end
@@ -631,6 +751,7 @@ function ListSession:render_memos(data, append)
 	else
 		self.memos_cache = data.memos or {}
 	end
+	self:mark_relation_index_dirty()
 	self.current_page_token = data.next_page_token or ""
 	self:render_cached_memos()
 end
@@ -729,44 +850,8 @@ function ListSession:format_memo_line(index, memo)
 		line_without_indicator = string.format("%d. [%s] %s%s", index, date, badge_str, title)
 	end
 
-	-- 1. Compute counts
-	local outgoing_set = {}
-	local incoming_set = {}
-
-	if type(memo.relations) == "table" then
-		for _, rel in ipairs(memo.relations) do
-			local source = get_name_from_relation_field(rel.memo or rel.memoName)
-			local target = get_name_from_relation_field(rel.relatedMemo or rel.related_memo or rel.relatedMemoName)
-			if source ~= "" and target ~= "" then
-				if match_memo_id_or_name(memo, source) then
-					outgoing_set[target] = true
-				elseif match_memo_id_or_name(memo, target) then
-					incoming_set[source] = true
-				end
-			end
-		end
-	end
-
-	for _, other in ipairs(self.memos_cache) do
-		if type(other.relations) == "table" then
-			for _, rel in ipairs(other.relations) do
-				local source = get_name_from_relation_field(rel.memo or rel.memoName)
-				local target = get_name_from_relation_field(rel.relatedMemo or rel.related_memo or rel.relatedMemoName)
-				if source ~= "" and target ~= "" then
-					if match_memo_id_or_name(other, source) then
-						if match_memo_id_or_name(memo, target) then
-							incoming_set[source] = true
-						end
-					end
-				end
-			end
-		end
-	end
-
-	local outgoing_count = 0
-	for _ in pairs(outgoing_set) do outgoing_count = outgoing_count + 1 end
-	local incoming_count = 0
-	for _ in pairs(incoming_set) do incoming_count = incoming_count + 1 end
+	local outgoing_count = #self:get_outgoing_relation_names(memo)
+	local incoming_count = #self:get_incoming_relation_names(memo)
 
 	-- 2. Build indicator and highlights
 	local hls = {}
@@ -841,10 +926,9 @@ function ListSession:format_memo_line(index, memo)
 end
 
 function ListSession:get_cached_relation_memo(name)
-	for _, m in ipairs(self.memos_cache) do
-		if match_memo_id_or_name(m, name) then
-			return m
-		end
+	local index = self:ensure_relation_index()
+	if index.memo_by_name[name] then
+		return index.memo_by_name[name]
 	end
 	return self.relation_details_cache[name]
 end
@@ -900,57 +984,11 @@ function ListSession:format_outgoing_relation_line(parent_idx, rel_idx, rel_memo
 end
 
 function ListSession:get_outgoing_relation_names(memo)
-	local names = {}
-	local seen = {}
-	if type(memo.relations) == "table" then
-		for _, rel in ipairs(memo.relations) do
-			local source = get_name_from_relation_field(rel.memo or rel.memoName)
-			local target = get_name_from_relation_field(rel.relatedMemo or rel.related_memo or rel.relatedMemoName)
-			if source ~= "" and target ~= "" then
-				if match_memo_id_or_name(memo, source) and not seen[target] then
-					seen[target] = true
-					table.insert(names, target)
-				end
-			end
-		end
-	end
-	return names
+	return self:get_indexed_relation_names("outgoing", memo)
 end
 
 function ListSession:get_incoming_relation_names(memo)
-	local names = {}
-	local seen = {}
-	if type(memo.relations) == "table" then
-		for _, rel in ipairs(memo.relations) do
-			local source = get_name_from_relation_field(rel.memo or rel.memoName)
-			local target = get_name_from_relation_field(rel.relatedMemo or rel.related_memo or rel.relatedMemoName)
-			if source ~= "" and target ~= "" then
-				if match_memo_id_or_name(memo, target) and not seen[source] then
-					seen[source] = true
-					table.insert(names, source)
-				end
-			end
-		end
-	end
-	for _, other in ipairs(self.memos_cache) do
-		if type(other.relations) == "table" then
-			for _, rel in ipairs(other.relations) do
-				local source = get_name_from_relation_field(rel.memo or rel.memoName)
-				local target = get_name_from_relation_field(rel.relatedMemo or rel.related_memo or rel.relatedMemoName)
-				if source ~= "" and target ~= "" then
-					if match_memo_id_or_name(other, source) then
-						if match_memo_id_or_name(memo, target) then
-							if not seen[source] then
-								seen[source] = true
-								table.insert(names, source)
-							end
-						end
-					end
-				end
-			end
-		end
-	end
-	return names
+	return self:get_indexed_relation_names("incoming", memo)
 end
 
 function ListSession:toggle_expand_outgoing()
@@ -1010,18 +1048,7 @@ end
 
 function ListSession:fetch_missing_relations(names)
 	for _, name in ipairs(names) do
-		local found = false
-		for _, m in ipairs(self.memos_cache) do
-			if match_memo_id_or_name(m, name) then
-				found = true
-				break
-			end
-		end
-		if not found and self.relation_details_cache[name] then
-			found = true
-		end
-
-		if not found then
+		if not self:get_cached_relation_memo(name) then
 			if not self.in_flight_relations[name] then
 				self.in_flight_relations[name] = true
 				self:set_refresh_state("refreshing")
@@ -1082,6 +1109,7 @@ function ListSession:search_memos()
 		self.memos_cache = {}
 		self.list_items = {}
 		self.current_page_token = nil
+		self:mark_relation_index_dirty()
 		self.list_refresh_state = "idle"
 		self.last_refresh_error = nil
 		redraw_status()
@@ -1130,6 +1158,7 @@ function ListSession:load_prev_page()
 		table.remove(self.memos_cache)
 	end
 	self.current_page_token = prev.page_token
+	self:mark_relation_index_dirty()
 	self:set_refresh_state("idle")
 	self:render_cached_memos()
 	vim.notify("Returned to previous page view.")
@@ -1348,6 +1377,7 @@ function ListSession:remove_memo_from_cache(memo_name)
 	for idx, m in ipairs(self.memos_cache) do
 		if m.name == memo_name then
 			table.remove(self.memos_cache, idx)
+			self:mark_relation_index_dirty()
 			break
 		end
 	end
@@ -1461,6 +1491,7 @@ function ListSession:add_multiple_relations(memo, target_names)
 				for _, new_rel in ipairs(new_relations_to_add) do
 					table.insert(memo.relations, new_rel)
 				end
+				self:mark_relation_index_dirty()
 				self:render_cached_memos()
 				if added_count == 1 then
 					vim.notify("Relation added successfully.")
@@ -1796,6 +1827,7 @@ function ListSession:delete_selected_relation(item)
 					for _, r in ipairs(new_relations) do
 						table.insert(source_memo.relations, r)
 					end
+					self:mark_relation_index_dirty()
 					self:render_cached_memos()
 					vim.notify("Relation unlinked.")
 					self:refresh_list_silently()
