@@ -1,43 +1,68 @@
 # Repository Guidelines
 
-## Project Structure & Module Organization
+## Project Structure
 
-- `plugin/memos.lua`: Neovim entrypoint that defines `:Memos` and `:MemosCreate` commands and startup keymap wiring.
+- `plugin/memos.lua`: Neovim entrypoint for user commands such as `:Memos`, `:MemosCreate`, `:MemosTemplate`, and startup command wiring.
 - `lua/memos/`: core Lua modules:
-  - `init.lua` for setup/config loading and public API.
-  - `api.lua` for HTTP calls to the Memos server.
-  - `ui.lua` for list/create/edit buffer behavior and key handling.
-- `doc/memos.nvim.txt`: Vim help documentation.
-- `README.md`: user-facing install, config, and usage examples.
+  - `init.lua`: setup, configuration loading, credential loading, and public API entrypoints.
+  - `api.lua`: Memos `/api/v1` HTTP client using `plenary.job` and `curl`.
+  - `ui.lua`: list buffers, edit/create buffers, stale cache rendering, buffer-local keymaps, pagination, and UI flows.
+  - `template.lua`: template creation/editing helpers and `#type/template` handling.
+  - `latency.lua`: helpers used by latency scripts.
+- `docs/`: Vim help and project documentation, including `docs/memos.nvim.txt`, `docs/DEVELOPER.md`, `docs/FEATURES.md`, and performance notes.
+- `tests/`: Plenary test specs.
+- `scripts/`: smoke, latency, and cold-order test scripts.
+- `README.md`: user-facing install, configuration, commands, keymaps, and usage examples.
 
-## Build, Test, and Development Commands
+## Architecture Rules
 
-- No build step is required; this is a pure Lua Neovim plugin.
-- Quick smoke test:
-  - `./scripts/smoke-test.sh`
-  - Runs a headless load check and prints the manual commands to verify behavior.
-- Manual functional test (recommended):
-  1. Add this repo to your Neovim runtime/plugins.
-  2. Run `:Memos`, `:MemosCreate`, and `:MemosSave`.
-  3. Confirm list, create, edit, delete, and pagination behavior against a live Memos instance.
+- This branch supports the latest Memos `/api/v1` API shape. Do not reintroduce older API compatibility unless the behavior, schema, request cost, tests, and docs are explicit.
+- Keep the common paths request-light:
+  - list view: one list request for the first page,
+  - create memo: one create request,
+  - update memo: one patch request,
+  - pin/archive/delete/visibility/create-time changes: one write request plus only the documented background refresh when needed.
+- Preserve the in-memory stale cache model. When cached rows exist, render them immediately and fetch fresh data in the background. Do not hardcode `force_refresh = true` on return paths such as returning from edit/create buffers.
+- Keep list state caches separate for `NORMAL`, `ARCHIVED`, and `TEMPLATES`, including rows, page tokens, filters, and last refresh timestamps.
+- Network callbacks can complete after the user changes buffers or list states. Capture request state, schedule UI work, and avoid redrawing the active view from stale callbacks.
+- Relation fields from Memos may be plain strings or nested tables. Extract relation names defensively rather than comparing raw relation fields.
+- For display alignment, use `vim.fn.strdisplaywidth(str)` so CJK and multibyte text align correctly. For Neovim highlight columns, keep using byte offsets such as `#str`.
 
-## Coding Style & Naming Conventions
+## Development Style
 
-- Language: Lua (Neovim API style).
-- Prefer snake_case for config keys and Lua identifiers (for example, `page_size`, `auto_save`).
-- Match existing file style: concise functions, direct API calls, minimal abstraction.
-- Keep user-visible command names in PascalCase (`:MemosCreate`) and module paths lowercase (`memos.ui`).
-- Keep help/docs updates in sync when changing commands, keymaps, or config fields.
-- New feature: multiple Memos API versions are supported. Any changes to API calls, data models, or UI flows must account for each supported version and document any version-specific behavior.
+- Language: Lua using Neovim API conventions.
+- Prefer snake_case for Lua identifiers and config keys, for example `page_size` and `auto_save`.
+- Match the existing style: concise functions, direct API calls, minimal abstraction, and helpers only where they reduce real duplication or risk.
+- Keep public command names in PascalCase, for example `:MemosCreate`, and module paths lowercase, for example `memos.ui`.
+- `plenary.job` callbacks run outside normal Neovim UI context. Always wrap Neovim API calls, `vim.fn.*`, `vim.cmd`, UI updates, and callback-driven buffer work in `vim.schedule()`.
+- Inside scheduled callbacks, check buffer validity with `vim.api.nvim_buf_is_valid(buf)` before reading or writing buffer state.
+- Avoid comparing raw stringified IDs when values can be nil. Do not rely on `tostring(memo.id)` because nil becomes `"nil"`. Use project helpers such as `match_memo_id_or_name(memo, val)` and `is_same_memo(memo1, memo2)`.
+- Every `vim.ui.select(items, opts, on_choice)` call must include a descriptive `kind`, such as `memos_relation`, `memos_visibility`, `memos_delete`, or `memos_unlink`, so users can target prompt layouts.
+- If adding custom Telescope pickers for non-file entries, set `previewer = false` to avoid file previewer lag or freezes on menu labels.
 
 ## Testing Guidelines
 
-- There is no committed automated test suite yet; rely on headless load checks plus manual Neovim smoke testing.
-- When fixing regressions, include clear reproduction steps in the PR and verify both list and edit/create flows.
-- Test config precedence paths when relevant: defaults, saved config file, environment variables, and `setup()` overrides.
+- Run the standard smoke and unit test flow with:
+  - `./scripts/smoke-test.sh`
+- The smoke script performs a headless load check and runs the Plenary specs under `tests/`.
+- For focused tests, use the Plenary test harness against `tests/` from headless Neovim.
+- When testing nested asynchronous UI functions or multi-level `vim.schedule()` paths, use `vim.wait(timeout, condition_fn)` inside Plenary specs so the event loop can drain before assertions.
+- For user-facing behavior, manually verify list rendering, create, edit, save, delete, archive/restore, templates, relations, and pagination against a live Memos instance with `:Memos`, `:MemosCreate`, `:MemosTemplate`, and `:MemosSave`.
+- Test config precedence when relevant: explicit `setup()` values, `env_file`, and `MEMOS_HOST`/`MEMOS_TOKEN`.
+- For performance-sensitive changes, run the relevant latency scripts and document request-count changes:
+  - `./scripts/latency-test.sh`
+  - `./scripts/cold-order-by-test.sh`
+
+## Documentation Maintenance
+
+- After any code, command, keymap, config, schema, request-count, or UI behavior change, update all relevant docs.
+- Keep `README.md` and files under `docs/` consistent with implementation behavior.
+- Update `docs/memos.nvim.txt` when commands, keymaps, config fields, or user-visible workflows change.
+- Update developer or performance docs when architecture, caching, async behavior, request counts, or testing practices change.
 
 ## Commit & Pull Request Guidelines
 
-- Follow the repository’s existing commit style: short, imperative subjects (for example, `fix bugs`, `update readme`).
-- Prefer scoped prefixes when useful (`feat:`, `fix:`), and call out breaking changes explicitly.
-- PRs should include: purpose, user-facing impact, manual test steps, and doc updates (`README.md`/`doc/memos.nvim.txt`) when behavior changes.
+- After completing a specific task or checklist item, stage and commit the related changes before proceeding to the next task.
+- Follow the repository's existing commit style: short, imperative subjects such as `fix bugs` or `update readme`.
+- Prefer scoped prefixes when useful, such as `feat:` or `fix:`, and call out breaking changes explicitly.
+- Pull requests should include purpose, user-facing impact, manual test steps, automated test results, and documentation updates when behavior changes.
