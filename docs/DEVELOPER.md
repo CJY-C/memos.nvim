@@ -13,6 +13,7 @@ The plugin is structured into distinct modules with minimal abstraction:
 - **`lua/memos/ui.lua`**: Public UI API and list orchestration, including list sessions, cache updates, list keymaps, and command wrappers.
 - **`lua/memos/ui/buffers.lua`**: Internal edit-buffer lifecycle, memo/template save dispatch, auto-save checks, and return-to-list behavior.
 - **`lua/memos/ui/list_flow.lua`**: Internal list request/cache flow for fetching, search, pagination, state cache switching, and stale-cache safety.
+- **`lua/memos/ui/list_window.lua`**: Internal list buffer and window orchestration, including float list windows, list focusing, toggling, and quitting.
 - **`lua/memos/ui/memo_actions.lua`**: Internal ordinary memo workflows for pin, archive/restore, delete, visibility, and create time edits.
 - **`lua/memos/ui/relation_actions.lua`**: Internal relation action workflows for adding, selecting, and unlinking memo relations.
 - **`lua/memos/ui/render.lua`**: Internal list rendering helpers that build lines, list item metadata, highlights, and missing relation fetch targets.

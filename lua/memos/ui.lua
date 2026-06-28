@@ -1,6 +1,7 @@
 local api = require("memos.api").new(function() return require("memos").config end)
 local buffer_utils = require("memos.ui.buffers")
 local list_flow = require("memos.ui.list_flow")
+local list_window = require("memos.ui.list_window")
 local memo_actions = require("memos.ui.memo_actions")
 local relation_actions = require("memos.ui.relation_actions")
 local render_utils = require("memos.ui.render")
@@ -107,106 +108,49 @@ function ListSession:mark_refresh_success()
 	self:set_refresh_state("idle")
 end
 
+local function list_window_context()
+	return {
+		config = config,
+		sessions = sessions,
+		new_session = ListSession.new,
+		get_list_buf = function()
+			return list_buf
+		end,
+		set_list_buf = function(buf)
+			list_buf = buf
+		end,
+		get_last_float_buf = function()
+			return last_float_buf
+		end,
+		set_last_float_buf = function(buf)
+			last_float_buf = buf
+		end,
+		redraw_status = redraw_status,
+	}
+end
+
 local function is_float_window(win)
-	local cfg = vim.api.nvim_win_get_config(win)
-	return cfg and cfg.relative and cfg.relative ~= ""
+	return list_window.is_float_window(win)
 end
 
 local function find_memos_float_window()
-	for _, win in ipairs(vim.api.nvim_list_wins()) do
-		local ok, value = pcall(vim.api.nvim_win_get_var, win, "memos_window")
-		if ok and value == true and vim.api.nvim_win_is_valid(win) then
-			return win
-		end
-	end
-	return nil
+	return list_window.find_memos_float_window()
 end
 
 local function create_float_window(buf)
-	local width = math.floor(vim.o.columns * (config.window.width or 0.85))
-	local height = math.floor(vim.o.lines * (config.window.height or 0.85))
-	local row = math.floor((vim.o.lines - height) / 2)
-	local col = math.floor((vim.o.columns - width) / 2)
-
-	local win = vim.api.nvim_open_win(buf, true, {
-		relative = "editor",
-		row = row,
-		col = col,
-		width = width,
-		height = height,
-		style = "minimal",
-		border = config.window.border or "rounded",
-		title = " Memos ",
-		title_pos = "center",
-	})
-	vim.api.nvim_win_set_var(win, "memos_window", true)
-	last_float_buf = buf
-	return win
+	return list_window.create_float_window(list_window_context(), buf)
 end
 
 local function ensure_list_buf()
-	if list_buf and vim.api.nvim_buf_is_valid(list_buf) then
-		return list_buf
-	end
-	list_buf = vim.api.nvim_create_buf(false, true)
-	vim.api.nvim_buf_set_name(list_buf, "MemosList")
-	vim.bo[list_buf].buftype = "nofile"
-	vim.bo[list_buf].bufhidden = "hide"
-	vim.bo[list_buf].buflisted = false
-	vim.bo[list_buf].filetype = "memos_list"
-	vim.bo[list_buf].modifiable = false
-	vim.bo[list_buf].swapfile = false
-
-	sessions[list_buf] = ListSession.new(list_buf)
-
-	vim.api.nvim_create_autocmd("BufEnter", {
-		buffer = list_buf,
-		callback = function()
-			local s = sessions[list_buf]
-			if s then
-				s:bind_list_keymaps()
-			end
-		end,
-	})
-	return list_buf
+	return list_window.ensure_list_buf(list_window_context())
 end
 
 local function focus_list_buf()
-	local buf = ensure_list_buf()
-	local win = vim.fn.bufwinid(buf)
-	if win ~= -1 then
-		vim.api.nvim_set_current_win(win)
-	else
-		if config.window and config.window.enable_float then
-			local float_win = find_memos_float_window()
-			if float_win then
-				vim.api.nvim_set_current_win(float_win)
-				vim.api.nvim_set_current_buf(buf)
-			else
-				create_float_window(buf)
-			end
-		else
-			vim.api.nvim_set_current_buf(buf)
-		end
-	end
-
-	local active_win = vim.fn.bufwinid(buf)
-	if active_win ~= -1 then
-		vim.wo[active_win].wrap = false
-		vim.wo[active_win].number = false
-		vim.wo[active_win].relativenumber = false
-		vim.wo[active_win].signcolumn = "no"
-	end
+	return list_window.focus_list_buf(list_window_context())
 end
 
 local function count_normal_windows()
-	local count = 0
-	for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
-		if vim.api.nvim_win_is_valid(win) and not is_float_window(win) then
-			count = count + 1
-		end
-	end
-	return count
+	return list_window.count_normal_windows()
 end
 
 function ListSession:set_list_lines(lines)
@@ -607,26 +551,7 @@ function ListSession:fetch_missing_relations(names)
 end
 
 function M.show_memos_list(opts)
-	opts = opts or {}
-	local buf = ensure_list_buf()
-	local s = sessions[buf]
-	if not s then
-		return
-	end
-
-	focus_list_buf()
-	if #s.memos_cache == 0 or opts.force_refresh then
-		s:set_refresh_state("refreshing")
-		local loading_text = "Loading " .. s.current_list_state:lower() .. "..."
-		s:set_list_lines({ loading_text })
-		s:fetch_memos({ append = false })
-	else
-		s:set_refresh_state("refreshing")
-		s:render_cached_memos()
-		s:fetch_memos({ append = false })
-	end
-
-	s:bind_list_keymaps()
+	return list_window.show_memos_list(list_window_context(), opts)
 end
 
 function ListSession:search_memos()
@@ -660,37 +585,11 @@ function M.toggle_archive_view()
 end
 
 function M.toggle_memos_list()
-	if config.window and config.window.enable_float then
-		local existing = find_memos_float_window()
-		if existing then
-			pcall(vim.api.nvim_win_close, existing, true)
-			return
-		end
-		if last_float_buf and vim.api.nvim_buf_is_valid(last_float_buf) then
-			create_float_window(last_float_buf)
-			M.show_memos_list()
-			return
-		end
-	end
-	M.show_memos_list()
+	return list_window.toggle_memos_list(list_window_context())
 end
 
 function M.quit_memos_list()
-	local current_win = vim.api.nvim_get_current_win()
-	local current_buf = vim.api.nvim_get_current_buf()
-	local ok, is_memos_window = pcall(vim.api.nvim_win_get_var, current_win, "memos_window")
-	if ok and is_memos_window == true then
-		pcall(vim.api.nvim_win_close, current_win, true)
-		return
-	end
-	if count_normal_windows() > 1 then
-		pcall(vim.api.nvim_win_close, current_win, true)
-		return
-	end
-	if current_buf == list_buf then
-		local new_buf = vim.api.nvim_create_buf(true, false)
-		vim.api.nvim_win_set_buf(0, new_buf)
-	end
+	return list_window.quit_memos_list(list_window_context())
 end
 
 function M.load_next_page()
@@ -1037,15 +936,7 @@ function M.refresh_list_command()
 end
 
 function M.show_templates_list()
-	local buf = ensure_list_buf()
-	local s = sessions[buf]
-	if s then
-		s:save_current_state_cache()
-		s:load_state_cache("TEMPLATES")
-	end
-	redraw_status()
-	focus_list_buf()
-	M.show_memos_list()
+	return list_window.show_templates_list(list_window_context())
 end
 
 function M.get_session(bufnr)

@@ -33,6 +33,9 @@ changes do not reopen solved problems.
 - **List flow extraction**: list fetch, search, pagination, state cache
   switching, and stale-cache callback handling live in
   `lua/memos/ui/list_flow.lua`.
+- **List window extraction**: list buffer creation, float window management,
+  list focusing, toggling, quitting, and template-list switching live in
+  `lua/memos/ui/list_window.lua`.
 
 ---
 
@@ -40,13 +43,13 @@ changes do not reopen solved problems.
 
 ### 1. `lua/memos/ui.lua` Module Size
 
-`ui.lua` still owns list sessions, window/buffer orchestration, statusline
-state, and public command wrappers.
+`ui.lua` still owns list sessions, statusline state, and public command
+wrappers.
 
 - **Risk**: changes in one UI area can accidentally affect unrelated behavior.
 - **Suggested direction**: extract internal modules behind the existing
-  `require("memos.ui")` public API. The next practical boundary is window/list
-  buffer orchestration or statusline helpers.
+  `require("memos.ui")` public API. The next practical boundary is statusline
+  helpers.
 
 ### 2. Template Creation Request Count
 

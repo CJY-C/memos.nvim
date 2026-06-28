@@ -4,6 +4,15 @@ local ui = require("memos.ui")
 describe("memos.ui ListSession encapsulation", function()
 	local buf1, buf2
 
+	local function close_memos_floats()
+		for _, win in ipairs(vim.api.nvim_list_wins()) do
+			local ok, value = pcall(vim.api.nvim_win_get_var, win, "memos_window")
+			if ok and value == true and vim.api.nvim_win_is_valid(win) then
+				pcall(vim.api.nvim_win_close, win, true)
+			end
+		end
+	end
+
 	before_each(function()
 		buf1 = vim.api.nvim_create_buf(false, true)
 		buf2 = vim.api.nvim_create_buf(false, true)
@@ -14,6 +23,7 @@ describe("memos.ui ListSession encapsulation", function()
 	end)
 
 	after_each(function()
+		close_memos_floats()
 		if vim.api.nvim_buf_is_valid(buf1) then
 			vim.api.nvim_buf_delete(buf1, { force = true })
 		end
@@ -282,5 +292,196 @@ describe("memos.ui ListSession encapsulation", function()
 		assert.are.same("", s.current_filter)
 		assert.is_nil(list_opts.page_token)
 		assert.are.same("", list_opts.filter)
+	end)
+
+	it("should create the MemosList buffer and bind list keymaps on force refresh", function()
+		local api_mod = require("memos.api")
+		local original_list_memos = api_mod.Client.list_memos
+		local list_called = false
+
+		api_mod.Client.list_memos = function(self_api, opts, callback)
+			list_called = true
+			callback({
+				memos = {
+					{ name = "memos/1", content = "one" },
+				},
+				next_page_token = "",
+			}, nil)
+		end
+
+		ui.show_memos_list({ force_refresh = true })
+
+		local list_buf = vim.api.nvim_get_current_buf()
+		local s = ui.get_session(list_buf)
+		vim.wait(1000, function()
+			return list_called and s and #s.memos_cache == 1
+		end)
+
+		api_mod.Client.list_memos = original_list_memos
+
+		assert.are.same("MemosList", vim.api.nvim_buf_get_name(list_buf):match("MemosList$"))
+		assert.is_not_nil(s)
+		assert.is_true(list_called)
+		local maps = vim.api.nvim_buf_get_keymap(list_buf, "n")
+		local has_quit = false
+		for _, map in ipairs(maps) do
+			if map.lhs == "q" then
+				has_quit = true
+			end
+		end
+		assert.is_true(has_quit)
+	end)
+
+	it("should render stale cache before background list refresh", function()
+		local api_mod = require("memos.api")
+		local original_list_memos = api_mod.Client.list_memos
+
+		api_mod.Client.list_memos = function(self_api, opts, callback)
+			callback({
+				memos = {
+					{ name = "memos/1", content = "one" },
+				},
+				next_page_token = "",
+			}, nil)
+		end
+
+		ui.show_memos_list({ force_refresh = true })
+		local s = ui.get_session(vim.api.nvim_get_current_buf())
+		vim.wait(1000, function()
+			return s and #s.memos_cache == 1
+		end)
+
+		local render_called = false
+		local fetch_called = false
+		s.render_cached_memos = function()
+			render_called = true
+		end
+		api_mod.Client.list_memos = function(self_api, opts, callback)
+			fetch_called = true
+			callback({
+				memos = {
+					{ name = "memos/2", content = "two" },
+				},
+				next_page_token = "",
+			}, nil)
+		end
+
+		ui.show_memos_list()
+
+		vim.wait(1000, function()
+			return render_called and fetch_called
+		end)
+
+		api_mod.Client.list_memos = original_list_memos
+
+		assert.is_true(render_called)
+		assert.is_true(fetch_called)
+	end)
+
+	it("should close an existing memos float when toggling the list", function()
+		memos.setup({
+			window = {
+				enable_float = true,
+				width = 0.5,
+				height = 0.5,
+				border = "rounded",
+			},
+		})
+		vim.api.nvim_set_current_buf(buf1)
+
+		local api_mod = require("memos.api")
+		local original_list_memos = api_mod.Client.list_memos
+		api_mod.Client.list_memos = function(self_api, opts, callback)
+			callback({ memos = {}, next_page_token = "" }, nil)
+		end
+
+		ui.show_memos_list({ force_refresh = true })
+		local float_win = vim.api.nvim_get_current_win()
+		local ok, value = pcall(vim.api.nvim_win_get_var, float_win, "memos_window")
+		assert.is_true(ok)
+		assert.is_true(value)
+
+		ui.toggle_memos_list()
+
+		api_mod.Client.list_memos = original_list_memos
+
+		assert.is_false(vim.api.nvim_win_is_valid(float_win))
+	end)
+
+	it("should close the current memos float when quitting the list", function()
+		memos.setup({
+			window = {
+				enable_float = true,
+				width = 0.5,
+				height = 0.5,
+				border = "rounded",
+			},
+		})
+		vim.api.nvim_set_current_buf(buf1)
+
+		local api_mod = require("memos.api")
+		local original_list_memos = api_mod.Client.list_memos
+		api_mod.Client.list_memos = function(self_api, opts, callback)
+			callback({ memos = {}, next_page_token = "" }, nil)
+		end
+
+		ui.show_memos_list({ force_refresh = true })
+		local float_win = vim.api.nvim_get_current_win()
+
+		ui.quit_memos_list()
+
+		api_mod.Client.list_memos = original_list_memos
+
+		assert.is_false(vim.api.nvim_win_is_valid(float_win))
+	end)
+
+	it("should switch to templates view while preserving the previous state cache", function()
+		memos.setup({
+			window = {
+				enable_float = false,
+			},
+		})
+		local api_mod = require("memos.api")
+		local original_list_memos = api_mod.Client.list_memos
+
+		api_mod.Client.list_memos = function(self_api, opts, callback)
+			callback({
+				memos = {
+					{ name = "memos/initial", content = "initial" },
+				},
+				next_page_token = "",
+			}, nil)
+		end
+
+		ui.show_memos_list({ force_refresh = true })
+		local s = ui.get_session(vim.api.nvim_get_current_buf())
+		vim.wait(1000, function()
+			return s and s.memos_cache[1] and s.memos_cache[1].name == "memos/initial"
+		end)
+
+		s.current_list_state = "NORMAL"
+		s.memos_cache = { { name = "memos/normal", content = "normal" } }
+		s.current_page_token = "normal-token"
+
+		api_mod.Client.list_memos = function(self_api, opts, callback)
+			callback({
+				memos = {
+					{ name = "memos/template", content = "#type/template\nTemplate" },
+				},
+				next_page_token = "",
+			}, nil)
+		end
+
+		ui.show_templates_list()
+
+		vim.wait(1000, function()
+			return s.current_list_state == "TEMPLATES" and s.memos_cache[1] and s.memos_cache[1].name == "memos/template"
+		end)
+
+		api_mod.Client.list_memos = original_list_memos
+
+		assert.are.same("memos/normal", s.caches.NORMAL.memos[1].name)
+		assert.are.same("normal-token", s.caches.NORMAL.page_token)
+		assert.are.same("TEMPLATES", s.current_list_state)
 	end)
 end)
