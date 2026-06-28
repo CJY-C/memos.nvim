@@ -4,14 +4,6 @@ local M = {}
 
 local TEMPLATE_TAG = "#type/template"
 
-local function is_non_empty(str)
-	return type(str) == "string" and str ~= ""
-end
-
-local function now_iso()
-	return os.date("!%Y-%m-%dT%H:%M:%SZ")
-end
-
 function M.strip_template_tag(content)
 	local text = tostring(content or "")
 	text = text:gsub("^%s*#type/template%s*\n?", "")
@@ -59,12 +51,12 @@ end
 
 function M.template_create()
 	vim.schedule(function()
-		vim.cmd("enew")
-		local bufnr = vim.api.nvim_get_current_buf()
+		local ui = require("memos.ui")
+		local bufnr = ui.open_edit_buffer("", "enew")
 		vim.b[bufnr].memos_template_mode = true
 		vim.b[bufnr].memos_template_name = nil
 		pcall(vim.api.nvim_buf_set_name, bufnr, "memos/template_new.md")
-		require("memos.ui").setup_buffer_for_editing()
+		ui.setup_buffer_for_editing()
 	end)
 end
 

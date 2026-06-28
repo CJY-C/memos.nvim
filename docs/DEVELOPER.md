@@ -10,7 +10,8 @@ The plugin is structured into distinct modules with minimal abstraction:
 - **`plugin/memos.lua`**: Neovim command entrypoint (`:Memos`, `:MemosCreate`, `:MemosTemplate`) and keymap wiring.
 - **`lua/memos/init.lua`**: Plugin setup, configuration loading, credential loading (Nix/Sops env files and process env), and public API entrypoints.
 - **`lua/memos/api.lua`**: Server-side communication wrapper using `plenary.job` executing `curl`. Returns normalized data schemas.
-- **`lua/memos/ui.lua`**: Managing list buffer states, rendering caches, managing buffer-local keymaps, and buffer composition layouts.
+- **`lua/memos/ui.lua`**: Public UI API and list orchestration, including list sessions, rendering caches, list keymaps, and command wrappers.
+- **`lua/memos/ui/buffers.lua`**: Internal edit-buffer lifecycle, memo/template save dispatch, auto-save checks, and return-to-list behavior.
 - **`lua/memos/ui/relations.lua`**: Internal relation parsing, safe memo identity checks, and relation index helpers used by the list renderer.
 - **`lua/memos/template.lua`**: Templates composition helper (e.g. tag stripping, ensuring `#type/template` exists on save, archiving templates).
 
@@ -188,4 +189,3 @@ To maintain visual feedback for network activity and ensure a consistent user ex
       end
   }):find()
   ```
-

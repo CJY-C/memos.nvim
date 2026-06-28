@@ -20,6 +20,9 @@ changes do not reopen solved problems.
   check and Plenary specs from `tests/`.
 - **Relation render indexing**: list rendering uses an in-memory relation index
   instead of scanning all cached memos for every rendered row.
+- **Edit buffer/save extraction**: edit-buffer opening, setup, auto-save, save
+  dispatch, and return-to-list behavior live in `lua/memos/ui/buffers.lua`
+  behind the existing `require("memos.ui")` public wrappers.
 
 ---
 
@@ -27,13 +30,13 @@ changes do not reopen solved problems.
 
 ### 1. `lua/memos/ui.lua` Module Size
 
-`ui.lua` still owns list sessions, rendering, relation actions, buffer editing,
-save/create dispatch, statusline state, and public command wrappers.
+`ui.lua` still owns list sessions, rendering, relation actions, statusline
+state, and public command wrappers.
 
 - **Risk**: changes in one UI area can accidentally affect unrelated behavior.
 - **Suggested direction**: extract internal modules behind the existing
-  `require("memos.ui")` public API. Good first boundaries are relation helpers,
-  rendering helpers, and edit-buffer/save helpers.
+  `require("memos.ui")` public API. Good next boundaries are rendering helpers
+  and relation action workflows.
 
 ### 2. Template Creation Request Count
 
