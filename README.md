@@ -331,4 +331,4 @@ Smoke check:
 ./scripts/smoke-test.sh
 ```
 
-The core list path should issue one list request for the first page. Features that require extra requests are tracked in [feature.md](feature.md).
+The core list path should issue one list request for the first page. Features that require extra requests are tracked in [docs/FEATURES.md](docs/FEATURES.md).
