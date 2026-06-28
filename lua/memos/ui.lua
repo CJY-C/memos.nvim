@@ -1,4 +1,5 @@
 local api = require("memos.api").new(function() return require("memos").config end)
+local relation_utils = require("memos.ui.relations")
 local config = setmetatable({}, {
 	__index = function(_, k)
 		return require("memos").config[k]
@@ -10,32 +11,6 @@ local M = {}
 local list_buf = nil
 local last_float_buf = nil
 local sessions = {}
-
-local function match_memo_id_or_name(memo, val)
-	if not memo or not val or val == "" then
-		return false
-	end
-	if memo.name == val then
-		return true
-	end
-	if memo.id and tostring(memo.id) == val then
-		return true
-	end
-	return false
-end
-
-local function is_same_memo(memo1, memo2)
-	if not memo1 or not memo2 then
-		return false
-	end
-	if memo1.name == memo2.name and memo1.name ~= "" then
-		return true
-	end
-	if memo1.id and memo2.id and tostring(memo1.id) == tostring(memo2.id) then
-		return true
-	end
-	return false
-end
 
 local ns_id = vim.api.nvim_create_namespace("memos_list_highlights")
 
@@ -65,11 +40,7 @@ function ListSession.new(bufnr)
 		expanded_incoming = {},
 		relation_details_cache = {},
 		relation_index_dirty = true,
-		relation_index = {
-			memo_by_name = {},
-			outgoing_by_name = {},
-			incoming_by_name = {},
-		},
+		relation_index = relation_utils.empty_index(),
 		in_flight_relations = {},
 		main_list_fetching = false,
 		page_history = {},
@@ -317,77 +288,12 @@ function M.build_search_filter(input)
 	return table.concat(parts, " && ")
 end
 
-local function get_name_from_relation_field(field)
-	if type(field) == "string" then
-		return field
-	elseif type(field) == "table" then
-		return field.name or field.memo_name or ""
-	end
-	return ""
-end
-
-local function memo_aliases(memo)
-	local aliases = {}
-	local seen = {}
-	local function add(value)
-		if type(value) == "string" and value ~= "" and not seen[value] then
-			seen[value] = true
-			table.insert(aliases, value)
-		end
-	end
-	add(memo and memo.name)
-	if memo and memo.id ~= nil then
-		add(tostring(memo.id))
-	end
-	return aliases
-end
-
-local function add_relation_name(bucket, key, value)
-	if key == "" or value == "" then
-		return
-	end
-	local entry = bucket[key]
-	if not entry then
-		entry = { names = {}, seen = {} }
-		bucket[key] = entry
-	end
-	if not entry.seen[value] then
-		entry.seen[value] = true
-		table.insert(entry.names, value)
-	end
-end
-
 function ListSession:mark_relation_index_dirty()
 	self.relation_index_dirty = true
 end
 
 function ListSession:rebuild_relation_index()
-	local index = {
-		memo_by_name = {},
-		outgoing_by_name = {},
-		incoming_by_name = {},
-	}
-
-	for _, memo in ipairs(self.memos_cache) do
-		for _, alias in ipairs(memo_aliases(memo)) do
-			index.memo_by_name[alias] = memo
-		end
-	end
-
-	for _, memo in ipairs(self.memos_cache) do
-		if type(memo.relations) == "table" then
-			for _, rel in ipairs(memo.relations) do
-				local source = get_name_from_relation_field(rel.memo or rel.memoName)
-				local target = get_name_from_relation_field(rel.relatedMemo or rel.related_memo or rel.relatedMemoName)
-				if source ~= "" and target ~= "" then
-					add_relation_name(index.outgoing_by_name, source, target)
-					add_relation_name(index.incoming_by_name, target, source)
-				end
-			end
-		end
-	end
-
-	self.relation_index = index
+	self.relation_index = relation_utils.build_index(self.memos_cache)
 	self.relation_index_dirty = false
 end
 
@@ -400,21 +306,7 @@ end
 
 function ListSession:get_indexed_relation_names(direction, memo)
 	local index = self:ensure_relation_index()
-	local bucket = direction == "incoming" and index.incoming_by_name or index.outgoing_by_name
-	local names = {}
-	local seen = {}
-	for _, alias in ipairs(memo_aliases(memo)) do
-		local entry = bucket[alias]
-		if entry then
-			for _, name in ipairs(entry.names) do
-				if not seen[name] then
-					seen[name] = true
-					table.insert(names, name)
-				end
-			end
-		end
-	end
-	return names
+	return relation_utils.get_indexed_relation_names(index, direction, memo)
 end
 
 local function display_date(memo)
@@ -927,10 +819,7 @@ end
 
 function ListSession:get_cached_relation_memo(name)
 	local index = self:ensure_relation_index()
-	if index.memo_by_name[name] then
-		return index.memo_by_name[name]
-	end
-	return self.relation_details_cache[name]
+	return relation_utils.get_cached_relation_memo(index, self.relation_details_cache, name)
 end
 
 function ListSession:format_incoming_relation_line(parent_idx, rel_idx, rel_memo)
@@ -1425,8 +1314,8 @@ function ListSession:add_multiple_relations(memo, target_names)
 	local existing_targets = {}
 	if type(memo.relations) == "table" then
 		for _, r in ipairs(memo.relations) do
-			local m_name = get_name_from_relation_field(r.memo or r.memoName)
-			local r_name = get_name_from_relation_field(r.relatedMemo or r.related_memo or r.relatedMemoName)
+			local m_name = relation_utils.get_name_from_relation_field(r.memo or r.memoName)
+			local r_name = relation_utils.get_name_from_relation_field(r.relatedMemo or r.related_memo or r.relatedMemoName)
 			if m_name ~= "" and r_name ~= "" then
 				table.insert(relations, {
 					memo = { name = m_name },
@@ -1452,7 +1341,7 @@ function ListSession:add_multiple_relations(memo, target_names)
 				target_name = "memos/" .. target_name
 			end
 
-			if match_memo_id_or_name(memo, target_name) then
+			if relation_utils.match_memo_id_or_name(memo, target_name) then
 				self_link_attempt = true
 			elseif existing_targets[target_name] then
 				already_exists_count = already_exists_count + 1
@@ -1545,7 +1434,7 @@ function ListSession:add_relation()
 	end
 
 	for _, m in ipairs(self.memos_cache) do
-		if not is_same_memo(m, memo) then
+		if not relation_utils.is_same_memo(m, memo) then
 			local title = m.content:match("^([^\n]*)") or ""
 			title = vim.trim(title)
 			if title == "" then
@@ -1807,8 +1696,8 @@ function ListSession:delete_selected_relation(item)
 
 		local new_relations = {}
 		for _, r in ipairs(source_memo.relations) do
-			local m_name = get_name_from_relation_field(r.memo or r.memoName)
-			local r_name = get_name_from_relation_field(r.relatedMemo or r.related_memo or r.relatedMemoName)
+			local m_name = relation_utils.get_name_from_relation_field(r.memo or r.memoName)
+			local r_name = relation_utils.get_name_from_relation_field(r.relatedMemo or r.related_memo or r.relatedMemoName)
 			if m_name ~= "" and r_name ~= "" then
 				if not (m_name == source_memo_name and r_name == target_memo_name) then
 					table.insert(new_relations, {
