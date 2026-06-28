@@ -268,19 +268,15 @@ function Client:create_memo(content, callback)
 	end)
 end
 
-function Client:update_memo(memo_name, content, callback)
+function Client:patch_memo(memo_name, body, update_mask, callback)
 	local host = self:get_host()
-	local update_time = os.date("!%Y-%m-%dT%H:%M:%SZ")
-	local json_data = vim.json.encode({
-		name = memo_name,
-		content = content,
-		update_time = update_time,
-	})
+	local payload = vim.tbl_extend("force", { name = memo_name }, body or {})
+	local json_data = vim.json.encode(payload)
 
 	self:run_curl({
 		"-X",
 		"PATCH",
-		host .. "/api/v1/" .. memo_name .. "?updateMask=content,update_time",
+		host .. "/api/v1/" .. memo_name .. "?updateMask=" .. update_mask,
 		"-H",
 		"Content-Type: application/json",
 		"--data",
@@ -292,102 +288,38 @@ function Client:update_memo(memo_name, content, callback)
 		end
 		callback(true, nil, response)
 	end)
+end
+
+function Client:update_memo(memo_name, content, callback)
+	local update_time = os.date("!%Y-%m-%dT%H:%M:%SZ")
+	self:patch_memo(memo_name, {
+		content = content,
+		update_time = update_time,
+	}, "content,update_time", callback)
 end
 
 function Client:update_memo_pinned(memo_name, pinned, callback)
-	local host = self:get_host()
-	local json_data = vim.json.encode({
-		name = memo_name,
+	self:patch_memo(memo_name, {
 		pinned = pinned == true,
-	})
-
-	self:run_curl({
-		"-X",
-		"PATCH",
-		host .. "/api/v1/" .. memo_name .. "?updateMask=pinned",
-		"-H",
-		"Content-Type: application/json",
-		"--data",
-		json_data,
-	}, function(response)
-		if not response.ok then
-			callback(false, parse_api_error(response), response)
-			return
-		end
-		callback(true, nil, response)
-	end)
+	}, "pinned", callback)
 end
 
 function Client:update_memo_state(memo_name, state, callback)
-	local host = self:get_host()
-	local json_data = vim.json.encode({
-		name = memo_name,
+	self:patch_memo(memo_name, {
 		state = state,
-	})
-
-	self:run_curl({
-		"-X",
-		"PATCH",
-		host .. "/api/v1/" .. memo_name .. "?updateMask=state",
-		"-H",
-		"Content-Type: application/json",
-		"--data",
-		json_data,
-	}, function(response)
-		if not response.ok then
-			callback(false, parse_api_error(response), response)
-			return
-		end
-		callback(true, nil, response)
-	end)
+	}, "state", callback)
 end
 
 function Client:update_memo_visibility(memo_name, visibility, callback)
-	local host = self:get_host()
-	local json_data = vim.json.encode({
-		name = memo_name,
+	self:patch_memo(memo_name, {
 		visibility = visibility,
-	})
-
-	self:run_curl({
-		"-X",
-		"PATCH",
-		host .. "/api/v1/" .. memo_name .. "?updateMask=visibility",
-		"-H",
-		"Content-Type: application/json",
-		"--data",
-		json_data,
-	}, function(response)
-		if not response.ok then
-			callback(false, parse_api_error(response), response)
-			return
-		end
-		callback(true, nil, response)
-	end)
+	}, "visibility", callback)
 end
 
 function Client:update_memo_create_time(memo_name, create_time, callback)
-	local host = self:get_host()
-	local json_data = vim.json.encode({
-		name = memo_name,
+	self:patch_memo(memo_name, {
 		create_time = create_time,
-	})
-
-	self:run_curl({
-		"-X",
-		"PATCH",
-		host .. "/api/v1/" .. memo_name .. "?updateMask=create_time",
-		"-H",
-		"Content-Type: application/json",
-		"--data",
-		json_data,
-	}, function(response)
-		if not response.ok then
-			callback(false, parse_api_error(response), response)
-			return
-		end
-		callback(true, nil, response)
-	end)
+	}, "create_time", callback)
 end
 
 function Client:delete_memo(memo_name, callback)
