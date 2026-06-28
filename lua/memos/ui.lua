@@ -6,6 +6,7 @@ local list_window = require("memos.ui.list_window")
 local memo_actions = require("memos.ui.memo_actions")
 local relation_actions = require("memos.ui.relation_actions")
 local relation_expand = require("memos.ui.relation_expand")
+local render_apply = require("memos.ui.render_apply")
 local render_utils = require("memos.ui.render")
 local relation_utils = require("memos.ui.relations")
 local selection = require("memos.ui.selection")
@@ -21,8 +22,6 @@ local M = {}
 local list_buf = nil
 local last_float_buf = nil
 local sessions = {}
-
-local ns_id = vim.api.nvim_create_namespace("memos_list_highlights")
 
 vim.api.nvim_set_hl(0, "MemosOutgoingLink", { link = "Label", default = true })
 vim.api.nvim_set_hl(0, "MemosIncomingLink", { link = "Special", default = true })
@@ -135,12 +134,7 @@ local function count_normal_windows()
 end
 
 function ListSession:set_list_lines(lines)
-	local buf = self.buf
-	if buf and vim.api.nvim_buf_is_valid(buf) then
-		vim.bo[buf].modifiable = true
-		vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-		vim.bo[buf].modifiable = false
-	end
+	return render_apply.set_list_lines(self, lines)
 end
 
 local function first_line(content)
@@ -337,25 +331,7 @@ function ListSession:collect_missing_relation_names()
 end
 
 function ListSession:render_cached_memos()
-	vim.schedule(function()
-		local rendered = render_utils.build(self, config)
-		self.list_items = rendered.list_items
-		self:set_list_lines(rendered.lines)
-
-		-- Apply namespace highlights
-		if self.buf and vim.api.nvim_buf_is_valid(self.buf) then
-			vim.api.nvim_buf_clear_namespace(self.buf, ns_id, 0, -1)
-			for line_num, hls in pairs(rendered.line_hls) do
-				for _, hl in ipairs(hls) do
-					vim.api.nvim_buf_add_highlight(self.buf, ns_id, hl.hl_group, line_num - 1, hl.start_col, hl.end_col)
-				end
-			end
-		end
-
-		if #rendered.missing_relation_names > 0 then
-			self:fetch_missing_relations(rendered.missing_relation_names)
-		end
-	end)
+	return render_apply.render_cached_memos(self, config)
 end
 
 function ListSession:render_memos(data, append)

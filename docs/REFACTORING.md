@@ -28,6 +28,9 @@ changes do not reopen solved problems.
 - **List rendering extraction**: list line composition, item metadata,
   highlights, relation loading rows, and missing relation detection live in
   `lua/memos/ui/render.lua`.
+- **Render application extraction**: rendered list lines, item metadata,
+  highlights, and missing relation fetch triggers are applied to Neovim buffers
+  by `lua/memos/ui/render_apply.lua`.
 - **Relation action extraction**: add, multi-add, selection, and unlink
   workflows live in `lua/memos/ui/relation_actions.lua`.
 - **Relation expansion extraction**: outgoing/incoming expansion, collapse-all
@@ -58,7 +61,7 @@ changes do not reopen solved problems.
 - **Risk**: changes in one UI area can accidentally affect unrelated behavior.
 - **Suggested direction**: extract internal modules behind the existing
   `require("memos.ui")` public API. The next practical boundary is remaining
-  list-session methods that still proxy rendering and command coordination.
+  list-session methods that still proxy command coordination.
 
 ### 2. Template Creation Request Count
 

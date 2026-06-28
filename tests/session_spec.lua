@@ -166,6 +166,65 @@ describe("memos.ui ListSession encapsulation", function()
 		assert.are.same(vim.log.levels.INFO, notified.level)
 	end)
 
+	it("should render cached memos into buffer lines and list item metadata", function()
+		ui.bind_list_keymaps(buf1)
+		local s = ui.get_session(buf1)
+		s.memos_cache = {
+			{ name = "memos/1", content = "Rendered memo", update_time = "2026-06-21T10:00:00Z" },
+		}
+
+		s:render_cached_memos()
+
+		vim.wait(1000, function()
+			return s.list_items[2] ~= nil
+		end)
+
+		local lines = vim.api.nvim_buf_get_lines(buf1, 0, -1, false)
+		assert.are.same("View: NORMAL", lines[1])
+		assert.is_true(lines[2]:match("Rendered memo") ~= nil)
+		assert.are.same("memo", s.list_items[2].kind)
+		assert.are.same(1, s.list_items[2].index)
+	end)
+
+	it("should trigger missing relation fetches after rendering cached memos", function()
+		ui.bind_list_keymaps(buf1)
+		local s = ui.get_session(buf1)
+		s.memos_cache = {
+			{
+				name = "memos/1",
+				content = "Parent memo",
+				relations = {
+					{ memo = "memos/1", relatedMemo = "memos/2", type = "REFERENCE" },
+				},
+			},
+		}
+		s.expanded_outgoing["memos/1"] = true
+		s:mark_relation_index_dirty()
+
+		local fetched = nil
+		s.fetch_missing_relations = function(self_session, names)
+			fetched = names
+		end
+
+		s:render_cached_memos()
+
+		vim.wait(1000, function()
+			return fetched ~= nil
+		end)
+
+		assert.are.same({ "memos/2" }, fetched)
+	end)
+
+	it("should skip setting list lines when the buffer is invalid", function()
+		ui.bind_list_keymaps(buf1)
+		local s = ui.get_session(buf1)
+		vim.api.nvim_buf_delete(buf1, { force = true })
+
+		assert.has_no.errors(function()
+			s:set_list_lines({ "safe" })
+		end)
+	end)
+
 	it("should run show_memos_list and trigger api:list_memos successfully", function()
 		local list_called = false
 		local api_mod = require("memos.api")
