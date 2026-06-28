@@ -1,5 +1,6 @@
 local api = require("memos.api").new(function() return require("memos").config end)
 local buffer_utils = require("memos.ui.buffers")
+local keymap_utils = require("memos.ui.keymaps")
 local list_flow = require("memos.ui.list_flow")
 local list_window = require("memos.ui.list_window")
 local memo_actions = require("memos.ui.memo_actions")
@@ -252,18 +253,11 @@ local function build_memo_buffer_name(memo, content)
 	return "memos/" .. memo.name:gsub("^memos/", "") .. "/" .. vim.fn.strcharpart(clean_title, 0, 50) .. ".md"
 end
 
-local function set_keymap(buf, key, rhs)
-	if type(key) ~= "string" or key == "" then
-		return
-	end
-	vim.api.nvim_buf_set_keymap(buf, "n", key, rhs, { noremap = true, silent = true })
-end
-
 local function buffer_context()
 	return {
 		api = api,
 		config = config,
-		set_keymap = set_keymap,
+		set_keymap = keymap_utils.set_keymap,
 		is_float_window = is_float_window,
 		find_memos_float_window = find_memos_float_window,
 		create_float_window = create_float_window,
@@ -301,53 +295,7 @@ local function list_flow_context()
 end
 
 function ListSession:bind_list_keymaps()
-	local buf = self.buf
-	local keys = config.keymaps.list
-
-	-- Clear previously bound keys to prevent ghost mappings
-	if vim.b[buf].memos_bound_keys then
-		for _, key in ipairs(vim.b[buf].memos_bound_keys) do
-			pcall(vim.api.nvim_buf_del_keymap, buf, "n", key)
-		end
-	end
-
-	local bound = {}
-	local function set_map(key, lhs)
-		if type(key) == "string" and key ~= "" then
-			set_keymap(buf, key, lhs)
-			table.insert(bound, key)
-		end
-	end
-
-	set_map(keys.edit_memo, '<Cmd>lua require("memos.ui").edit_selected_memo()<CR>')
-	set_map("e", '<Cmd>lua require("memos.ui").edit_selected_memo()<CR>')
-	set_map(keys.edit_memo_split, '<Cmd>lua require("memos.ui").edit_selected_memo_split()<CR>')
-	set_map(keys.edit_memo_vsplit, '<Cmd>lua require("memos.ui").edit_selected_memo_vsplit()<CR>')
-	set_map(keys.add_memo, '<Cmd>lua require("memos.ui").add_memo_command()<CR>')
-	set_map("i", '<Cmd>lua require("memos.ui").add_memo_command()<CR>')
-	set_map(keys.new_memo or "n", '<Cmd>lua require("memos.ui").new_memo_or_template_command()<CR>')
-	set_map(keys.search_memos, '<Cmd>lua require("memos.ui").search_memos()<CR>')
-	set_map(keys.copy_memo_id, '<Cmd>lua require("memos.ui").copy_selected_memo_id()<CR>')
-	set_map(keys.add_relation or "c", '<Cmd>lua require("memos.ui").add_relation_command()<CR>')
-	set_map(keys.toggle_pin, '<Cmd>lua require("memos.ui").toggle_selected_memo_pin()<CR>')
-	set_map(keys.delete_memo, '<Cmd>lua require("memos.ui").delete_selected_memo()<CR>')
-	set_map(keys.archive_memo, '<Cmd>lua require("memos.ui").archive_selected_memo()<CR>')
-	set_map(keys.toggle_archive_view, '<Cmd>lua require("memos.ui").toggle_archive_view()<CR>')
-	set_map(keys.toggle_template_view, '<Cmd>lua require("memos.ui").toggle_template_view()<CR>')
-	set_map(keys.edit_visibility, '<Cmd>lua require("memos.ui").edit_selected_memo_visibility()<CR>')
-	set_map(keys.edit_create_time, '<Cmd>lua require("memos.ui").edit_selected_memo_create_time()<CR>')
-	set_map(keys.refresh_list, '<Cmd>lua require("memos.ui").refresh_list_command()<CR>')
-	set_map(keys.next_page, '<Cmd>lua require("memos.ui").load_next_page()<CR>')
-	set_map(keys.prev_page, '<Cmd>lua require("memos.ui").load_prev_page()<CR>')
-	set_map(keys.quit, '<Cmd>lua require("memos.ui").quit_memos_list()<CR>')
-
-	set_map(keys.toggle_expand or "<Tab>", '<Cmd>lua require("memos.ui").toggle_expand_selected()<CR>')
-	set_map(keys.toggle_expand_incoming or "<S-Tab>", '<Cmd>lua require("memos.ui").toggle_expand_incoming_selected()<CR>')
-	set_map(keys.fold_outgoing or "zo", '<Cmd>lua require("memos.ui").toggle_expand_selected()<CR>')
-	set_map(keys.fold_incoming or "zi", '<Cmd>lua require("memos.ui").toggle_expand_incoming_selected()<CR>')
-	set_map(keys.fold_all or "zM", '<Cmd>lua require("memos.ui").collapse_all()<CR>')
-
-	vim.b[buf].memos_bound_keys = bound
+	return keymap_utils.bind_list_keymaps(self.buf, config.keymaps.list)
 end
 
 function M.bind_list_keymaps(buf)

@@ -16,6 +16,8 @@ changes do not reopen solved problems.
   window APIs instead of `vim.cmd("split")` / `vim.cmd("vsplit")`.
 - **Dynamic list keymaps**: list buffer mappings are rebound from current config
   and support disabling mappings with `false`.
+- **List keymap extraction**: list keymap binding, dynamic rebinding cleanup,
+  fallback keys, and disabled-key handling live in `lua/memos/ui/keymaps.lua`.
 - **Automated smoke/unit tests**: `./scripts/smoke-test.sh` runs a headless load
   check and Plenary specs from `tests/`.
 - **Relation render indexing**: list rendering uses an in-memory relation index
@@ -50,8 +52,8 @@ changes do not reopen solved problems.
 - **Risk**: changes in one UI area can accidentally affect unrelated behavior.
 - **Suggested direction**: extract internal modules behind the existing
   `require("memos.ui")` public API. The next practical boundary is remaining
-  list-session methods that still proxy rendering, relations, and selected-item
-  behavior.
+  list-session methods that still proxy rendering, relation expansion, and
+  selected-item behavior.
 
 ### 2. Template Creation Request Count
 
