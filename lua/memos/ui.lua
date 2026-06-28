@@ -1,5 +1,6 @@
 local api = require("memos.api").new(function() return require("memos").config end)
 local buffer_utils = require("memos.ui.buffers")
+local list_flow = require("memos.ui.list_flow")
 local memo_actions = require("memos.ui.memo_actions")
 local relation_actions = require("memos.ui.relation_actions")
 local render_utils = require("memos.ui.render")
@@ -70,25 +71,11 @@ local function redraw_status()
 end
 
 function ListSession:save_current_state_cache()
-	local state = self.current_list_state
-	self.caches[state] = {
-		memos = vim.deepcopy(self.memos_cache),
-		page_token = self.current_page_token,
-		filter = self.current_filter,
-		last_refresh_at = self.last_refresh_at,
-		page_history = vim.deepcopy(self.page_history or {}),
-	}
+	return list_flow.save_current_state_cache(self)
 end
 
 function ListSession:load_state_cache(state)
-	self.current_list_state = state
-	local c = self.caches[state] or { memos = {}, page_token = nil, filter = "", last_refresh_at = nil, page_history = {} }
-	self.memos_cache = vim.deepcopy(c.memos)
-	self.current_page_token = c.page_token
-	self.current_filter = c.filter
-	self.last_refresh_at = c.last_refresh_at
-	self.page_history = vim.deepcopy(c.page_history or {})
-	self.relation_index_dirty = true
+	return list_flow.load_state_cache(self, state)
 end
 
 local function has_active_fetches(self)
@@ -387,6 +374,17 @@ local function memo_action_context()
 	}
 end
 
+local function list_flow_context()
+	return {
+		api = api,
+		config = config,
+		build_search_filter = M.build_search_filter,
+		redraw_status = redraw_status,
+		focus_list_buf = focus_list_buf,
+		show_memos_list = M.show_memos_list,
+	}
+end
+
 function ListSession:bind_list_keymaps()
 	local buf = self.buf
 	local keys = config.keymaps.list
@@ -492,89 +490,11 @@ function ListSession:render_cached_memos()
 end
 
 function ListSession:render_memos(data, append)
-	if not data then
-		vim.notify("API returned no data.", vim.log.levels.WARN)
-		return
-	end
-	if append then
-		vim.list_extend(self.memos_cache, data.memos or {})
-	else
-		self.memos_cache = data.memos or {}
-	end
-	self:mark_relation_index_dirty()
-	self.current_page_token = data.next_page_token or ""
-	self:render_cached_memos()
+	return list_flow.render_memos(self, data, append)
 end
 
 function ListSession:fetch_memos(opts)
-	opts = opts or {}
-	local req_state = self.current_list_state
-	local state_param = req_state
-	local filter_param = self.current_filter
-
-	if req_state == "TEMPLATES" then
-		state_param = "ARCHIVED"
-		if self.current_filter and self.current_filter ~= "" then
-			filter_param = "content.contains('#type/template') && (" .. self.current_filter .. ")"
-		else
-			filter_param = "content.contains('#type/template')"
-		end
-	end
-
-	if opts.append then
-		table.insert(self.page_history, {
-			memos_count = #self.memos_cache,
-			page_token = self.current_page_token,
-		})
-	else
-		self.page_history = {}
-	end
-
-	self.main_list_fetching = true
-	self:set_refresh_state("refreshing")
-
-	api:list_memos({
-		page_size = config.page_size,
-		page_token = opts.page_token,
-		state = state_param,
-		order_by = config.list_order_by,
-		filter = filter_param,
-	}, function(data, err)
-		vim.schedule(function()
-			self.main_list_fetching = false
-			if not data then
-				if self.current_list_state == req_state then
-					self:set_refresh_state("failed", err)
-					if opts.append then
-						table.remove(self.page_history)
-					end
-					if #self.memos_cache > 0 then
-						self:render_cached_memos()
-					end
-				end
-				vim.notify("Failed to fetch memos: " .. tostring(err), vim.log.levels.ERROR)
-				return
-			end
-
-			local is_append = opts.append == true
-			if self.current_list_state == req_state then
-				self:mark_refresh_success()
-				self:render_memos(data, is_append)
-			else
-				-- Update the background cache slot directly
-				local c = self.caches[req_state]
-				if not is_append then
-					c.memos = data.memos or {}
-					c.last_refresh_at = os.time()
-					c.page_history = {}
-				else
-					c.memos = c.memos or {}
-					vim.list_extend(c.memos, data.memos or {})
-				end
-				c.page_token = data.next_page_token or ""
-			end
-		end)
-	end)
+	return list_flow.fetch_memos(self, list_flow_context(), opts)
 end
 
 function ListSession:format_memo_line(index, memo)
@@ -710,69 +630,19 @@ function M.show_memos_list(opts)
 end
 
 function ListSession:search_memos()
-	vim.ui.input({ prompt = "Search memos (empty clears): " }, function(input)
-		if input == nil then
-			return
-		end
-
-		local next_filter = M.build_search_filter(input)
-		self.current_filter = next_filter
-		self.memos_cache = {}
-		self.list_items = {}
-		self.current_page_token = nil
-		self:mark_relation_index_dirty()
-		self.list_refresh_state = "idle"
-		self.last_refresh_error = nil
-		redraw_status()
-		focus_list_buf()
-
-		local entity_name = self.current_list_state == "TEMPLATES" and "templates" or "memos"
-		local loading_text = next_filter == "" and ("Loading " .. entity_name .. "...") or ("Loading filtered " .. entity_name .. "...")
-		self:set_list_lines({ loading_text })
-
-		if next_filter == "" then
-			vim.notify(self.current_list_state == "TEMPLATES" and "Templates search cleared." or "Memos search cleared.")
-		else
-			vim.notify(self.current_list_state == "TEMPLATES" and "Templates search filter applied." or "Memos search filter applied.")
-		end
-		self:fetch_memos({ append = false })
-	end)
+	return list_flow.search_memos(self, list_flow_context())
 end
 
 function ListSession:toggle_archive_view()
-	self:save_current_state_cache()
-	local next_state = self.current_list_state == "ARCHIVED" and "NORMAL" or "ARCHIVED"
-	self:load_state_cache(next_state)
-	redraw_status()
-	focus_list_buf()
-	M.show_memos_list()
+	return list_flow.toggle_archive_view(self, list_flow_context())
 end
 
 function ListSession:load_next_page()
-	if not self.current_page_token or self.current_page_token == "" then
-		vim.notify("No more pages to load.", vim.log.levels.INFO)
-		return
-	end
-	self:fetch_memos({
-		page_token = self.current_page_token,
-		append = true,
-	})
+	return list_flow.load_next_page(self)
 end
 
 function ListSession:load_prev_page()
-	if not self.page_history or #self.page_history == 0 then
-		vim.notify("Already at the first page.", vim.log.levels.INFO)
-		return
-	end
-	local prev = table.remove(self.page_history)
-	while #self.memos_cache > prev.memos_count do
-		table.remove(self.memos_cache)
-	end
-	self.current_page_token = prev.page_token
-	self:mark_relation_index_dirty()
-	self:set_refresh_state("idle")
-	self:render_cached_memos()
-	vim.notify("Returned to previous page view.")
+	return list_flow.load_prev_page(self)
 end
 
 function M.search_memos()
