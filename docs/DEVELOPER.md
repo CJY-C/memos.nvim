@@ -12,6 +12,7 @@ The plugin is structured into distinct modules with minimal abstraction:
 - **`lua/memos/api.lua`**: Server-side communication wrapper using `plenary.job` executing `curl`. Returns normalized data schemas.
 - **`lua/memos/ui.lua`**: Public UI API and list orchestration, including list sessions, cache updates, list keymaps, and command wrappers.
 - **`lua/memos/ui/buffers.lua`**: Internal edit-buffer lifecycle, memo/template save dispatch, auto-save checks, and return-to-list behavior.
+- **`lua/memos/ui/memo_actions.lua`**: Internal ordinary memo workflows for pin, archive/restore, delete, visibility, and create time edits.
 - **`lua/memos/ui/relation_actions.lua`**: Internal relation action workflows for adding, selecting, and unlinking memo relations.
 - **`lua/memos/ui/render.lua`**: Internal list rendering helpers that build lines, list item metadata, highlights, and missing relation fetch targets.
 - **`lua/memos/ui/relations.lua`**: Internal relation parsing, safe memo identity checks, and relation index helpers used by the list renderer.

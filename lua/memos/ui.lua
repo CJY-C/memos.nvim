@@ -1,5 +1,6 @@
 local api = require("memos.api").new(function() return require("memos").config end)
 local buffer_utils = require("memos.ui.buffers")
+local memo_actions = require("memos.ui.memo_actions")
 local relation_actions = require("memos.ui.relation_actions")
 local render_utils = require("memos.ui.render")
 local relation_utils = require("memos.ui.relations")
@@ -373,6 +374,16 @@ end
 local function relation_action_context()
 	return {
 		api = api,
+	}
+end
+
+local function memo_action_context()
+	return {
+		api = api,
+		memo_title = memo_title,
+		template_delete_selected = function(memo, index)
+			return require("memos.template").template_delete_selected(memo, index)
+		end,
 	}
 end
 
@@ -911,103 +922,15 @@ function ListSession:add_relation()
 end
 
 function ListSession:toggle_selected_memo_pin()
-	if self.current_list_state == "TEMPLATES" then
-		vim.notify("Pinning is not supported for templates.", vim.log.levels.WARN)
-		return
-	end
-	local item = self:current_list_item()
-	local memo = self:get_memo_from_item(item)
-	if not memo or not memo.name or memo.name == "" then
-		vim.notify("No memo on the current line.", vim.log.levels.INFO)
-		return
-	end
-
-	local next_pinned = memo.pinned ~= true
-	api:update_memo_pinned(memo.name, next_pinned, function(success, err)
-		vim.schedule(function()
-			if success then
-				memo.pinned = next_pinned
-				self:render_cached_memos()
-				vim.notify(next_pinned and "Memo pinned." or "Memo unpinned.")
-				self:refresh_list_silently()
-			else
-				vim.notify("Failed to update memo pin: " .. tostring(err), vim.log.levels.ERROR)
-			end
-		end)
-	end)
+	return memo_actions.toggle_pin(self, memo_action_context())
 end
 
 function ListSession:archive_selected_memo()
-	if self.current_list_state == "TEMPLATES" then
-		vim.notify("Archiving is not supported for templates.", vim.log.levels.WARN)
-		return
-	end
-	local item = self:current_list_item()
-	local memo = self:get_memo_from_item(item)
-	if not memo or not memo.name or memo.name == "" then
-		vim.notify("No memo on the current line.", vim.log.levels.INFO)
-		return
-	end
-
-	local next_state = self.current_list_state == "ARCHIVED" and "NORMAL" or "ARCHIVED"
-	api:update_memo_state(memo.name, next_state, function(success, err)
-		vim.schedule(function()
-			if success then
-				self:remove_memo_from_cache(memo.name)
-				self:render_cached_memos()
-				vim.notify(next_state == "ARCHIVED" and "Memo archived." or "Memo restored.")
-				self:refresh_list_silently()
-			else
-				vim.notify("Failed to update memo state: " .. tostring(err), vim.log.levels.ERROR)
-			end
-		end)
-	end)
+	return memo_actions.archive(self, memo_action_context())
 end
 
 function ListSession:delete_selected_memo()
-	local item = self:current_list_item()
-	if not item then
-		return
-	end
-
-	if item.kind == "relation" or item.kind == "relation_loading" then
-		self:delete_selected_relation(item)
-		return
-	end
-
-	local memo = self:get_memo_from_item(item)
-	if not memo or not memo.name or memo.name == "" then
-		vim.notify("Select a memo line to delete.", vim.log.levels.INFO)
-		return
-	end
-
-	if self.current_list_state == "TEMPLATES" then
-		require("memos.template").template_delete_selected(memo, item.index)
-		return
-	end
-
-	local title = memo_title(memo)
-	vim.ui.select({ "Cancel", "Delete" }, {
-		prompt = "Delete memo: " .. title,
-		kind = "memos_delete",
-	}, function(choice)
-		if choice ~= "Delete" then
-			return
-		end
-
-		api:delete_memo(memo.name, function(success, err)
-			vim.schedule(function()
-				if success then
-					self:remove_memo_from_cache(memo.name)
-					self:render_cached_memos()
-					vim.notify("Memo deleted.")
-					self:refresh_list_silently()
-				else
-					vim.notify("Failed to delete memo: " .. tostring(err), vim.log.levels.ERROR)
-				end
-			end)
-		end)
-	end)
+	return memo_actions.delete(self, memo_action_context())
 end
 
 function ListSession:delete_selected_relation(item)
@@ -1015,76 +938,11 @@ function ListSession:delete_selected_relation(item)
 end
 
 function ListSession:edit_selected_memo_visibility()
-	if self.current_list_state == "TEMPLATES" then
-		vim.notify("Visibility editing is not supported for templates.", vim.log.levels.WARN)
-		return
-	end
-	local item = self:current_list_item()
-	local memo = self:get_memo_from_item(item)
-	if not memo or not memo.name or memo.name == "" then
-		vim.notify("No memo on the current line.", vim.log.levels.INFO)
-		return
-	end
-
-	vim.ui.select({ "PRIVATE", "PROTECTED", "PUBLIC" }, {
-		prompt = "Memo visibility:",
-		kind = "memos_visibility",
-	}, function(choice)
-		if not choice then
-			return
-		end
-		api:update_memo_visibility(memo.name, choice, function(success, err)
-			vim.schedule(function()
-				if success then
-					memo.visibility = choice
-					self:render_cached_memos()
-					vim.notify("Memo visibility set to " .. choice .. ".")
-					self:refresh_list_silently()
-				else
-					vim.notify("Failed to update memo visibility: " .. tostring(err), vim.log.levels.ERROR)
-				end
-			end)
-		end)
-	end)
+	return memo_actions.edit_visibility(self, memo_action_context())
 end
 
 function ListSession:edit_selected_memo_create_time()
-	if self.current_list_state == "TEMPLATES" then
-		vim.notify("Create time editing is not supported for templates.", vim.log.levels.WARN)
-		return
-	end
-	local item = self:current_list_item()
-	local memo = self:get_memo_from_item(item)
-	if not memo or not memo.name or memo.name == "" then
-		vim.notify("No memo on the current line.", vim.log.levels.INFO)
-		return
-	end
-
-	vim.ui.input({
-		prompt = "Memo create_time:",
-		default = memo.create_time or "",
-	}, function(input)
-		if input == nil then
-			return
-		end
-		local next_create_time = vim.trim(input)
-		if next_create_time == "" then
-			vim.notify("Memo create_time is empty, not sending.", vim.log.levels.WARN)
-			return
-		end
-		api:update_memo_create_time(memo.name, next_create_time, function(success, err)
-			vim.schedule(function()
-				if success then
-					memo.create_time = next_create_time
-					self:render_cached_memos()
-					vim.notify("Memo create_time updated.")
-					self:refresh_list_silently()
-				else
-					vim.notify("Failed to update memo create_time: " .. tostring(err), vim.log.levels.ERROR)
-				end
-			end)
-		end)
-	end)
+	return memo_actions.edit_create_time(self, memo_action_context())
 end
 
 function ListSession:refresh_list_silently()
