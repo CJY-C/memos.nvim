@@ -5,6 +5,7 @@ local list_flow = require("memos.ui.list_flow")
 local list_window = require("memos.ui.list_window")
 local memo_actions = require("memos.ui.memo_actions")
 local relation_actions = require("memos.ui.relation_actions")
+local relation_expand = require("memos.ui.relation_expand")
 local render_utils = require("memos.ui.render")
 local relation_utils = require("memos.ui.relations")
 local status_utils = require("memos.ui.status")
@@ -273,6 +274,12 @@ local function relation_action_context()
 	}
 end
 
+local function relation_expand_context()
+	return {
+		api = api,
+	}
+end
+
 local function memo_action_context()
 	return {
 		api = api,
@@ -386,87 +393,19 @@ function ListSession:get_incoming_relation_names(memo)
 end
 
 function ListSession:toggle_expand_outgoing()
-	local item = self:current_list_item()
-	if not item or item.kind ~= "memo" then
-		return
-	end
-	local memo = self.memos_cache[item.index]
-	if not memo then
-		return
-	end
-	local outgoing_names = self:get_outgoing_relation_names(memo)
-	if #outgoing_names == 0 then
-		vim.notify("No outgoing relations to expand.", vim.log.levels.INFO)
-		return
-	end
-
-	if self.expanded_outgoing[memo.name] then
-		self.expanded_outgoing[memo.name] = nil
-	else
-		self.expanded_outgoing[memo.name] = true
-		self:fetch_missing_relations(outgoing_names)
-	end
-	self:render_cached_memos()
+	return relation_expand.toggle_outgoing(self)
 end
 
 function ListSession:toggle_expand_incoming()
-	local item = self:current_list_item()
-	if not item or item.kind ~= "memo" then
-		return
-	end
-	local memo = self.memos_cache[item.index]
-	if not memo then
-		return
-	end
-	local incoming_names = self:get_incoming_relation_names(memo)
-	if #incoming_names == 0 then
-		vim.notify("No incoming relations to expand.", vim.log.levels.INFO)
-		return
-	end
-
-	if self.expanded_incoming[memo.name] then
-		self.expanded_incoming[memo.name] = nil
-	else
-		self.expanded_incoming[memo.name] = true
-		self:fetch_missing_relations(incoming_names)
-	end
-	self:render_cached_memos()
+	return relation_expand.toggle_incoming(self)
 end
 
 function ListSession:collapse_all()
-	self.expanded_outgoing = {}
-	self.expanded_incoming = {}
-	self:render_cached_memos()
-	vim.notify("Collapsed all memo expansions.")
+	return relation_expand.collapse_all(self)
 end
 
 function ListSession:fetch_missing_relations(names)
-	for _, name in ipairs(names) do
-		if not self:get_cached_relation_memo(name) then
-			if not self.in_flight_relations[name] then
-				self.in_flight_relations[name] = true
-				self:set_refresh_state("refreshing")
-				api:get_memo(name, function(memo_data, err)
-					vim.schedule(function()
-						self.in_flight_relations[name] = nil
-						if memo_data then
-							self.relation_details_cache[name] = memo_data
-						else
-							self.relation_details_cache[name] = {
-								name = name,
-								content = "Failed to load relation: " .. tostring(err),
-								state = "NORMAL",
-								create_time = "",
-								update_time = "",
-							}
-						end
-						self:set_refresh_state("idle")
-						self:render_cached_memos()
-					end)
-				end)
-			end
-		end
-	end
+	return relation_expand.fetch_missing_relations(self, relation_expand_context(), names)
 end
 
 function M.show_memos_list(opts)

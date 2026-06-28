@@ -883,4 +883,103 @@ describe("memos.ui relations", function()
 		assert.are.same(0, #api_relations_arg)
 		assert.are.same(0, #s.relation_details_cache["memos/9"].relations)
 	end)
+
+	it("should not expand memo rows without relation names", function()
+		ui.bind_list_keymaps(buf)
+		local s = ui.get_session(buf)
+		s.memos_cache = {
+			{
+				name = "memos/1",
+				content = "Lonely memo",
+				relations = {},
+			},
+		}
+		s:mark_relation_index_dirty()
+		s.list_items = {
+			{ kind = "header" },
+			{ kind = "memo", index = 1 },
+		}
+		vim.api.nvim_set_current_buf(buf)
+		vim.api.nvim_buf_set_lines(buf, 0, -1, false, { "header", "memo" })
+		vim.api.nvim_win_set_cursor(0, { 2, 0 })
+
+		s:toggle_expand_outgoing()
+		s:toggle_expand_incoming()
+
+		assert.is_nil(s.expanded_outgoing["memos/1"])
+		assert.is_nil(s.expanded_incoming["memos/1"])
+	end)
+
+	it("should skip fetching relation details that are already cached", function()
+		local api = require("memos.api")
+		local old_get_memo = api.Client.get_memo
+
+		ui.bind_list_keymaps(buf)
+		local s = ui.get_session(buf)
+		s.relation_details_cache["memos/99"] = {
+			name = "memos/99",
+			content = "Cached memo",
+		}
+
+		local called = false
+		api.Client.get_memo = function()
+			called = true
+		end
+
+		s:fetch_missing_relations({ "memos/99" })
+
+		api.Client.get_memo = old_get_memo
+
+		assert.is_false(called)
+		assert.are.same("idle", s.list_refresh_state)
+	end)
+
+	it("should skip duplicate in-flight relation detail fetches", function()
+		local api = require("memos.api")
+		local old_get_memo = api.Client.get_memo
+
+		ui.bind_list_keymaps(buf)
+		local s = ui.get_session(buf)
+		s.in_flight_relations["memos/99"] = true
+
+		local called = false
+		api.Client.get_memo = function()
+			called = true
+		end
+
+		s:fetch_missing_relations({ "memos/99" })
+
+		api.Client.get_memo = old_get_memo
+
+		assert.is_false(called)
+		assert.is_true(s.in_flight_relations["memos/99"])
+	end)
+
+	it("should cache a fallback relation memo when detail fetch fails", function()
+		local api = require("memos.api")
+		local old_get_memo = api.Client.get_memo
+
+		ui.bind_list_keymaps(buf)
+		local s = ui.get_session(buf)
+
+		local render_called = false
+		s.render_cached_memos = function()
+			render_called = true
+		end
+
+		api.Client.get_memo = function(self_api, name, callback)
+			callback(nil, "network down")
+		end
+
+		s:fetch_missing_relations({ "memos/99" })
+		vim.wait(500, function()
+			return render_called
+		end)
+
+		api.Client.get_memo = old_get_memo
+
+		assert.is_nil(s.in_flight_relations["memos/99"])
+		assert.are.same("idle", s.list_refresh_state)
+		assert.are.same("Failed to load relation: network down", s.relation_details_cache["memos/99"].content)
+	end)
 end)
