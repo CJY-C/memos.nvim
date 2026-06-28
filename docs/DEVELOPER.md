@@ -20,6 +20,7 @@ The plugin is structured into distinct modules with minimal abstraction:
 - **`lua/memos/ui/relation_expand.lua`**: Internal relation expansion, collapse-all behavior, and lazy missing-relation detail fetching.
 - **`lua/memos/ui/render.lua`**: Internal list rendering helpers that build lines, list item metadata, highlights, and missing relation fetch targets.
 - **`lua/memos/ui/relations.lua`**: Internal relation parsing, safe memo identity checks, and relation index helpers used by the list renderer.
+- **`lua/memos/ui/selection.lua`**: Internal selected list item helpers for current-row lookup, memo resolution, edit dispatch, copy ID, and cache removal.
 - **`lua/memos/ui/status.lua`**: Internal refresh-state coordination and statusline/header status text helpers.
 - **`lua/memos/template.lua`**: Templates composition helper (e.g. tag stripping, ensuring `#type/template` exists on save, archiving templates).
 

@@ -68,6 +68,104 @@ describe("memos.ui ListSession encapsulation", function()
 		assert.are.same(0, #s1.memos_cache)
 	end)
 
+	it("should resolve the current list item from the cursor line", function()
+		ui.bind_list_keymaps(buf1)
+		local s = ui.get_session(buf1)
+		s.list_items = {
+			{ kind = "header" },
+			{ kind = "memo", index = 1 },
+		}
+		vim.api.nvim_set_current_buf(buf1)
+		vim.api.nvim_buf_set_lines(buf1, 0, -1, false, { "header", "memo" })
+		vim.api.nvim_win_set_cursor(0, { 2, 0 })
+
+		assert.are.same({ kind = "memo", index = 1 }, s:current_list_item())
+	end)
+
+	it("should resolve memo and relation items to memo objects", function()
+		ui.bind_list_keymaps(buf1)
+		local s = ui.get_session(buf1)
+		local memo = { name = "memos/1", content = "memo" }
+		local relation_memo = { name = "memos/2", content = "relation" }
+		s.memos_cache = { memo }
+
+		assert.are.same(memo, s:get_memo_from_item({ kind = "memo", index = 1 }))
+		assert.are.same(relation_memo, s:get_memo_from_item({ kind = "relation", memo = relation_memo }))
+		assert.is_nil(s:get_memo_from_item({ kind = "header" }))
+		assert.is_nil(s:get_memo_from_item(nil))
+	end)
+
+	it("should remove a memo from cache and clear related selection state", function()
+		ui.bind_list_keymaps(buf1)
+		local s = ui.get_session(buf1)
+		s.memos_cache = {
+			{ name = "memos/1", content = "one" },
+			{ name = "memos/2", content = "two" },
+		}
+		s.relation_details_cache["memos/1"] = { name = "memos/1" }
+		s.expanded_outgoing["memos/1"] = true
+		s.expanded_incoming["memos/1"] = true
+		s.relation_index_dirty = false
+
+		s:remove_memo_from_cache("memos/1")
+
+		assert.are.same(1, #s.memos_cache)
+		assert.are.same("memos/2", s.memos_cache[1].name)
+		assert.is_nil(s.relation_details_cache["memos/1"])
+		assert.is_nil(s.expanded_outgoing["memos/1"])
+		assert.is_nil(s.expanded_incoming["memos/1"])
+		assert.is_true(s.relation_index_dirty)
+	end)
+
+	it("should load the next page when editing the load-more list item", function()
+		ui.bind_list_keymaps(buf1)
+		local s = ui.get_session(buf1)
+		s.list_items = {
+			{ kind = "header" },
+			{ kind = "load_more" },
+		}
+		vim.api.nvim_set_current_buf(buf1)
+		vim.api.nvim_buf_set_lines(buf1, 0, -1, false, { "header", "..." })
+		vim.api.nvim_win_set_cursor(0, { 2, 0 })
+
+		local loaded = false
+		s.load_next_page = function()
+			loaded = true
+		end
+
+		s:edit_selected_memo_with("enew")
+
+		assert.is_true(loaded)
+	end)
+
+	it("should notify when copying a selected item without a memo id", function()
+		ui.bind_list_keymaps(buf1)
+		local s = ui.get_session(buf1)
+		s.memos_cache = {
+			{ content = "no id" },
+		}
+		s.list_items = {
+			{ kind = "header" },
+			{ kind = "memo", index = 1 },
+		}
+		vim.api.nvim_set_current_buf(buf1)
+		vim.api.nvim_buf_set_lines(buf1, 0, -1, false, { "header", "memo" })
+		vim.api.nvim_win_set_cursor(0, { 2, 0 })
+
+		local old_notify = vim.notify
+		local notified = nil
+		vim.notify = function(message, level)
+			notified = { message = message, level = level }
+		end
+
+		s:copy_selected_memo_id()
+
+		vim.notify = old_notify
+
+		assert.are.same("No memo ID on the current line.", notified.message)
+		assert.are.same(vim.log.levels.INFO, notified.level)
+	end)
+
 	it("should run show_memos_list and trigger api:list_memos successfully", function()
 		local list_called = false
 		local api_mod = require("memos.api")

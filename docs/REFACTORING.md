@@ -33,6 +33,9 @@ changes do not reopen solved problems.
 - **Relation expansion extraction**: outgoing/incoming expansion, collapse-all
   behavior, and lazy missing-relation detail fetching live in
   `lua/memos/ui/relation_expand.lua`.
+- **Selected item extraction**: current-row item lookup, memo resolution, edit
+  dispatch, copy ID, and selected cache removal live in
+  `lua/memos/ui/selection.lua`.
 - **Memo action extraction**: pin, archive/restore, delete, visibility, and
   create-time workflows live in `lua/memos/ui/memo_actions.lua`.
 - **List flow extraction**: list fetch, search, pagination, state cache
@@ -55,7 +58,7 @@ changes do not reopen solved problems.
 - **Risk**: changes in one UI area can accidentally affect unrelated behavior.
 - **Suggested direction**: extract internal modules behind the existing
   `require("memos.ui")` public API. The next practical boundary is remaining
-  list-session methods that still proxy rendering and selected-item behavior.
+  list-session methods that still proxy rendering and command coordination.
 
 ### 2. Template Creation Request Count
 

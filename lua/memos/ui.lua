@@ -8,6 +8,7 @@ local relation_actions = require("memos.ui.relation_actions")
 local relation_expand = require("memos.ui.relation_expand")
 local render_utils = require("memos.ui.render")
 local relation_utils = require("memos.ui.relations")
+local selection = require("memos.ui.selection")
 local status_utils = require("memos.ui.status")
 local config = setmetatable({}, {
 	__index = function(_, k)
@@ -290,6 +291,15 @@ local function memo_action_context()
 	}
 end
 
+local function selection_context()
+	return {
+		open_memo_for_edit = M.open_memo_for_edit,
+		template_edit_selected = function(memo, open_cmd)
+			return require("memos.template").template_edit_selected(memo, open_cmd)
+		end,
+	}
+end
+
 local function list_flow_context()
 	return {
 		api = api,
@@ -312,17 +322,6 @@ function M.bind_list_keymaps(buf)
 		sessions[buf] = s
 	end
 	s:bind_list_keymaps()
-end
-
-local function copy_text(text)
-	if vim.fn.has("clipboard") == 1 then
-		local ok = pcall(vim.fn.setreg, "+", text)
-		if ok then
-			return "+"
-		end
-	end
-	vim.fn.setreg('"', text)
-	return '"'
 end
 
 function ListSession:list_status_line()
@@ -481,63 +480,23 @@ function M.create_memo_in_buffer(content)
 end
 
 function ListSession:current_list_item()
-	local line = vim.api.nvim_win_get_cursor(0)[1]
-	return self.list_items[line]
+	return selection.current_list_item(self)
 end
 
 function ListSession:get_memo_from_item(item)
-	if not item then
-		return nil
-	end
-	if item.kind == "memo" then
-		return self.memos_cache[item.index]
-	elseif item.kind == "relation" then
-		return item.memo
-	end
-	return nil
+	return selection.get_memo_from_item(self, item)
 end
 
 function ListSession:remove_memo_from_cache(memo_name)
-	for idx, m in ipairs(self.memos_cache) do
-		if m.name == memo_name then
-			table.remove(self.memos_cache, idx)
-			self:mark_relation_index_dirty()
-			break
-		end
-	end
-	self.relation_details_cache[memo_name] = nil
-	self.expanded_outgoing[memo_name] = nil
-	self.expanded_incoming[memo_name] = nil
+	return selection.remove_memo_from_cache(self, memo_name)
 end
 
 function ListSession:edit_selected_memo_with(open_cmd)
-	local item = self:current_list_item()
-	if not item then
-		return
-	end
-	if item.kind == "load_more" then
-		self:load_next_page()
-		return
-	end
-	local memo = self:get_memo_from_item(item)
-	if memo then
-		if self.current_list_state == "TEMPLATES" then
-			require("memos.template").template_edit_selected(memo, open_cmd)
-		else
-			M.open_memo_for_edit(memo, open_cmd)
-		end
-	end
+	return selection.edit_selected_memo_with(self, selection_context(), open_cmd)
 end
 
 function ListSession:copy_selected_memo_id()
-	local item = self:current_list_item()
-	local memo = self:get_memo_from_item(item)
-	if not memo or not memo.name or memo.name == "" then
-		vim.notify("No memo ID on the current line.", vim.log.levels.INFO)
-		return
-	end
-	local register = copy_text(memo.name)
-	vim.notify("Copied memo ID to " .. register .. ": " .. memo.name)
+	return selection.copy_selected_memo_id(self)
 end
 
 function ListSession:add_multiple_relations(memo, target_names)
@@ -661,9 +620,8 @@ end
 
 function M.remove_cached_memo_at(index)
 	local s = get_active_session()
-	if s and type(index) == "number" and s.memos_cache[index] then
-		table.remove(s.memos_cache, index)
-		s:render_cached_memos()
+	if s then
+		return selection.remove_cached_memo_at(s, index)
 	end
 end
 
