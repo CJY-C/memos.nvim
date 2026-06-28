@@ -755,4 +755,132 @@ describe("memos.ui relations", function()
 		assert.are.same(1, #api_relations_arg)
 		assert.are.same("memos/2", api_relations_arg[1].relatedMemo.name)
 	end)
+
+	it("should reject self-link additions without calling the api", function()
+		local api = require("memos.api")
+		local old_notify = vim.notify
+		local old_set_memo_relations = api.Client.set_memo_relations
+
+		ui.bind_list_keymaps(buf)
+		local s = ui.get_session(buf)
+		local memo = {
+			name = "memos/1",
+			id = 1,
+			content = "Parent memo",
+			relations = {},
+		}
+
+		local api_called = false
+		local notified = nil
+		api.Client.set_memo_relations = function()
+			api_called = true
+		end
+		vim.notify = function(message, level)
+			notified = message
+		end
+
+		s:add_multiple_relations(memo, { "memos/1" })
+
+		vim.notify = old_notify
+		api.Client.set_memo_relations = old_set_memo_relations
+
+		assert.is_false(api_called)
+		assert.are.same("Cannot create a relation to the same memo.", notified)
+		assert.are.same(0, #memo.relations)
+	end)
+
+	it("should skip duplicate relation additions without calling the api", function()
+		local api = require("memos.api")
+		local old_notify = vim.notify
+		local old_set_memo_relations = api.Client.set_memo_relations
+
+		ui.bind_list_keymaps(buf)
+		local s = ui.get_session(buf)
+		local memo = {
+			name = "memos/1",
+			content = "Parent memo",
+			relations = {
+				{ memo = "memos/1", relatedMemo = "memos/2", type = "REFERENCE" },
+			},
+		}
+
+		local api_called = false
+		local notified = nil
+		api.Client.set_memo_relations = function()
+			api_called = true
+		end
+		vim.notify = function(message, level)
+			notified = message
+		end
+
+		s:add_multiple_relations(memo, { "memos/2" })
+
+		vim.notify = old_notify
+		api.Client.set_memo_relations = old_set_memo_relations
+
+		assert.is_false(api_called)
+		assert.are.same("Relation(s) already exist.", notified)
+		assert.are.same(1, #memo.relations)
+	end)
+
+	it("should unlink incoming loading relations from the source memo", function()
+		local api = require("memos.api")
+		local old_select = vim.ui.select
+		local old_set_memo_relations = api.Client.set_memo_relations
+
+		ui.bind_list_keymaps(buf)
+		local s = ui.get_session(buf)
+		s.memos_cache = {
+			{
+				name = "memos/1",
+				content = "Parent memo",
+			},
+		}
+		s.relation_details_cache["memos/9"] = {
+			name = "memos/9",
+			content = "Source memo",
+			relations = {
+				{ memo = "memos/9", relatedMemo = "memos/1", type = "REFERENCE" },
+			},
+		}
+
+		local select_prompt = nil
+		vim.ui.select = function(items, opts, on_choice)
+			select_prompt = opts.prompt
+			on_choice("Unlink")
+		end
+
+		local set_relations_called = false
+		local api_relations_arg = nil
+		api.Client.set_memo_relations = function(self_api, memo_name, relations, callback)
+			assert.are.same("memos/9", memo_name)
+			set_relations_called = true
+			api_relations_arg = relations
+			callback(true, nil)
+		end
+
+		local refresh_called = false
+		s.refresh_list_silently = function()
+			refresh_called = true
+		end
+
+		s:delete_selected_relation({
+			kind = "relation_loading",
+			parent_index = 1,
+			relation_name = "memos/9",
+			relation_type = "incoming",
+		})
+
+		vim.wait(500, function()
+			return refresh_called
+		end)
+
+		vim.ui.select = old_select
+		api.Client.set_memo_relations = old_set_memo_relations
+
+		assert.are.same("Unlink relation: memos/9 -> memos/1?", select_prompt)
+		assert.is_true(set_relations_called)
+		assert.are.same(0, #api_relations_arg)
+		assert.are.same(0, #s.relation_details_cache["memos/9"].relations)
+	end)
 end)

@@ -26,6 +26,8 @@ changes do not reopen solved problems.
 - **List rendering extraction**: list line composition, item metadata,
   highlights, relation loading rows, and missing relation detection live in
   `lua/memos/ui/render.lua`.
+- **Relation action extraction**: add, multi-add, selection, and unlink
+  workflows live in `lua/memos/ui/relation_actions.lua`.
 
 ---
 
@@ -33,13 +35,13 @@ changes do not reopen solved problems.
 
 ### 1. `lua/memos/ui.lua` Module Size
 
-`ui.lua` still owns list sessions, request/cache flow, relation actions,
+`ui.lua` still owns list sessions, request/cache flow, ordinary memo actions,
 statusline state, and public command wrappers.
 
 - **Risk**: changes in one UI area can accidentally affect unrelated behavior.
 - **Suggested direction**: extract internal modules behind the existing
-  `require("memos.ui")` public API. The next practical boundary is relation
-  action workflows.
+  `require("memos.ui")` public API. The next practical boundary is ordinary
+  memo action workflows.
 
 ### 2. Template Creation Request Count
 
