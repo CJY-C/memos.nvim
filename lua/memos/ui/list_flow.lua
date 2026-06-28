@@ -122,9 +122,7 @@ function M.search_memos(session, ctx)
 		session.list_items = {}
 		session.current_page_token = nil
 		session:mark_relation_index_dirty()
-		session.list_refresh_state = "idle"
-		session.last_refresh_error = nil
-		ctx.redraw_status()
+		session:set_refresh_state("idle")
 		ctx.focus_list_buf()
 
 		local entity_name = session.current_list_state == "TEMPLATES" and "templates" or "memos"

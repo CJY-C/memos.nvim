@@ -1,3 +1,5 @@
+local status_utils = require("memos.ui.status")
+
 local M = {}
 
 local function first_line(content)
@@ -5,13 +7,6 @@ local function first_line(content)
 		return ""
 	end
 	return vim.trim(content:match("^[^\n]*") or "")
-end
-
-local function format_time(value, with_seconds)
-	if not value then
-		return nil
-	end
-	return os.date(with_seconds and "%H:%M:%S" or "%H:%M", value)
 end
 
 local function display_date(memo)
@@ -54,17 +49,7 @@ local function window_width(buf)
 end
 
 function M.status_line(session)
-	local refreshed = format_time(session.last_refresh_at, true)
-	if session.list_refresh_state == "refreshing" then
-		return "Refreshing..."
-	end
-	if session.list_refresh_state == "failed" then
-		return "Refresh failed"
-	end
-	if refreshed then
-		return "Updated " .. refreshed
-	end
-	return nil
+	return status_utils.list_text(session)
 end
 
 function M.header_line(session)

@@ -6,6 +6,7 @@ local memo_actions = require("memos.ui.memo_actions")
 local relation_actions = require("memos.ui.relation_actions")
 local render_utils = require("memos.ui.render")
 local relation_utils = require("memos.ui.relations")
+local status_utils = require("memos.ui.status")
 local config = setmetatable({}, {
 	__index = function(_, k)
 		return require("memos").config[k]
@@ -66,9 +67,7 @@ local function get_active_session()
 end
 
 local function redraw_status()
-	vim.schedule(function()
-		pcall(vim.cmd, "redrawstatus")
-	end)
+	return status_utils.redraw()
 end
 
 function ListSession:save_current_state_cache()
@@ -79,33 +78,12 @@ function ListSession:load_state_cache(state)
 	return list_flow.load_state_cache(self, state)
 end
 
-local function has_active_fetches(self)
-	if self.main_list_fetching then
-		return true
-	end
-	for _, _ in pairs(self.in_flight_relations or {}) do
-		return true
-	end
-	return false
-end
-
 function ListSession:set_refresh_state(state, err)
-	local target_state = state or "idle"
-	if target_state == "idle" and has_active_fetches(self) then
-		target_state = "refreshing"
-	end
-	self.list_refresh_state = target_state
-	if self.list_refresh_state == "failed" then
-		self.last_refresh_error = tostring(err or "Unknown error")
-	elseif self.list_refresh_state == "idle" then
-		self.last_refresh_error = nil
-	end
-	redraw_status()
+	return status_utils.set_refresh_state(self, state, err)
 end
 
 function ListSession:mark_refresh_success()
-	self.last_refresh_at = os.time()
-	self:set_refresh_state("idle")
+	return status_utils.mark_refresh_success(self)
 end
 
 local function list_window_context()
@@ -167,13 +145,6 @@ local function first_line(content)
 		return ""
 	end
 	return vim.trim(content:match("^[^\n]*") or "")
-end
-
-local function format_time(value, with_seconds)
-	if not value then
-		return nil
-	end
-	return os.date(with_seconds and "%H:%M:%S" or "%H:%M", value)
 end
 
 local function memo_title(memo)
@@ -859,44 +830,12 @@ function M.on_account_switched()
 	end
 end
 
-local function status_text(s, with_seconds)
-	if not s then
-		return ""
-	end
-	local refreshed = format_time(s.last_refresh_at, with_seconds)
-	if s.list_refresh_state == "refreshing" then
-		return "Memos refreshing"
-	end
-	if s.list_refresh_state == "failed" then
-		return "Memos failed"
-	end
-	if refreshed then
-		return "Memos updated " .. refreshed
-	end
-	return ""
-end
-
 function M.status()
-	local s = get_active_session()
-	if not s then
-		return {
-			state = "idle",
-			text = "",
-			last_refresh_at = nil,
-			last_error = nil,
-		}
-	end
-	return {
-		state = s.list_refresh_state,
-		text = status_text(s, true),
-		last_refresh_at = s.last_refresh_at,
-		last_error = s.last_refresh_error,
-	}
+	return status_utils.public_status(get_active_session())
 end
 
 function M.statusline()
-	local s = get_active_session()
-	return status_text(s, false)
+	return status_utils.public_text(get_active_session(), false)
 end
 
 function M.toggle_template_view()
