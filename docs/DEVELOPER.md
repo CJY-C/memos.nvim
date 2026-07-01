@@ -96,6 +96,7 @@ end)
 Always keep the common user paths request-light:
 - **List View**: Exactly **1** HTTP request.
 - **Create Memo**: Exactly **1** HTTP request.
+- **Create Template**: Exactly **1** HTTP request, creating the memo directly in `ARCHIVED` state.
 - **Update Memo**: Exactly **1** HTTP request.
 - Avoid cascading or sequential HTTP calls unless absolutely necessary.
 

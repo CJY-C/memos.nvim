@@ -11,6 +11,7 @@ This document details the network request counts, endpoints, caching strategies,
 | **Open List View (`:Memos`)** | Sub-second (< 10ms) | **1** (async background) | `GET /api/v1/memos` | **In-memory Stale Cache**: Instantly draws previous session's list. Fetches fresh data asynchronously. |
 | **Pagination (`.` / `,`)** | ~100ms - 200ms | **1** | `GET /api/v1/memos?pageToken=...` | **Page Token Stack**: Caches previous page tokens in memory for instant backwards paging. |
 | **Create Memo** | Instant (~2ms write) + Async (~100ms) | **1** | `POST /api/v1/memos` | Asynchronous Plenary `Job` execution. User can close/edit splits immediately. |
+| **Create Template** | Instant (~2ms write) + Async (~100ms) | **1** | `POST /api/v1/memos` | Creates the template memo already archived with `#type/template`, avoiding a follow-up archive PATCH. |
 | **Save/Update Memo** | Instant (~2ms write) + Async (~100ms) | **1** | `PATCH /api/v1/memos/{id}` | Updates local editor state instantly. Background API execution. |
 | **Pin / Unpin Memo (`p`)** | Instant (< 5ms) | **1** (async background) | `PATCH /api/v1/memos/{id}` | Updates local line display and toggle pin state instantly. Background update. |
 | **Archive / Delete (`x` / `D`)** | Instant (< 5ms) | **1** (async background) | `PATCH /api/v1/memos/{id}` (Archive)<br>`DELETE /api/v1/memos/{id}` (Delete) | Instantly deletes line from buffer and local cache. Asynchronous remote update. |

@@ -78,7 +78,7 @@ keymaps are overridden to support template operations:
 - `D` deletes the template from the remote server.
 - `r` refreshes the template list from the remote server.
 - `s` searches templates on the remote server.
-- `n` opens a new template buffer. When saved, it is archived on the server.
+- `n` opens a new template buffer. When saved, it is created archived on the server.
 
 Memo buffer:
 >
@@ -157,6 +157,9 @@ background so server-side ordering is restored.
 
 Saving an existing memo sends one PATCH request that updates both content and
 update_time, so browser views and update_time ordering reflect Neovim edits.
+
+Saving a new template sends one POST request with state = ARCHIVED and the
+#type/template tag in the content.
 
 A toggles between Normal and Archive views and sends one list request. x
 archives in the Normal view or restores in the Archive view, removes the memo

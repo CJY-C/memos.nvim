@@ -121,29 +121,17 @@ function M.save_template_buffer(bufnr, content, callback)
 		end)
 	else
 		-- Create new template
-		api:create_memo(tagged_content, function(new_memo, err, response)
+		api:create_memo(tagged_content, { state = "ARCHIVED" }, function(new_memo, err, response)
 			vim.schedule(function()
 				if not new_memo or not new_memo.name then
 					callback(false, nil, err or "Failed to create template memo on server")
 					return
 				end
 
-				-- Now archive it!
-				api:update_memo_state(new_memo.name, "ARCHIVED", function(state_success, state_err)
-					vim.schedule(function()
-						if not state_success then
-							-- Delete the leaked normal memo to stay clean
-							api:delete_memo(new_memo.name, function() end)
-							callback(false, nil, state_err or "Failed to archive template memo on server")
-							return
-						end
-
-						callback(true, {
-							name = new_memo.name,
-							buffer_name = build_template_buffer_name(new_memo.name, content),
-						}, nil)
-					end)
-				end)
+				callback(true, {
+					name = new_memo.name,
+					buffer_name = build_template_buffer_name(new_memo.name, content),
+				}, nil)
 			end)
 		end)
 	end

@@ -49,6 +49,10 @@ changes do not reopen solved problems.
   `lua/memos/ui/list_window.lua`.
 - **Status helper extraction**: refresh-state coordination, public statusline
   text, and list header status text live in `lua/memos/ui/status.lua`.
+- **Template create request count**: new templates are created already archived
+  in one `POST /api/v1/memos` request.
+- **Shared memo PATCH helper**: memo field updates use `Client:patch_memo(...)`
+  to preserve consistent PATCH URLs, bodies, masks, and callback handling.
 
 ---
 
@@ -63,26 +67,7 @@ changes do not reopen solved problems.
   `require("memos.ui")` public API. The next practical boundary is remaining
   list-session methods that still proxy command coordination.
 
-### 2. Template Creation Request Count
-
-Creating a new template currently creates a memo and then archives it.
-
-- **Risk**: template creation requires sequential writes and cleanup if the
-  archive step fails.
-- **Suggested direction**: verify whether Memos `/api/v1/memos` create accepts
-  an archived state. If it does, create archived templates in one request and
-  update request-count docs and tests.
-
-### 3. Repeated Memo PATCH Boilerplate
-
-The API client has several memo update methods with the same PATCH structure.
-
-- **Risk**: future field updates can drift in URL, JSON body, error handling, or
-  callback shape.
-- **Suggested direction**: share a private PATCH helper while preserving the
-  existing public API methods and request payloads.
-
-### 4. Relation Detail Fetch Fan-out
+### 2. Relation Detail Fetch Fan-out
 
 Expanding relation rows lazy-loads missing related memos one request per cache
 miss.

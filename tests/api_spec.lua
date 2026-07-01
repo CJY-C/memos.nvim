@@ -24,6 +24,42 @@ describe("memos.api client", function()
 		assert.are.same("http://updated.com", client:get_host())
 	end)
 
+	it("should create memos with the backward-compatible content-only body", function()
+		local client = api.new({ host = "http://test.com", token = "123" })
+		local captured_args = nil
+		client.run_curl = function(_, args, callback)
+			captured_args = args
+			callback({ ok = true, status = 200, body = '{"name":"memos/1","content":"hello"}' })
+		end
+
+		local created = nil
+		client:create_memo("hello", function(memo)
+			created = memo
+		end)
+
+		assert.are.same("POST", captured_args[2])
+		assert.are.same("http://test.com/api/v1/memos", captured_args[3])
+		assert.are.same("Content-Type: application/json", captured_args[5])
+		assert.are.same({ content = "hello" }, vim.json.decode(captured_args[7]))
+		assert.are.same("memos/1", created.name)
+	end)
+
+	it("should create memos with supported optional create fields", function()
+		local client = api.new({ host = "http://test.com", token = "123" })
+		local captured_args = nil
+		client.run_curl = function(_, args, callback)
+			captured_args = args
+			callback({ ok = true, status = 200, body = '{"name":"memos/1","state":"ARCHIVED"}' })
+		end
+
+		client:create_memo("template", { state = "ARCHIVED" }, function() end)
+
+		assert.are.same({
+			content = "template",
+			state = "ARCHIVED",
+		}, vim.json.decode(captured_args[7]))
+	end)
+
 	it("should send memo content updates through the shared PATCH shape", function()
 		local client = api.new({ host = "http://test.com", token = "123" })
 		local captured_args = nil
