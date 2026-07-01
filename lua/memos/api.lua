@@ -245,21 +245,15 @@ function Client:get_memo(memo_name, callback)
 	end)
 end
 
-local function build_create_memo_payload(content, opts)
-	local payload = {
+local function build_create_memo_payload(content)
+	return {
 		content = content,
 	}
-	if type(opts) == "table" and type(opts.state) == "string" and opts.state ~= "" then
-		payload.state = opts.state
-	end
-	return payload
 end
 
-function Client:create_memo(content, opts_or_callback, maybe_callback)
-	local opts = type(opts_or_callback) == "table" and opts_or_callback or nil
-	local callback = type(opts_or_callback) == "function" and opts_or_callback or maybe_callback
+function Client:create_memo(content, callback)
 	local host = self:get_host()
-	local json_data = vim.json.encode(build_create_memo_payload(content, opts))
+	local json_data = vim.json.encode(build_create_memo_payload(content))
 
 	self:run_curl({
 		"-X",

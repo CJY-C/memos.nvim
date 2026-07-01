@@ -49,8 +49,9 @@ changes do not reopen solved problems.
   `lua/memos/ui/list_window.lua`.
 - **Status helper extraction**: refresh-state coordination, public statusline
   text, and list header status text live in `lua/memos/ui/status.lua`.
-- **Template create request count**: new templates are created already archived
-  in one `POST /api/v1/memos` request.
+- **Template create request count**: new templates are created, then archived
+  with a follow-up PATCH because the Memos create API does not accept archive
+  state in the create payload.
 - **Shared memo PATCH helper**: memo field updates use `Client:patch_memo(...)`
   to preserve consistent PATCH URLs, bodies, masks, and callback handling.
 

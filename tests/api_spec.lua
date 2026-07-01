@@ -44,22 +44,6 @@ describe("memos.api client", function()
 		assert.are.same("memos/1", created.name)
 	end)
 
-	it("should create memos with supported optional create fields", function()
-		local client = api.new({ host = "http://test.com", token = "123" })
-		local captured_args = nil
-		client.run_curl = function(_, args, callback)
-			captured_args = args
-			callback({ ok = true, status = 200, body = '{"name":"memos/1","state":"ARCHIVED"}' })
-		end
-
-		client:create_memo("template", { state = "ARCHIVED" }, function() end)
-
-		assert.are.same({
-			content = "template",
-			state = "ARCHIVED",
-		}, vim.json.decode(captured_args[7]))
-	end)
-
 	it("should send memo content updates through the shared PATCH shape", function()
 		local client = api.new({ host = "http://test.com", token = "123" })
 		local captured_args = nil

@@ -121,17 +121,26 @@ function M.save_template_buffer(bufnr, content, callback)
 		end)
 	else
 		-- Create new template
-		api:create_memo(tagged_content, { state = "ARCHIVED" }, function(new_memo, err, response)
-			vim.schedule(function()
-				if not new_memo or not new_memo.name then
+		api:create_memo(tagged_content, function(new_memo, err, response)
+			if not new_memo or not new_memo.name then
+				vim.schedule(function()
 					callback(false, nil, err or "Failed to create template memo on server")
-					return
-				end
+				end)
+				return
+			end
 
-				callback(true, {
-					name = new_memo.name,
-					buffer_name = build_template_buffer_name(new_memo.name, content),
-				}, nil)
+			api:update_memo_state(new_memo.name, "ARCHIVED", function(success, archive_err)
+				vim.schedule(function()
+					if not success then
+						callback(false, nil, archive_err or "Failed to archive template memo on server")
+						return
+					end
+
+					callback(true, {
+						name = new_memo.name,
+						buffer_name = build_template_buffer_name(new_memo.name, content),
+					}, nil)
+				end)
 			end)
 		end)
 	end

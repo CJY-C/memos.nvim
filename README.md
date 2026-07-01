@@ -198,7 +198,7 @@ Toggling pin sends one PATCH request and then refreshes the list once in the bac
 
 Saving an existing memo sends one PATCH request that updates both `content` and `update_time`, so browser views and `update_time` ordering reflect edits made from Neovim.
 
-Saving a new template sends one POST request with `state = "ARCHIVED"` and the `#type/template` tag in the content.
+Saving a new template sends one POST request with the `#type/template` tag in the content, then one PATCH request to archive it because the Memos create API does not accept archive state in the create payload.
 
 Deleting a memo asks for confirmation, sends one DELETE request, removes the memo from the local list immediately on success, and then refreshes the list once in the background. Force delete is intentionally not enabled.
 
