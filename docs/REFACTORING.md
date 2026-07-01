@@ -49,6 +49,9 @@ changes do not reopen solved problems.
   `lua/memos/ui/list_window.lua`.
 - **Status helper extraction**: refresh-state coordination, public statusline
   text, and list header status text live in `lua/memos/ui/status.lua`.
+- **Search filter extraction**: plain text, tag, and raw CEL search-filter
+  building lives in `lua/memos/ui/search.lua` behind the existing
+  `require("memos.ui").build_search_filter(...)` wrapper.
 - **Template create request count**: new templates are created, then archived
   with a follow-up PATCH because the Memos create API does not accept archive
   state in the create payload.
@@ -61,12 +64,13 @@ changes do not reopen solved problems.
 
 ### 1. `lua/memos/ui.lua` Module Size
 
-`ui.lua` still owns list sessions and public command wrappers.
+`ui.lua` still owns list sessions, context construction, and public command
+wrappers.
 
 - **Risk**: changes in one UI area can accidentally affect unrelated behavior.
 - **Suggested direction**: extract internal modules behind the existing
-  `require("memos.ui")` public API. The next practical boundary is remaining
-  list-session methods that still proxy command coordination.
+  `require("memos.ui")` public API. The next practical boundary is command
+  coordination around templates and list-session public wrappers.
 
 ### 2. Relation Detail Fetch Fan-out
 

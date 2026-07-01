@@ -9,6 +9,7 @@ local relation_expand = require("memos.ui.relation_expand")
 local render_apply = require("memos.ui.render_apply")
 local render_utils = require("memos.ui.render")
 local relation_utils = require("memos.ui.relations")
+local search = require("memos.ui.search")
 local selection = require("memos.ui.selection")
 local status_utils = require("memos.ui.status")
 local config = setmetatable({}, {
@@ -155,51 +156,8 @@ local function memo_title(memo)
 	return "(empty)"
 end
 
-local function cel_string(value)
-	value = tostring(value or "")
-	value = value:gsub("\\", "\\\\")
-	value = value:gsub('"', '\\"')
-	value = value:gsub("\n", "\\n")
-	return '"' .. value .. '"'
-end
-
-local function looks_like_cel_filter(input)
-	return input:match("content%.contains%s*%(")
-		or input:match("%f[%w]tags%f[%W]")
-		or input:match("%s+in%s+tags")
-		or input:match("&&")
-		or input:match("%|%|")
-		or input:match("[<>=!]=")
-end
-
 function M.build_search_filter(input)
-	local trimmed = vim.trim(input or "")
-	if trimmed == "" then
-		return ""
-	end
-	if looks_like_cel_filter(trimmed) then
-		return trimmed
-	end
-
-	local tags = {}
-	local text_terms = {}
-	for token in trimmed:gmatch("%S+") do
-		if token:sub(1, 1) == "#" and #token > 1 then
-			table.insert(tags, token:sub(2))
-		else
-			table.insert(text_terms, token)
-		end
-	end
-
-	local parts = {}
-	local text = table.concat(text_terms, " ")
-	if text ~= "" then
-		table.insert(parts, "content.contains(" .. cel_string(text) .. ")")
-	end
-	for _, tag in ipairs(tags) do
-		table.insert(parts, cel_string(tag) .. " in tags")
-	end
-	return table.concat(parts, " && ")
+	return search.build_filter(input)
 end
 
 function ListSession:mark_relation_index_dirty()
