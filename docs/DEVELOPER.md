@@ -183,6 +183,7 @@ To maintain visual feedback for network activity and ensure a consistent user ex
   - `kind = "memos_visibility"` for visibility settings.
   - `kind = "memos_delete"` for deletion confirmation prompts.
   - `kind = "memos_unlink"` for unlinking confirmation prompts.
+- Relation pickers should ignore `pinned` priority when ordering cached memo candidates. Keep clipboard choices first and manual ID input last; sort memo candidates by normal recency so pinned memos remain selectable without dominating the picker.
 
 ---
 

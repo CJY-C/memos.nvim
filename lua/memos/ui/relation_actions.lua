@@ -30,6 +30,21 @@ local function memo_choice_label(memo)
 	return string.format("%s - %s", memo.name, vim.fn.strcharpart(title, 0, 60))
 end
 
+local function compare_relation_candidate(a, b)
+	local a_update = a.update_time or a.updateTime or ""
+	local b_update = b.update_time or b.updateTime or ""
+	if a_update ~= b_update then
+		return a_update > b_update
+	end
+
+	local a_create = a.create_time or a.createTime or ""
+	local b_create = b.create_time or b.createTime or ""
+	if a_create ~= b_create then
+		return a_create > b_create
+	end
+	return (a.name or "") < (b.name or "")
+end
+
 local function build_relation_choices(session, memo)
 	local choices = {}
 	local choice_map = {}
@@ -41,12 +56,18 @@ local function build_relation_choices(session, memo)
 		choice_map[clip_label] = { type = "clipboard", value = clipboard_id }
 	end
 
+	local memo_choices = {}
 	for _, m in ipairs(session.memos_cache) do
 		if not relation_utils.is_same_memo(m, memo) then
-			local label = memo_choice_label(m)
-			table.insert(choices, label)
-			choice_map[label] = { type = "memo", value = m.name }
+			table.insert(memo_choices, m)
 		end
+	end
+	table.sort(memo_choices, compare_relation_candidate)
+
+	for _, m in ipairs(memo_choices) do
+		local label = memo_choice_label(m)
+		table.insert(choices, label)
+		choice_map[label] = { type = "memo", value = m.name }
 	end
 
 	local manual_label = "[Input memo ID manually]"

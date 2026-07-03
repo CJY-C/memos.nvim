@@ -463,6 +463,75 @@ describe("memos.ui relations", function()
 		assert.are.same("memos/2", api_relations_arg[1].relatedMemo.name)
 	end)
 
+	it("should ignore pinned priority when ordering relation picker candidates", function()
+		local old_select = vim.ui.select
+
+		ui.bind_list_keymaps(buf)
+		local s = ui.get_session(buf)
+
+		s.memos_cache = {
+			{
+				name = "memos/1",
+				content = "Current memo",
+				update_time = "2026-06-21T10:00:00Z",
+				relations = {}
+			},
+			{
+				name = "memos/2",
+				content = "Pinned older memo",
+				pinned = true,
+				update_time = "2026-06-20T10:00:00Z",
+				create_time = "2026-06-19T10:00:00Z"
+			},
+			{
+				name = "memos/3",
+				content = "Unpinned newer memo",
+				pinned = false,
+				update_time = "2026-06-22T10:00:00Z",
+				create_time = "2026-06-21T10:00:00Z"
+			},
+			{
+				name = "memos/4",
+				content = "Same update newer create",
+				pinned = false,
+				update_time = "2026-06-20T10:00:00Z",
+				create_time = "2026-06-20T10:00:00Z"
+			}
+		}
+
+		vim.fn.getreg = function(reg)
+			if reg == "+" then
+				return "memos/99"
+			end
+			return ""
+		end
+
+		vim.api.nvim_set_current_buf(buf)
+		s:render_cached_memos()
+		vim.wait(500, function()
+			return s.list_items[2] ~= nil
+		end)
+		vim.api.nvim_win_set_cursor(0, { 2, 0 })
+
+		local select_called = false
+		vim.ui.select = function(items, opts, on_choice)
+			select_called = true
+			assert.are.same("memos_relation", opts.kind)
+			assert.are.same("[Use Clipboard: memos/99]", items[1])
+			assert.are.same("memos/3 - Unpinned newer memo", items[2])
+			assert.are.same("memos/4 - Same update newer create", items[3])
+			assert.are.same("memos/2 - Pinned older memo", items[4])
+			assert.are.same("[Input memo ID manually]", items[#items])
+			on_choice(nil)
+		end
+
+		s:add_relation()
+
+		vim.ui.select = old_select
+
+		assert.is_true(select_called)
+	end)
+
 	it("should fallback to manual input prompt if manual choice is selected", function()
 		local api = require("memos.api")
 		local old_select = vim.ui.select

@@ -80,6 +80,10 @@ keymaps are overridden to support template operations:
 - `s` searches templates on the remote server.
 - `n` opens a new template buffer. When saved, it is created archived on the server.
 
+The `c` relation picker keeps pinned memos selectable, but it ignores pin
+priority when ordering cached memo candidates. Clipboard choices stay first,
+manual ID input stays last, and memo candidates are ordered by normal recency.
+
 Memo buffer:
 >
   <leader>ms     Save memo / template

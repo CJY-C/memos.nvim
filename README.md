@@ -124,6 +124,10 @@ The table below lists all list-view keymaps. Note that some keys adjust behavior
 | `,` | **Prev Page** | Returns to the previous page of memos (page history). | Returns to the previous page of templates (page history). |
 | `q` | **Quit** | Closes the list buffer. | Closes the list buffer. |
 
+The `c` relation picker keeps clipboard and manual ID options available. Cached
+memo candidates are sorted by normal memo recency, so pinned memos remain
+selectable but do not jump ahead of newer unpinned memos in the picker.
+
 ### Memo / Template Buffer Keymaps
 
 These keymaps are set up inside the buffer when writing a memo or template:
