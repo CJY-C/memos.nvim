@@ -161,10 +161,12 @@ When parsing relations between memos (e.g. for outgoing and incoming link calcul
 
 To maintain visual feedback for network activity and ensure a consistent user experience:
 - **Active Refresh State**: When any background request is initiated—whether it is the main memo list fetch (`list_memos`) or fetching missing relation details for expanded nodes—the session's refresh state must transition to `"refreshing"` (via `self:set_refresh_state("refreshing")`). This ensures that the header line displays the `Refreshing...` status.
-- **Coordination of Active Fetches**: The status indicator must remain `"refreshing"` as long as there is any in-flight fetch request. We track this using:
+- **Coordination of Active Fetches**: The status indicator must remain `"refreshing"` as long as there is any in-flight or queued fetch request. We track this using:
   - `self.main_list_fetching`: A boolean flag representing the main list API fetch.
   - `self.in_flight_relations`: A table mapping memo resource names currently being fetched in the background.
-- **Helper Coordination**: Use `has_active_fetches(self)` to dynamically check if either of these is active. The transition back to `"idle"` must only occur when both operations are fully complete.
+  - `self.pending_relations`: An ordered queue of relation detail fetches waiting for an available slot.
+  - `self.active_relation_fetches`: The number of relation detail requests currently occupying queue slots.
+- **Helper Coordination**: Use `has_active_fetches(self)` to dynamically check if any of these are active. The transition back to `"idle"` must only occur when both active and queued operations are fully complete.
 
 ---
 

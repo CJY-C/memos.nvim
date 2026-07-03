@@ -14,6 +14,12 @@ local function has_active_fetches(session)
 	for _, _ in pairs(session.in_flight_relations or {}) do
 		return true
 	end
+	if (session.active_relation_fetches or 0) > 0 then
+		return true
+	end
+	if #(session.pending_relations or {}) > 0 then
+		return true
+	end
 	return false
 end
 

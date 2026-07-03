@@ -1024,6 +1024,95 @@ describe("memos.ui relations", function()
 		assert.is_true(s.in_flight_relations["memos/99"])
 	end)
 
+	it("should limit queued relation detail fetch concurrency", function()
+		local api = require("memos.api")
+		local old_get_memo = api.Client.get_memo
+
+		ui.bind_list_keymaps(buf)
+		local s = ui.get_session(buf)
+		local started = {}
+		local callbacks = {}
+
+		api.Client.get_memo = function(self_api, name, callback)
+			table.insert(started, name)
+			callbacks[name] = callback
+		end
+
+		s:fetch_missing_relations({ "memos/1", "memos/2", "memos/3", "memos/4", "memos/5" })
+
+		assert.are.same({ "memos/1", "memos/2", "memos/3" }, started)
+		assert.are.same(3, s.active_relation_fetches)
+		assert.are.same(2, #s.pending_relations)
+		assert.is_true(s.queued_relations["memos/4"])
+		assert.is_true(s.queued_relations["memos/5"])
+		assert.are.same("refreshing", s.list_refresh_state)
+
+		callbacks["memos/1"]({
+			name = "memos/1",
+			content = "Relation 1",
+			state = "NORMAL"
+		}, nil)
+		vim.wait(500, function()
+			return #started == 4
+		end)
+
+		assert.are.same({ "memos/1", "memos/2", "memos/3", "memos/4" }, started)
+		assert.are.same(3, s.active_relation_fetches)
+		assert.are.same(1, #s.pending_relations)
+		assert.are.same("refreshing", s.list_refresh_state)
+		assert.are.same("Relation 1", s.relation_details_cache["memos/1"].content)
+
+		callbacks["memos/2"]({ name = "memos/2", content = "Relation 2", state = "NORMAL" }, nil)
+		callbacks["memos/3"]({ name = "memos/3", content = "Relation 3", state = "NORMAL" }, nil)
+		callbacks["memos/4"]({ name = "memos/4", content = "Relation 4", state = "NORMAL" }, nil)
+		vim.wait(500, function()
+			return #started == 5 and callbacks["memos/5"] ~= nil
+		end)
+		callbacks["memos/5"]({ name = "memos/5", content = "Relation 5", state = "NORMAL" }, nil)
+		vim.wait(500, function()
+			return s.list_refresh_state == "idle"
+		end)
+
+		api.Client.get_memo = old_get_memo
+
+		assert.are.same(0, s.active_relation_fetches)
+		assert.are.same(0, #s.pending_relations)
+		assert.are.same("Relation 5", s.relation_details_cache["memos/5"].content)
+	end)
+
+	it("should not queue duplicate relation detail fetches", function()
+		local api = require("memos.api")
+		local old_get_memo = api.Client.get_memo
+
+		ui.bind_list_keymaps(buf)
+		local s = ui.get_session(buf)
+		s.relation_details_cache["memos/cached"] = {
+			name = "memos/cached",
+			content = "Cached memo",
+		}
+		s.in_flight_relations["memos/active"] = true
+
+		local started = {}
+		api.Client.get_memo = function(self_api, name, callback)
+			table.insert(started, name)
+		end
+
+		s:fetch_missing_relations({
+			"memos/cached",
+			"memos/active",
+			"memos/new",
+			"memos/new",
+			"memos/other",
+		})
+
+		api.Client.get_memo = old_get_memo
+
+		assert.are.same({ "memos/new", "memos/other" }, started)
+		assert.is_true(s.in_flight_relations["memos/active"])
+		assert.is_true(s.in_flight_relations["memos/new"])
+		assert.is_true(s.in_flight_relations["memos/other"])
+	end)
+
 	it("should cache a fallback relation memo when detail fetch fails", function()
 		local api = require("memos.api")
 		local old_get_memo = api.Client.get_memo

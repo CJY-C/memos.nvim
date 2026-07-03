@@ -1,5 +1,7 @@
 local M = {}
 
+local RELATION_FETCH_CONCURRENCY = 3
+
 local function get_current_memo(session)
 	local item = session:current_list_item()
 	if not item or item.kind ~= "memo" then
@@ -55,31 +57,63 @@ function M.collapse_all(session)
 	vim.notify("Collapsed all memo expansions.")
 end
 
-function M.fetch_missing_relations(session, ctx, names)
-	for _, name in ipairs(names) do
+local function cache_relation_result(session, name, memo_data, err)
+	if memo_data then
+		session.relation_details_cache[name] = memo_data
+	else
+		session.relation_details_cache[name] = {
+			name = name,
+			content = "Failed to load relation: " .. tostring(err),
+			state = "NORMAL",
+			create_time = "",
+			update_time = "",
+		}
+	end
+end
+
+local function drain_relation_queue(session, ctx)
+	while (session.active_relation_fetches or 0) < RELATION_FETCH_CONCURRENCY do
+		local name = table.remove(session.pending_relations, 1)
+		if not name then
+			return
+		end
+
+		session.queued_relations[name] = nil
 		if not session:get_cached_relation_memo(name) and not session.in_flight_relations[name] then
 			session.in_flight_relations[name] = true
+			session.active_relation_fetches = (session.active_relation_fetches or 0) + 1
 			session:set_refresh_state("refreshing")
 			ctx.api:get_memo(name, function(memo_data, err)
 				vim.schedule(function()
 					session.in_flight_relations[name] = nil
-					if memo_data then
-						session.relation_details_cache[name] = memo_data
-					else
-						session.relation_details_cache[name] = {
-							name = name,
-							content = "Failed to load relation: " .. tostring(err),
-							state = "NORMAL",
-							create_time = "",
-							update_time = "",
-						}
-					end
+					session.active_relation_fetches = math.max((session.active_relation_fetches or 1) - 1, 0)
+					cache_relation_result(session, name, memo_data, err)
+					drain_relation_queue(session, ctx)
 					session:set_refresh_state("idle")
 					session:render_cached_memos()
 				end)
 			end)
 		end
 	end
+end
+
+function M.fetch_missing_relations(session, ctx, names)
+	session.pending_relations = session.pending_relations or {}
+	session.queued_relations = session.queued_relations or {}
+	session.active_relation_fetches = session.active_relation_fetches or 0
+
+	local queued = false
+	for _, name in ipairs(names) do
+		if not session:get_cached_relation_memo(name) and not session.in_flight_relations[name] and not session.queued_relations[name] then
+			table.insert(session.pending_relations, name)
+			session.queued_relations[name] = true
+			queued = true
+		end
+	end
+	if queued then
+		session:set_refresh_state("refreshing")
+	end
+	drain_relation_queue(session, ctx)
 end
 
 return M

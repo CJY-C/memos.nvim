@@ -17,7 +17,7 @@ This document details the network request counts, endpoints, caching strategies,
 | **Archive / Delete (`x` / `D`)** | Instant (< 5ms) | **1** (async background) | `PATCH /api/v1/memos/{id}` (Archive)<br>`DELETE /api/v1/memos/{id}` (Delete) | Instantly deletes line from buffer and local cache. Asynchronous remote update. |
 | **Link Relations (`c`)** | Instant (~5ms) + Async (~100ms) | **2** | 1x `PATCH /api/v1/memos/{id}/relations`<br>1x `GET /api/v1/memos` (async list refresh) | **Batched PATCH**: Sends all newly selected relations in one request. Refreshes list silently. |
 | **Unlink Relation (`D` on rel)** | Instant (~5ms) + Async (~100ms) | **2** | 1x `PATCH /api/v1/memos/{id}/relations`<br>1x `GET /api/v1/memos` (async list refresh) | Filters out relation local cache instantly. Updates server and refreshes in background. |
-| **Expand Relations (`<Tab>`)** | Instant (cached) or ~100ms (uncached) | **0 to N** (only for uncached related nodes) | `GET /api/v1/memos/{relatedMemoId}` | **Lazy On-Demand Fetching**: Queries memo details only on cache miss. Caches results immediately. |
+| **Expand Relations (`<Tab>`)** | Instant (cached) or queued async loading (uncached) | **0 to N** (only for uncached related nodes, max 3 concurrent) | `GET /api/v1/memos/{relatedMemoId}` | **Lazy On-Demand Fetching**: Queries memo details only on cache miss, drains requests through a small queue, and caches results immediately. |
 
 ---
 
@@ -43,4 +43,4 @@ This document details the network request counts, endpoints, caching strategies,
 - **Mechanism**:
   - The main list response returns relation metadata containing owner/target names but not the full content or titles of the related memos.
   - The list session builds an in-memory relation index from the current cache so link counts and expansion rows can be rendered without rescanning every memo for every row.
-  - When a user presses `<Tab>` to expand links, the plugin lazy-loads the target memo's details *only if* it is not already present in the local cache. Once fetched, the information is persisted so subsequent expansions are instant and require zero requests.
+  - When a user presses `<Tab>` to expand links, the plugin lazy-loads the target memo's details *only if* it is not already present in the local cache. Missing details are queued with a maximum of 3 concurrent requests, then persisted so subsequent expansions are instant and require zero requests.

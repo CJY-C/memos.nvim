@@ -55,6 +55,17 @@ describe("memos.ui.status", function()
 		assert.are.same("refreshing", s.list_refresh_state)
 	end)
 
+	it("should keep refreshing while relation fetches are queued", function()
+		local s = session({
+			pending_relations = { "memos/2" },
+			list_refresh_state = "refreshing",
+		})
+
+		status.set_refresh_state(s, "idle")
+
+		assert.are.same("refreshing", s.list_refresh_state)
+	end)
+
 	it("should store failed errors and clear them on idle", function()
 		local s = session()
 

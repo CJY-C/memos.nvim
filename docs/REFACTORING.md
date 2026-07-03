@@ -57,6 +57,9 @@ changes do not reopen solved problems.
   state in the create payload.
 - **Shared memo PATCH helper**: memo field updates use `Client:patch_memo(...)`
   to preserve consistent PATCH URLs, bodies, masks, and callback handling.
+- **Relation detail fetch queue**: expanding relation rows still lazy-loads
+  uncached related memos, but detail requests are drained through a fixed
+  concurrency queue so one expansion cannot issue every cache miss at once.
 
 ---
 
@@ -71,14 +74,3 @@ wrappers.
 - **Suggested direction**: extract internal modules behind the existing
   `require("memos.ui")` public API. The next practical boundary is command
   coordination around templates and list-session public wrappers.
-
-### 2. Relation Detail Fetch Fan-out
-
-Expanding relation rows lazy-loads missing related memos one request per cache
-miss.
-
-- **Risk**: expanding a memo with many uncached relations can produce many
-  concurrent requests.
-- **Suggested direction**: keep the current lazy default, but consider a small
-  concurrency queue or batch endpoint only after confirming server support and
-  documenting request counts.

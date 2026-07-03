@@ -52,6 +52,9 @@ function ListSession.new(bufnr)
 		relation_index_dirty = true,
 		relation_index = relation_utils.empty_index(),
 		in_flight_relations = {},
+		pending_relations = {},
+		queued_relations = {},
+		active_relation_fetches = 0,
 		main_list_fetching = false,
 		page_history = {},
 	}, ListSession)
