@@ -47,6 +47,8 @@ changes do not reopen solved problems.
 - **List window extraction**: list buffer creation, float window management,
   list focusing, toggling, quitting, and template-list switching live in
   `lua/memos/ui/list_window.lua`.
+- **Float workspace panes**: floating mode can restore a single list/edit pane
+  or list+edit split panes without opening normal windows behind the Memos UI.
 - **Status helper extraction**: refresh-state coordination, public statusline
   text, and list header status text live in `lua/memos/ui/status.lua`.
 - **Search filter extraction**: plain text, tag, and raw CEL search-filter

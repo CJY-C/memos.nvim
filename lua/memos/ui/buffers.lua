@@ -1,6 +1,15 @@
 local M = {}
 
 function M.open_edit_buffer(ctx, content, open_cmd)
+	if ctx.config.window and ctx.config.window.enable_float and ctx.open_float_edit_window then
+		local buf = vim.api.nvim_create_buf(false, true)
+		ctx.open_float_edit_window(buf, open_cmd or "enew")
+		if type(content) == "string" then
+			vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(content, "\n"))
+		end
+		return buf
+	end
+
 	if open_cmd == "split" or open_cmd == "vsplit" then
 		local source_win = vim.api.nvim_get_current_win()
 		local close_source_float = false
@@ -105,7 +114,9 @@ function M.open_memo_for_edit(ctx, memo, open_cmd)
 	local existing = buffer_name and vim.fn.bufnr(buffer_name) or -1
 	if existing ~= -1 and vim.api.nvim_buf_is_loaded(existing) then
 		local win = vim.fn.bufwinid(existing)
-		if win ~= -1 then
+		if ctx.config.window and ctx.config.window.enable_float and ctx.open_float_edit_window then
+			ctx.open_float_edit_window(existing, open_cmd or "enew")
+		elseif win ~= -1 then
 			vim.api.nvim_set_current_win(win)
 		else
 			vim.api.nvim_set_current_buf(existing)
@@ -132,7 +143,10 @@ end
 
 function M.return_to_list(ctx)
 	local current_buf = vim.api.nvim_get_current_buf()
-	ctx.show_memos_list()
+	local handled_float = ctx.return_to_float_list and ctx.return_to_float_list(current_buf)
+	if not handled_float then
+		ctx.show_memos_list()
+	end
 	if vim.api.nvim_buf_is_valid(current_buf) and not vim.bo[current_buf].modified then
 		pcall(vim.api.nvim_buf_delete, current_buf, { force = false })
 	end

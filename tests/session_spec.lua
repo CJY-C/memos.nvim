@@ -254,7 +254,39 @@ describe("memos.ui ListSession encapsulation", function()
 		api_mod.Client.list_memos = original_list_memos
 	end)
 
-	it("should open edit buffer via pure Lua split/vsplit window API without vim.cmd split", function()
+	local function count_memos_float_roles()
+		local counts = {}
+		for _, win in ipairs(vim.api.nvim_list_wins()) do
+			local ok, value = pcall(vim.api.nvim_win_get_var, win, "memos_window")
+			if ok and value == true and vim.api.nvim_win_is_valid(win) then
+				local role_ok, role = pcall(vim.api.nvim_win_get_var, win, "memos_role")
+				counts[role_ok and role or "unknown"] = (counts[role_ok and role or "unknown"] or 0) + 1
+			end
+		end
+		return counts
+	end
+
+	local function stub_list_memos()
+		local api_mod = require("memos.api")
+		local original_list_memos = api_mod.Client.list_memos
+		local calls = 0
+		api_mod.Client.list_memos = function(self_api, opts, callback)
+			calls = calls + 1
+			callback({ memos = {}, next_page_token = "" }, nil)
+		end
+		return function()
+			api_mod.Client.list_memos = original_list_memos
+		end, function()
+			return calls
+		end
+	end
+
+	it("should open edit buffer via pure Lua split/vsplit window API without vim.cmd split when floats are disabled", function()
+		memos.setup({
+			window = {
+				enable_float = false,
+			},
+		})
 		local original_open_win = vim.api.nvim_open_win
 		local open_win_opts = nil
 		
@@ -275,6 +307,120 @@ describe("memos.ui ListSession encapsulation", function()
 		
 		-- Restore
 		vim.api.nvim_open_win = original_open_win
+	end)
+
+	it("should open vsplit edit panes inside the Memos float workspace", function()
+		memos.setup({
+			window = {
+				enable_float = true,
+				width = 0.7,
+				height = 0.7,
+				border = "rounded",
+			},
+		})
+		local restore_list, list_calls = stub_list_memos()
+
+		local buf = ui.open_edit_buffer("test text content", "vsplit")
+		local counts = count_memos_float_roles()
+
+		restore_list()
+
+		assert.is_true(vim.api.nvim_buf_is_valid(buf))
+		assert.are.same(1, counts.list)
+		assert.are.same(1, counts.edit)
+		assert.are.same(0, list_calls())
+	end)
+
+	it("should open split edit panes inside the Memos float workspace", function()
+		memos.setup({
+			window = {
+				enable_float = true,
+				width = 0.7,
+				height = 0.7,
+				border = "rounded",
+			},
+		})
+		local restore_list = stub_list_memos()
+
+		local buf = ui.open_edit_buffer("test text content", "split")
+		local counts = count_memos_float_roles()
+
+		restore_list()
+
+		assert.is_true(vim.api.nvim_buf_is_valid(buf))
+		assert.are.same(1, counts.list)
+		assert.are.same(1, counts.edit)
+	end)
+
+	it("should restore the previous float split layout when toggling the Memos window", function()
+		memos.setup({
+			window = {
+				enable_float = true,
+				width = 0.7,
+				height = 0.7,
+				border = "rounded",
+			},
+		})
+		local restore_list = stub_list_memos()
+
+		ui.open_edit_buffer("test text content", "vsplit")
+		ui.toggle_memos_list()
+		assert.are.same(nil, next(count_memos_float_roles()))
+
+		ui.toggle_memos_list()
+		local counts = count_memos_float_roles()
+
+		restore_list()
+
+		assert.are.same(1, counts.list)
+		assert.are.same(1, counts.edit)
+	end)
+
+	it("should close an unmodified float edit pane when returning to the list", function()
+		memos.setup({
+			window = {
+				enable_float = true,
+				width = 0.7,
+				height = 0.7,
+				border = "rounded",
+			},
+		})
+		local restore_list = stub_list_memos()
+
+		local edit_buf = ui.open_edit_buffer("test text content", "vsplit")
+		ui.setup_buffer_for_editing()
+		ui.return_to_list()
+		local counts = count_memos_float_roles()
+
+		restore_list()
+
+		assert.is_false(vim.api.nvim_buf_is_valid(edit_buf))
+		assert.are.same(1, counts.list)
+		assert.is_nil(counts.edit)
+	end)
+
+	it("should keep a modified float edit pane when returning to the list", function()
+		memos.setup({
+			window = {
+				enable_float = true,
+				width = 0.7,
+				height = 0.7,
+				border = "rounded",
+			},
+		})
+		local restore_list = stub_list_memos()
+
+		local edit_buf = ui.open_edit_buffer("test text content", "enew")
+		ui.setup_buffer_for_editing()
+		vim.bo[edit_buf].modified = true
+		ui.return_to_list()
+		local counts = count_memos_float_roles()
+
+		restore_list()
+
+		assert.is_true(vim.api.nvim_buf_is_valid(edit_buf))
+		assert.are.same(1, counts.list)
+		assert.are.same(1, counts.edit)
 	end)
 
 	it("should track pagination history and allow returning to previous page view", function()

@@ -125,6 +125,10 @@ local function create_float_window(buf)
 	return list_window.create_float_window(list_window_context(), buf)
 end
 
+local function open_float_edit_window(buf, open_cmd)
+	return list_window.open_float_edit_window(list_window_context(), buf, open_cmd)
+end
+
 local function ensure_list_buf()
 	return list_window.ensure_list_buf(list_window_context())
 end
@@ -218,6 +222,10 @@ local function buffer_context()
 		is_float_window = is_float_window,
 		find_memos_float_window = find_memos_float_window,
 		create_float_window = create_float_window,
+		open_float_edit_window = open_float_edit_window,
+		return_to_float_list = function(buf)
+			return list_window.return_to_float_list(list_window_context(), buf)
+		end,
 		build_memo_buffer_name = build_memo_buffer_name,
 		show_memos_list = M.show_memos_list,
 		refresh_list_silently = M.refresh_list_silently,
