@@ -35,6 +35,9 @@ COMMANDS                                                   *memos.nvim-commands*
   Save the current memo buffer / template. This command is available in memo and
   template buffers.
 
+*:MemosTimeUpdate2Create*
+  Reset the selected list memo's update_time to its create_time.
+
 ==============================================================================
 KEYMAPS                                                     *memos.nvim-keymaps*
 
@@ -149,9 +152,32 @@ Example:
 <
 
 List search uses the Memos server-side filter parameter and issues one list
-request per search. Plain text becomes content.contains("..."), #tag becomes a
-tag filter, and raw CEL filter expressions are passed through. Empty search
-input clears the filter. It does not fetch extra pages for local fuzzy search.
+request per search. Empty search input clears the filter. It does not fetch
+extra pages for local fuzzy search.
+
+Search input supports two modes:
+>
+  weekly note
+      -> content.contains("weekly note")
+
+  #work
+      -> "work" in tags
+
+  weekly #work #review
+      -> content.contains("weekly") && "work" in tags && "review" in tags
+<
+Advanced search is raw Memos CEL filter text. The plugin passes expressions
+that look like CEL through unchanged, and Memos evaluates them on the server:
+>
+  content.contains("梦") && size(tags) == 0
+  content.contains("diary") && !("work" in tags)
+  content.contains("journal") && ("daily" in tags || "private" in tags)
+<
+In Template view, the plugin adds the template constraint around your filter,
+so searching work becomes:
+>
+  content.contains('#type/template') && (content.contains("work"))
+<
 
 Copying a memo ID uses the memo resource name already present in the list
 response, such as memos/abc123. It does not issue any API request.
@@ -176,6 +202,11 @@ after choosing PRIVATE, PROTECTED, or PUBLIC.
 
 Editing create time opens a vim.ui.input prompt with the current create_time
 and sends one PATCH request after confirmation.
+
+:MemosTimeUpdate2Create acts on the selected memo in the list, sends one PATCH
+request that sets update_time to create_time, updates local cache on success,
+and refreshes the list once in the background. It is useful after metadata-only
+edits when update-time ordering should return to the original diary date.
 
 Split editing also uses the memo content already present in the list response.
 It does not issue any extra API request.

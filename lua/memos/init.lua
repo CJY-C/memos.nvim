@@ -196,6 +196,12 @@ function M.show_templates()
 	end)
 end
 
+function M.time_update_to_create()
+	ensure_config(function()
+		require("memos.ui").time_update_to_create()
+	end)
+end
+
 function M.status()
 	local ok, ui = pcall(require, "memos.ui")
 	if not ok or not ui.status then

@@ -1,0 +1,16 @@
+describe("memos plugin commands", function()
+	it("should register time update reset command", function()
+		pcall(vim.api.nvim_del_user_command, "Memos")
+		pcall(vim.api.nvim_del_user_command, "MemosCreate")
+		pcall(vim.api.nvim_del_user_command, "MemosTemplate")
+		pcall(vim.api.nvim_del_user_command, "MemosTimeUpdate2Create")
+
+		vim.cmd("runtime plugin/memos.lua")
+
+		local commands = vim.api.nvim_get_commands({})
+		assert.is_not_nil(commands.Memos)
+		assert.is_not_nil(commands.MemosCreate)
+		assert.is_not_nil(commands.MemosTemplate)
+		assert.is_not_nil(commands.MemosTimeUpdate2Create)
+	end)
+end)

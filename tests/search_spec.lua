@@ -28,6 +28,14 @@ describe("memos.ui.search", function()
 		assert.are.same(filter, search.build_filter(filter))
 	end)
 
+	it("should pass advanced CEL filters through", function()
+		local no_tags_filter = 'content.contains("梦") && size(tags) == 0'
+		local excluded_tag_filter = 'content.contains("diary") && !("work" in tags)'
+
+		assert.are.same(no_tags_filter, search.build_filter(no_tags_filter))
+		assert.are.same(excluded_tag_filter, search.build_filter(excluded_tag_filter))
+	end)
+
 	it("should escape CEL string content", function()
 		assert.are.same('content.contains("quote\\" slash\\\\")', search.build_filter('quote" slash\\'))
 	end)

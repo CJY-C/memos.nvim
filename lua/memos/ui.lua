@@ -468,6 +468,10 @@ function ListSession:edit_selected_memo_create_time()
 	return memo_actions.edit_create_time(self, memo_action_context())
 end
 
+function ListSession:update_selected_memo_time_to_create()
+	return memo_actions.update_time_to_create(self, memo_action_context())
+end
+
 function ListSession:refresh_list_silently()
 	if self.buf and vim.api.nvim_buf_is_valid(self.buf) then
 		self:set_refresh_state("refreshing")
@@ -573,6 +577,15 @@ function M.edit_selected_memo_create_time()
 	local s = get_active_session()
 	if s then
 		s:edit_selected_memo_create_time()
+	end
+end
+
+function M.time_update_to_create()
+	local s = get_active_session()
+	if s then
+		s:update_selected_memo_time_to_create()
+	else
+		vim.notify("Open the Memos list and select a memo first.", vim.log.levels.INFO)
 	end
 end
 

@@ -330,6 +330,12 @@ function Client:update_memo_create_time(memo_name, create_time, callback)
 	}, "create_time", callback)
 end
 
+function Client:update_memo_update_time(memo_name, update_time, callback)
+	self:patch_memo(memo_name, {
+		update_time = update_time,
+	}, "update_time", callback)
+end
+
 function Client:delete_memo(memo_name, callback)
 	local host = self:get_host()
 	self:run_curl({

@@ -18,3 +18,10 @@ end, {
 	nargs = 0,
 	desc = "Open the Memos template list",
 })
+
+vim.api.nvim_create_user_command("MemosTimeUpdate2Create", function()
+	require("memos").time_update_to_create()
+end, {
+	nargs = 0,
+	desc = "Reset selected memo update_time to create_time",
+})

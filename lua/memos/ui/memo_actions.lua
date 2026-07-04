@@ -173,4 +173,40 @@ function M.edit_create_time(session, ctx)
 	end)
 end
 
+function M.update_time_to_create(session, ctx)
+	if session.current_list_state == "TEMPLATES" then
+		vim.notify("Update time reset is not supported for templates.", vim.log.levels.WARN)
+		return
+	end
+	local item = session:current_list_item()
+	local memo = session:get_memo_from_item(item)
+	if not memo or not memo.name or memo.name == "" then
+		vim.notify("No memo on the current line.", vim.log.levels.INFO)
+		return
+	end
+
+	local create_time = vim.trim(memo.create_time or "")
+	if create_time == "" then
+		vim.notify("Memo create_time is empty, not sending.", vim.log.levels.WARN)
+		return
+	end
+	if vim.trim(memo.update_time or "") == create_time then
+		vim.notify("Memo update_time already matches create_time.", vim.log.levels.INFO)
+		return
+	end
+
+	ctx.api:update_memo_update_time(memo.name, create_time, function(success, err)
+		vim.schedule(function()
+			if success then
+				memo.update_time = create_time
+				session:render_cached_memos()
+				vim.notify("Memo update_time reset to create_time.")
+				session:refresh_list_silently()
+			else
+				vim.notify("Failed to reset memo update_time: " .. tostring(err), vim.log.levels.ERROR)
+			end
+		end)
+	end)
+end
+
 return M

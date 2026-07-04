@@ -222,6 +222,82 @@ describe("memos.ui memo actions", function()
 		assert.is_true(refreshed)
 	end)
 
+	it("should reset update_time to create_time", function()
+		local api = require("memos.api")
+		local old_update = api.Client.update_memo_update_time
+		local memo = {
+			name = "memos/1",
+			content = "Diary memo",
+			create_time = "2026-06-28T00:00:00Z",
+			update_time = "2026-06-29T01:02:03Z",
+		}
+		local s = setup_session(memo)
+
+		api.Client.update_memo_update_time = function(self_api, memo_name, update_time, callback)
+			assert.are.same("memos/1", memo_name)
+			assert.are.same(memo.create_time, update_time)
+			callback(true, nil)
+		end
+
+		local refreshed = false
+		s.refresh_list_silently = function()
+			refreshed = true
+		end
+
+		s:update_selected_memo_time_to_create()
+
+		vim.wait(500, function()
+			return refreshed
+		end)
+
+		api.Client.update_memo_update_time = old_update
+
+		assert.are.same(memo.create_time, memo.update_time)
+		assert.is_true(refreshed)
+	end)
+
+	it("should not reset update_time when create_time is empty", function()
+		local api = require("memos.api")
+		local old_update = api.Client.update_memo_update_time
+		local memo = { name = "memos/1", content = "Diary memo", create_time = "", update_time = "2026-06-29T01:02:03Z" }
+		local s = setup_session(memo)
+
+		local api_called = false
+		api.Client.update_memo_update_time = function()
+			api_called = true
+		end
+
+		s:update_selected_memo_time_to_create()
+
+		api.Client.update_memo_update_time = old_update
+
+		assert.is_false(api_called)
+		assert.are.same("2026-06-29T01:02:03Z", memo.update_time)
+	end)
+
+	it("should not reset update_time when it already matches create_time", function()
+		local api = require("memos.api")
+		local old_update = api.Client.update_memo_update_time
+		local memo = {
+			name = "memos/1",
+			content = "Diary memo",
+			create_time = "2026-06-28T00:00:00Z",
+			update_time = "2026-06-28T00:00:00Z",
+		}
+		local s = setup_session(memo)
+
+		local api_called = false
+		api.Client.update_memo_update_time = function()
+			api_called = true
+		end
+
+		s:update_selected_memo_time_to_create()
+
+		api.Client.update_memo_update_time = old_update
+
+		assert.is_false(api_called)
+	end)
+
 	it("should block ordinary memo requests in template view", function()
 		local api = require("memos.api")
 		local old_update = api.Client.update_memo_pinned
@@ -236,6 +312,24 @@ describe("memos.ui memo actions", function()
 		s:toggle_selected_memo_pin()
 
 		api.Client.update_memo_pinned = old_update
+
+		assert.is_false(api_called)
+	end)
+
+	it("should block update_time reset in template view", function()
+		local api = require("memos.api")
+		local old_update = api.Client.update_memo_update_time
+		local memo = { name = "memos/1", content = "#type/template\nTemplate", create_time = "2026-06-28T00:00:00Z" }
+		local s = setup_session(memo, "TEMPLATES")
+
+		local api_called = false
+		api.Client.update_memo_update_time = function()
+			api_called = true
+		end
+
+		s:update_selected_memo_time_to_create()
+
+		api.Client.update_memo_update_time = old_update
 
 		assert.is_false(api_called)
 	end)

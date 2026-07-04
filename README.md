@@ -84,6 +84,7 @@ The env file must be readable by the user running Neovim.
 | `:MemosCreate` | Open a new buffer to compose a new normal memo. |
 | `:MemosTemplate` | Open the Memos template list buffer directly (switches state to `TEMPLATES`). |
 | `:MemosSave` | Save the current memo or template buffer. (Can also be executed via `:w` in memo/template buffers). |
+| `:MemosTimeUpdate2Create` | Reset the selected list memo's `update_time` to its `create_time`. |
 
 ## Keymaps
 
@@ -194,7 +195,26 @@ require("memos").setup({
 
 Credential priority is explicit `host`/`token`, then `env_file`, then `MEMOS_HOST`/`MEMOS_TOKEN`. The plugin does not persist accounts; configure credentials declaratively through nixvim, `env_file`, or process env.
 
-List search uses the Memos server-side `filter` parameter and still issues one list request per search. Plain text becomes `content.contains("...")`, `#tag` becomes a tag filter, and raw CEL filter expressions are passed through. Empty search input clears the filter. It does not fetch extra pages for local fuzzy search.
+List search uses the Memos server-side `filter` parameter and still issues one list request per search. Empty search input clears the filter. It does not fetch extra pages for local fuzzy search.
+
+Search input supports two modes:
+
+| Input | Sent filter |
+| --- | --- |
+| `weekly note` | `content.contains("weekly note")` |
+| `#work` | `"work" in tags` |
+| `weekly #work #review` | `content.contains("weekly") && "work" in tags && "review" in tags` |
+| `content.contains("梦") && size(tags) == 0` | passed through unchanged |
+
+Advanced search is raw Memos CEL filter text. The plugin passes expressions that look like CEL through unchanged; Memos evaluates them on the server. Examples:
+
+```text
+content.contains("梦") && size(tags) == 0
+content.contains("diary") && !("work" in tags)
+content.contains("journal") && ("daily" in tags || "private" in tags)
+```
+
+In Template view, the plugin adds the template constraint around your filter, so searching `work` becomes `content.contains('#type/template') && (content.contains("work"))`.
 
 Copying a memo ID uses the memo resource name already present in the list response, such as `memos/abc123`. It does not issue any API request.
 
@@ -211,6 +231,8 @@ Deleting a memo asks for confirmation, sends one DELETE request, removes the mem
 Editing visibility opens a `vim.ui.select` picker and sends one PATCH request after choosing `PRIVATE`, `PROTECTED`, or `PUBLIC`.
 
 Editing create time opens a `vim.ui.input` prompt with the current `create_time` and sends one PATCH request after confirmation.
+
+`:MemosTimeUpdate2Create` acts on the selected memo in the list, sends one PATCH request that sets `update_time` to the memo's `create_time`, updates local cache on success, and refreshes the list once in the background. It is useful after metadata-only edits when you want update-time ordering to return to the original diary date.
 
 Split editing also uses the memo content already present in the list response. It does not issue any extra API request.
 
