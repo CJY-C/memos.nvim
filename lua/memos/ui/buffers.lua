@@ -3,6 +3,7 @@ local M = {}
 function M.open_edit_buffer(ctx, content, open_cmd)
 	if ctx.config.window and ctx.config.window.enable_float and ctx.open_float_edit_window then
 		local buf = vim.api.nvim_create_buf(false, true)
+		vim.b[buf].memos_edit_buffer = true
 		ctx.open_float_edit_window(buf, open_cmd or "enew")
 		if type(content) == "string" then
 			vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(content, "\n"))
@@ -73,6 +74,7 @@ function M.setup_buffer_for_editing(ctx)
 	vim.bo.buflisted = false
 	vim.bo.filetype = "markdown"
 	vim.bo.swapfile = false
+	vim.b.memos_edit_buffer = true
 	vim.b.memos_original_content = table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), "\n")
 	vim.b.memos_save_inflight = false
 	vim.b.memos_save_pending = false
@@ -91,6 +93,27 @@ function M.setup_buffer_for_editing(ctx)
 	local keys = ctx.config.keymaps.buffer
 	ctx.set_keymap(0, keys.save, "<Cmd>MemosSave<CR>")
 	ctx.set_keymap(0, keys.back_to_list, '<Cmd>lua require("memos.ui").return_to_list()<CR>')
+	if ctx.config.window and ctx.config.window.enable_float then
+		ctx.set_keymap(0, "<C-o>", '<Cmd>lua require("memos.ui").navigate_memo_history(-1)<CR>')
+		ctx.set_keymap(0, "<C-i>", '<Cmd>lua require("memos.ui").navigate_memo_history(1)<CR>')
+	end
+	if ctx.register_float_edit_buffer then
+		ctx.register_float_edit_buffer(vim.api.nvim_get_current_buf())
+	end
+	if ctx.refresh_float_workspace then
+		ctx.refresh_float_workspace()
+	end
+
+	local group = vim.api.nvim_create_augroup("MemosFloatingWorkspaceStatus", { clear = false })
+	vim.api.nvim_create_autocmd({ "BufModifiedSet", "BufWipeout" }, {
+		group = group,
+		buffer = 0,
+		callback = function()
+			if ctx.refresh_float_workspace then
+				vim.schedule(ctx.refresh_float_workspace)
+			end
+		end,
+	})
 
 	if ctx.config.auto_save then
 		local group = vim.api.nvim_create_augroup("MemosAutoSave", { clear = false })
@@ -115,6 +138,7 @@ function M.open_memo_for_edit(ctx, memo, open_cmd)
 	if existing ~= -1 and vim.api.nvim_buf_is_loaded(existing) then
 		local win = vim.fn.bufwinid(existing)
 		if ctx.config.window and ctx.config.window.enable_float and ctx.open_float_edit_window then
+			vim.b[existing].memos_edit_buffer = true
 			ctx.open_float_edit_window(existing, open_cmd or "enew")
 		elseif win ~= -1 then
 			vim.api.nvim_set_current_win(win)

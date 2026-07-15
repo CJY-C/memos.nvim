@@ -14,7 +14,7 @@ The plugin is structured into distinct modules with minimal abstraction:
 - **`lua/memos/ui/buffers.lua`**: Internal edit-buffer lifecycle, memo/template save dispatch, auto-save checks, float-aware edit opening, and return-to-list behavior.
 - **`lua/memos/ui/keymaps.lua`**: Internal list buffer keymap binding, dynamic rebinding cleanup, and disabled-key handling.
 - **`lua/memos/ui/list_flow.lua`**: Internal list request/cache flow for fetching, search, pagination, state cache switching, and stale-cache safety.
-- **`lua/memos/ui/list_window.lua`**: Internal list buffer and window orchestration, including float workspace panes, list focusing, toggling, and quitting.
+- **`lua/memos/ui/list_window.lua`**: Internal list buffer and window orchestration, including float workspace panes, local edit-buffer history, pane navigation, workspace chrome, list focusing, toggling, and quitting.
 - **`lua/memos/ui/memo_actions.lua`**: Internal ordinary memo workflows for pin, archive/restore, delete, visibility, create time edits, and update-time resets.
 - **`lua/memos/ui/relation_actions.lua`**: Internal relation action workflows for adding, selecting, and unlinking memo relations.
 - **`lua/memos/ui/relation_expand.lua`**: Internal relation expansion, collapse-all behavior, and lazy missing-relation detail fetching.
@@ -25,6 +25,18 @@ The plugin is structured into distinct modules with minimal abstraction:
 - **`lua/memos/ui/selection.lua`**: Internal selected list item helpers for current-row lookup, memo resolution, edit dispatch, copy ID, and cache removal.
 - **`lua/memos/ui/status.lua`**: Internal refresh-state coordination and statusline/header status text helpers.
 - **`lua/memos/template.lua`**: Templates composition helper (e.g. tag stripping, ensuring `#type/template` exists on save, archiving templates).
+
+---
+
+## Floating Workspace State
+
+Floating split panes are independent Neovim float windows, so they are not
+reachable through normal split traversal. Keep pane focus and `<C-o>`/`<C-i>`
+navigation in `list_window.lua`'s local workspace state; never use the global
+jump list for Memos buffer navigation. Editing buffers are marked with
+`b:memos_edit_buffer`, which lets workspace chrome count open buffers and show
+dirty titles without requesting server data. Refresh titles and the existing
+list header after buffer modification, save completion, or buffer removal.
 
 ---
 

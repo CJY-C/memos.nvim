@@ -4,6 +4,8 @@ local workspace = {
 	layout = "list",
 	focus_role = "list",
 	edit_buf = nil,
+	history = {},
+	history_index = nil,
 }
 
 function M.is_float_window(win)
@@ -25,6 +27,84 @@ local function memos_float_windows()
 		end
 	end
 	return wins
+end
+
+local function is_memos_edit_buffer(buf)
+	return vim.api.nvim_buf_is_valid(buf) and vim.b[buf].memos_edit_buffer == true
+end
+
+local function prune_history()
+	local history = {}
+	for _, buf in ipairs(workspace.history) do
+		if is_memos_edit_buffer(buf) then
+			table.insert(history, buf)
+		end
+	end
+	workspace.history = history
+	if workspace.history_index and workspace.history_index > #history then
+		workspace.history_index = #history > 0 and #history or nil
+	end
+end
+
+local function memo_buffers()
+	prune_history()
+	local buffers = vim.deepcopy(workspace.history)
+	local known = {}
+	for _, buf in ipairs(buffers) do
+		known[buf] = true
+	end
+	for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+		if is_memos_edit_buffer(buf) and not known[buf] then
+			table.insert(buffers, buf)
+			known[buf] = true
+		end
+	end
+	return buffers
+end
+
+local function buffer_label(buf)
+	local lines = vim.api.nvim_buf_get_lines(buf, 0, 1, false)
+	local title = vim.trim(lines[1] or "")
+	if title ~= "" then
+		return vim.fn.strcharpart(title, 0, 30)
+	end
+	local name = vim.api.nvim_buf_get_name(buf)
+	return name ~= "" and vim.fn.fnamemodify(name, ":t:r") or "(new memo)"
+end
+
+local function workspace_summary(ctx)
+	local buffers = memo_buffers()
+	local dirty = {}
+	for _, buf in ipairs(buffers) do
+		if vim.bo[buf].modified then
+			table.insert(dirty, buffer_label(buf))
+		end
+	end
+
+	local summary = string.format("Open: %d | Unsaved: %d", #buffers, #dirty)
+	if #dirty > 0 then
+		local list_buf = ctx.get_list_buf()
+		local width = vim.o.columns
+		local list_win = list_buf and vim.fn.bufwinid(list_buf) or -1
+		if list_win ~= -1 and vim.api.nvim_win_is_valid(list_win) then
+			width = vim.api.nvim_win_get_width(list_win)
+		end
+		local prefix = summary .. " | Dirty: "
+		local available = math.max(width - vim.fn.strdisplaywidth("View: NORMAL | " .. prefix), 0)
+		local names = table.concat(dirty, ", ")
+		if vim.fn.strdisplaywidth(names) > available then
+			local truncated = ""
+			for _, char in ipairs(vim.fn.split(names, "\\zs")) do
+				if vim.fn.strdisplaywidth(truncated .. char .. "…") > available then
+					break
+				end
+				truncated = truncated .. char
+			end
+			names = truncated ~= "" and truncated .. "…" or "…"
+		end
+		summary = prefix .. names
+	end
+	return summary, buffers, #dirty
 end
 
 function M.find_memos_float_window(role)
@@ -78,6 +158,21 @@ local function open_pane(ctx, buf, role, opts)
 	vim.wo[win].relativenumber = false
 	vim.wo[win].signcolumn = "no"
 	return win
+end
+
+local function bind_workspace_navigation(buf)
+	if not vim.api.nvim_buf_is_valid(buf) then
+		return
+	end
+	for _, direction in ipairs({ "h", "j", "k", "l", "w" }) do
+		vim.api.nvim_buf_set_keymap(buf, "n", "<C-w>" .. direction,
+			'<Cmd>lua require("memos.ui").focus_float_direction("' .. direction .. '")<CR>',
+			{ noremap = true, silent = true })
+	end
+	vim.api.nvim_buf_set_keymap(buf, "n", "<C-o>", '<Cmd>lua require("memos.ui").navigate_memo_history(-1)<CR>',
+		{ noremap = true, silent = true })
+	vim.api.nvim_buf_set_keymap(buf, "n", "<C-i>", '<Cmd>lua require("memos.ui").navigate_memo_history(1)<CR>',
+		{ noremap = true, silent = true })
 end
 
 local function open_workspace(ctx, layout, edit_buf, focus_role)
@@ -138,6 +233,58 @@ local function open_workspace(ctx, layout, edit_buf, focus_role)
 		})
 	end
 	ctx.set_last_float_buf(vim.api.nvim_get_current_buf())
+	bind_workspace_navigation(list_buf)
+	if edit_buf and vim.api.nvim_buf_is_valid(edit_buf) then
+		bind_workspace_navigation(edit_buf)
+	end
+	M.refresh_workspace_chrome(ctx)
+end
+
+function M.refresh_workspace_chrome(ctx)
+	local summary, buffers, dirty_count = workspace_summary(ctx)
+	local positions = {}
+	for index, buf in ipairs(buffers) do
+		positions[buf] = index
+	end
+	for _, win in ipairs(memos_float_windows()) do
+		local role = memo_window_role(win)
+		local buf = vim.api.nvim_win_get_buf(win)
+		local title
+		if role == "list" then
+			title = string.format(" Memos · %d open · %d unsaved ", #buffers, dirty_count)
+		else
+			local marker = vim.bo[buf].modified and " +" or ""
+			title = string.format(" Memo %d/%d%s ", positions[buf] or 0, #buffers, marker)
+		end
+		pcall(vim.api.nvim_win_set_config, win, { title = title })
+	end
+
+	local list_buf = ctx.get_list_buf()
+	local session = list_buf and ctx.sessions[list_buf]
+	if session then
+		session.workspace_summary = summary
+		if vim.api.nvim_buf_is_valid(list_buf) and session.list_items[1] and session.list_items[1].kind == "header" then
+			vim.bo[list_buf].modifiable = true
+			vim.api.nvim_buf_set_lines(list_buf, 0, 1, false, { session:list_header_line() })
+			vim.bo[list_buf].modifiable = false
+		end
+	end
+end
+
+function M.register_edit_buffer(ctx, buf)
+	if not is_memos_edit_buffer(buf) then
+		return
+	end
+	prune_history()
+	for index, existing in ipairs(workspace.history) do
+		if existing == buf then
+			table.remove(workspace.history, index)
+			break
+		end
+	end
+	table.insert(workspace.history, buf)
+	workspace.history_index = #workspace.history
+	M.refresh_workspace_chrome(ctx)
 end
 
 function M.refresh_list_contents(ctx, opts)
@@ -181,6 +328,7 @@ function M.create_float_window(ctx, buf)
 end
 
 function M.open_float_edit_window(ctx, buf, open_cmd)
+	M.register_edit_buffer(ctx, buf)
 	local layout = open_cmd == "vsplit" and "vsplit" or open_cmd == "split" and "split" or "edit"
 	if layout == "vsplit" or layout == "split" then
 		M.ensure_list_buf(ctx)
@@ -189,6 +337,52 @@ function M.open_float_edit_window(ctx, buf, open_cmd)
 	else
 		open_workspace(ctx, "edit", buf, "edit")
 	end
+end
+
+function M.focus_float_direction(ctx, direction)
+	if workspace.layout ~= "vsplit" and workspace.layout ~= "split" then
+		return
+	end
+	if direction ~= "w" then
+		local matches_layout = (workspace.layout == "vsplit" and (direction == "h" or direction == "l"))
+			or (workspace.layout == "split" and (direction == "j" or direction == "k"))
+		if not matches_layout then
+			return
+		end
+	end
+	local current = vim.api.nvim_get_current_win()
+	local current_role = memo_window_role(current)
+	if current_role ~= "list" and current_role ~= "edit" then
+		return
+	end
+	local target = M.find_memos_float_window(current_role == "list" and "edit" or "list")
+	if target then
+		vim.api.nvim_set_current_win(target)
+		workspace.focus_role = memo_window_role(target)
+	end
+end
+
+function M.navigate_memo_history(ctx, step)
+	local buffers = memo_buffers()
+	if #buffers == 0 then
+		return
+	end
+	local current = vim.api.nvim_get_current_buf()
+	local index = nil
+	for i, buf in ipairs(buffers) do
+		if buf == current then
+			index = i
+			break
+		end
+	end
+	index = index or workspace.history_index or #buffers
+	local target_index = index + step
+	if target_index < 1 or target_index > #buffers then
+		return
+	end
+	local target = buffers[target_index]
+	workspace.history_index = target_index
+	open_workspace(ctx, workspace.layout == "list" and "edit" or workspace.layout, target, "edit")
 end
 
 function M.return_to_float_list(ctx, edit_buf)

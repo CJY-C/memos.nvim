@@ -226,6 +226,12 @@ local function buffer_context()
 		return_to_float_list = function(buf)
 			return list_window.return_to_float_list(list_window_context(), buf)
 		end,
+		register_float_edit_buffer = function(buf)
+			return list_window.register_edit_buffer(list_window_context(), buf)
+		end,
+		refresh_float_workspace = function()
+			return list_window.refresh_workspace_chrome(list_window_context())
+		end,
 		build_memo_buffer_name = build_memo_buffer_name,
 		show_memos_list = M.show_memos_list,
 		refresh_list_silently = M.refresh_list_silently,
@@ -606,6 +612,14 @@ end
 
 function M.return_to_list()
 	return buffer_utils.return_to_list(buffer_context())
+end
+
+function M.focus_float_direction(direction)
+	return list_window.focus_float_direction(list_window_context(), direction)
+end
+
+function M.navigate_memo_history(step)
+	return list_window.navigate_memo_history(list_window_context(), step)
 end
 
 function M.check_and_auto_save(buf)

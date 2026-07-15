@@ -54,12 +54,15 @@ end
 
 function M.header_line(session)
 	local left = "View: " .. session.current_list_state
+	if session.workspace_summary and session.workspace_summary ~= "" then
+		left = left .. " | " .. session.workspace_summary
+	end
 	local right = M.status_line(session)
 	if not right then
 		return left
 	end
 
-	local gap = window_width(session.buf) - #left - #right
+	local gap = window_width(session.buf) - vim.fn.strdisplaywidth(left) - vim.fn.strdisplaywidth(right)
 	if gap > 1 then
 		return left .. string.rep(" ", gap) .. right
 	end

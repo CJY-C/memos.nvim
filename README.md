@@ -134,6 +134,14 @@ open list+edit panes inside the same Memos workspace. Toggling `:Memos` closes
 or restores the whole workspace, including an active edit pane. When floating
 windows are disabled, `o` and `v` use normal Neovim split windows.
 
+Inside a floating split workspace, `<C-w>h`/`<C-w>l` move between vertical
+panes and `<C-w>k`/`<C-w>j` move between horizontal panes; `<C-w>w` always
+toggles the Memos pane. Directions that do not match the layout stay inside the
+workspace instead of moving to a window behind it. `<C-o>` and `<C-i>` navigate
+only the local history of opened memo/template buffers. Float titles and the
+list header show the number of open buffers, unsaved changes, and short titles
+for dirty buffers.
+
 ### Memo / Template Buffer Keymaps
 
 These keymaps are set up inside the buffer when writing a memo or template:

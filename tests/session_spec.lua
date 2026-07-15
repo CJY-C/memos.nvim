@@ -24,6 +24,11 @@ describe("memos.ui ListSession encapsulation", function()
 
 	after_each(function()
 		close_memos_floats()
+		for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+			if vim.api.nvim_buf_is_valid(buf) and vim.b[buf].memos_edit_buffer == true then
+				pcall(vim.api.nvim_buf_delete, buf, { force = true })
+			end
+		end
 		if vim.api.nvim_buf_is_valid(buf1) then
 			vim.api.nvim_buf_delete(buf1, { force = true })
 		end
@@ -350,6 +355,83 @@ describe("memos.ui ListSession encapsulation", function()
 		assert.is_true(vim.api.nvim_buf_is_valid(buf))
 		assert.are.same(1, counts.list)
 		assert.are.same(1, counts.edit)
+	end)
+
+	it("should keep Ctrl-W navigation inside the floating split workspace", function()
+		memos.setup({ window = { enable_float = true, width = 0.7, height = 0.7 } })
+		local restore_list = stub_list_memos()
+
+		ui.open_edit_buffer("test text content", "vsplit")
+		ui.focus_float_direction("h")
+		local list_win = vim.api.nvim_get_current_win()
+		local ok, role = pcall(vim.api.nvim_win_get_var, list_win, "memos_role")
+		assert.is_true(ok)
+		assert.are.same("list", role)
+
+		ui.focus_float_direction("j")
+		assert.are.same(list_win, vim.api.nvim_get_current_win())
+		ui.focus_float_direction("w")
+		local _, edit_role = pcall(vim.api.nvim_win_get_var, vim.api.nvim_get_current_win(), "memos_role")
+		assert.are.same("edit", edit_role)
+
+		restore_list()
+	end)
+
+	it("should navigate only opened Memos buffers through local history", function()
+		memos.setup({ window = { enable_float = true, width = 0.7, height = 0.7 } })
+		local restore_list = stub_list_memos()
+
+		local first = ui.open_edit_buffer("first", "vsplit")
+		ui.setup_buffer_for_editing()
+		local second = ui.open_edit_buffer("second", "vsplit")
+		ui.setup_buffer_for_editing()
+
+		ui.navigate_memo_history(-1)
+		assert.are.same(first, vim.api.nvim_get_current_buf())
+		ui.navigate_memo_history(1)
+		assert.are.same(second, vim.api.nvim_get_current_buf())
+
+		restore_list()
+	end)
+
+	it("should show open and dirty memo status in floating chrome and the list header", function()
+		memos.setup({ window = { enable_float = true, width = 0.7, height = 0.7 } })
+		local restore_list = stub_list_memos()
+
+		local first = ui.open_edit_buffer("first", "vsplit")
+		ui.setup_buffer_for_editing()
+		local second = ui.open_edit_buffer("second", "vsplit")
+		ui.setup_buffer_for_editing()
+		local list_win = nil
+		for _, win in ipairs(vim.api.nvim_list_wins()) do
+			local ok, role = pcall(vim.api.nvim_win_get_var, win, "memos_role")
+			if ok and role == "list" then
+				list_win = win
+				break
+			end
+		end
+		local list_buf = vim.api.nvim_win_get_buf(list_win)
+		local s = ui.get_session(list_buf)
+		s.memos_cache = { { name = "memos/1", content = "cached memo" } }
+		s:render_cached_memos()
+		vim.wait(1000, function()
+			return s.list_items[1] and s.list_items[1].kind == "header"
+		end)
+
+		vim.api.nvim_buf_set_lines(first, 0, -1, false, { "dirty memo" })
+		vim.wait(1000, function()
+			return vim.api.nvim_buf_get_lines(list_buf, 0, 1, false)[1]:find("Unsaved: 1", 1, true) ~= nil
+		end)
+
+		local title = vim.api.nvim_win_get_config(list_win).title
+		if type(title) == "table" then
+			title = title[1][1]
+		end
+		assert.is_true(title:find("2 open", 1, true) ~= nil)
+		assert.is_true(title:find("1 unsaved", 1, true) ~= nil)
+		assert.is_true(vim.api.nvim_buf_get_lines(list_buf, 0, 1, false)[1]:find("Dirty:", 1, true) ~= nil)
+
+		restore_list()
 	end)
 
 	it("should restore the previous float split layout when toggling the Memos window", function()
