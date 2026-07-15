@@ -362,18 +362,30 @@ describe("memos.ui ListSession encapsulation", function()
 		local restore_list = stub_list_memos()
 
 		ui.open_edit_buffer("test text content", "vsplit")
-		ui.focus_float_direction("h")
+		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-w>h", true, false, true), "x", false)
 		local list_win = vim.api.nvim_get_current_win()
 		local ok, role = pcall(vim.api.nvim_win_get_var, list_win, "memos_role")
 		assert.is_true(ok)
 		assert.are.same("list", role)
 
-		ui.focus_float_direction("j")
+		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-w>j", true, false, true), "x", false)
 		assert.are.same(list_win, vim.api.nvim_get_current_win())
-		ui.focus_float_direction("w")
+		vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-w>w", true, false, true), "x", false)
 		local _, edit_role = pcall(vim.api.nvim_win_get_var, vim.api.nvim_get_current_win(), "memos_role")
 		assert.are.same("edit", edit_role)
 
+		restore_list()
+	end)
+
+	it("should open a selected memo in a vertical floating split by default", function()
+		memos.setup({ window = { enable_float = true, width = 0.7, height = 0.7 } })
+		local restore_list = stub_list_memos()
+
+		ui.open_memo_for_edit({ name = "memos/1", content = "test memo" })
+		local counts = count_memos_float_roles()
+
+		assert.are.same(1, counts.list)
+		assert.are.same(1, counts.edit)
 		restore_list()
 	end)
 
@@ -430,6 +442,18 @@ describe("memos.ui ListSession encapsulation", function()
 		assert.is_true(title:find("2 open", 1, true) ~= nil)
 		assert.is_true(title:find("1 unsaved", 1, true) ~= nil)
 		assert.is_true(vim.api.nvim_buf_get_lines(list_buf, 0, 1, false)[1]:find("Dirty:", 1, true) ~= nil)
+
+		local api_mod = require("memos.api")
+		local original_update_memo = api_mod.Client.update_memo
+		api_mod.Client.update_memo = function(_, _, _, callback)
+			callback(true)
+		end
+		vim.b[first].memos_memo_name = "memos/1"
+		ui.save_or_create_dispatcher({ bufnr = first, post_save_ui = false })
+		assert.is_true(vim.wait(1000, function()
+			return vim.api.nvim_buf_get_lines(list_buf, 0, 1, false)[1]:find("Unsaved: 0", 1, true) ~= nil
+		end))
+		api_mod.Client.update_memo = original_update_memo
 
 		restore_list()
 	end)

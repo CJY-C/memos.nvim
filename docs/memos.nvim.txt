@@ -87,10 +87,11 @@ The `c` relation picker keeps pinned memos selectable, but it ignores pin
 priority when ordering cached memo candidates. Clipboard choices stay first,
 manual ID input stays last, and memo candidates are ordered by normal recency.
 
-When floating windows are enabled, <CR> edits inside the Memos float and o/v
-open list+edit panes inside the same Memos workspace. Toggling :Memos closes or
-restores the whole workspace, including an active edit pane. When floating
-windows are disabled, o and v use normal Neovim split windows.
+By default, <CR>, :MemosCreate, and new template creation open a vertical
+list+edit split in the Memos workspace. o and v explicitly choose horizontal
+or vertical splits. Toggling :Memos closes or restores the whole workspace,
+including an active edit pane. Set window.default_open = "enew" to restore a
+single-pane default.
 
 Inside a floating split workspace, <C-w>h/<C-w>l move between vertical panes
 and <C-w>k/<C-w>j move between horizontal panes; <C-w>w always toggles the
@@ -125,6 +126,7 @@ Example:
       width = 0.85,
       height = 0.85,
       border = "rounded",
+      default_open = "vsplit", -- "vsplit", "split", or "enew"
     },
     keymaps = {
       list = {

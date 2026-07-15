@@ -15,6 +15,7 @@ M.config = {
 		width = 0.85,
 		height = 0.85,
 		border = "rounded",
+		default_open = "vsplit",
 	},
 	keymaps = {
 		list = {

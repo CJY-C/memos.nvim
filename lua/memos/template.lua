@@ -52,7 +52,7 @@ end
 function M.template_create()
 	vim.schedule(function()
 		local ui = require("memos.ui")
-		local bufnr = ui.open_edit_buffer("", "enew")
+		local bufnr = ui.open_edit_buffer("", require("memos").config.window.default_open or "vsplit")
 		vim.b[bufnr].memos_template_mode = true
 		vim.b[bufnr].memos_template_name = nil
 		pcall(vim.api.nvim_buf_set_name, bufnr, "memos/template_new.md")
@@ -66,7 +66,7 @@ function M.template_edit_selected(memo, open_cmd)
 	end
 	vim.schedule(function()
 		local ui = require("memos.ui")
-		local bufnr = ui.open_edit_buffer(memo.content or "", open_cmd)
+		local bufnr = ui.open_edit_buffer(memo.content or "", open_cmd or require("memos").config.window.default_open or "vsplit")
 		vim.b[bufnr].memos_template_mode = true
 		vim.b[bufnr].memos_template_name = memo.name
 		local buf_name = build_template_buffer_name(memo.name, memo.content)

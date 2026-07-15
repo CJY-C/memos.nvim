@@ -1,5 +1,13 @@
 local M = {}
 
+local function default_open_cmd(ctx)
+	local value = ctx.config.window and ctx.config.window.default_open
+	if value == "split" or value == "vsplit" or value == "enew" then
+		return value
+	end
+	return "vsplit"
+end
+
 function M.open_edit_buffer(ctx, content, open_cmd)
 	if ctx.config.window and ctx.config.window.enable_float and ctx.open_float_edit_window then
 		local buf = vim.api.nvim_create_buf(false, true)
@@ -96,6 +104,10 @@ function M.setup_buffer_for_editing(ctx)
 	if ctx.config.window and ctx.config.window.enable_float then
 		ctx.set_keymap(0, "<C-o>", '<Cmd>lua require("memos.ui").navigate_memo_history(-1)<CR>')
 		ctx.set_keymap(0, "<C-i>", '<Cmd>lua require("memos.ui").navigate_memo_history(1)<CR>')
+		for _, direction in ipairs({ "h", "j", "k", "l", "w" }) do
+			ctx.set_keymap(0, "<C-w>" .. direction,
+				'<Cmd>lua require("memos.ui").focus_float_direction("' .. direction .. '")<CR>')
+		end
 	end
 	if ctx.register_float_edit_buffer then
 		ctx.register_float_edit_buffer(vim.api.nvim_get_current_buf())
@@ -139,7 +151,7 @@ function M.open_memo_for_edit(ctx, memo, open_cmd)
 		local win = vim.fn.bufwinid(existing)
 		if ctx.config.window and ctx.config.window.enable_float and ctx.open_float_edit_window then
 			vim.b[existing].memos_edit_buffer = true
-			ctx.open_float_edit_window(existing, open_cmd or "enew")
+			ctx.open_float_edit_window(existing, open_cmd or default_open_cmd(ctx))
 		elseif win ~= -1 then
 			vim.api.nvim_set_current_win(win)
 		else
@@ -148,7 +160,7 @@ function M.open_memo_for_edit(ctx, memo, open_cmd)
 		return
 	end
 
-	M.open_edit_buffer(ctx, content, open_cmd or "enew")
+	M.open_edit_buffer(ctx, content, open_cmd or default_open_cmd(ctx))
 	if buffer_name then
 		vim.api.nvim_buf_set_name(0, buffer_name)
 	end
@@ -157,7 +169,7 @@ function M.open_memo_for_edit(ctx, memo, open_cmd)
 end
 
 function M.create_memo_in_buffer(ctx, content)
-	M.open_edit_buffer(ctx, content or "", "enew")
+	M.open_edit_buffer(ctx, content or "", default_open_cmd(ctx))
 	vim.b.memos_memo_name = nil
 	vim.b.memos_template_mode = nil
 	vim.b.memos_template_name = nil
@@ -237,6 +249,9 @@ function M.save_or_create_dispatcher(ctx, opts)
 					vim.b[bufnr].memos_template_name = new_tpl.name
 					vim.b[bufnr].memos_original_content = content
 					vim.bo[bufnr].modified = false
+					if ctx.refresh_float_workspace then
+						ctx.refresh_float_workspace()
+					end
 					if new_tpl.buffer_name then
 						pcall(vim.api.nvim_buf_set_name, bufnr, new_tpl.buffer_name)
 					end
@@ -257,6 +272,9 @@ function M.save_or_create_dispatcher(ctx, opts)
 				if success then
 					vim.b[bufnr].memos_original_content = content
 					vim.bo[bufnr].modified = false
+					if ctx.refresh_float_workspace then
+						ctx.refresh_float_workspace()
+					end
 					vim.notify("Memo saved.")
 					ctx.refresh_list_silently()
 				else
@@ -274,6 +292,9 @@ function M.save_or_create_dispatcher(ctx, opts)
 				vim.b[bufnr].memos_memo_name = new_memo.name
 				vim.b[bufnr].memos_original_content = content
 				vim.bo[bufnr].modified = false
+				if ctx.refresh_float_workspace then
+					ctx.refresh_float_workspace()
+				end
 				local new_name = ctx.build_memo_buffer_name(new_memo, content)
 				if new_name then
 					pcall(vim.api.nvim_buf_set_name, bufnr, new_name)

@@ -520,7 +520,7 @@ end
 function M.edit_selected_memo()
 	local s = get_active_session()
 	if s then
-		s:edit_selected_memo_with("enew")
+		s:edit_selected_memo_with(config.window.default_open or "vsplit")
 	end
 end
 

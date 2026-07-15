@@ -30,7 +30,7 @@ describe("memos.template", function()
 
 			package.loaded["memos.ui"] = {
 				open_edit_buffer = function(content, open_cmd)
-					opened = content == "" and open_cmd == "enew"
+					opened = content == "" and open_cmd == "vsplit"
 					vim.api.nvim_set_current_buf(buf)
 					return buf
 				end,
