@@ -75,7 +75,7 @@ List buffer:
 When viewing templates (activated by pressing `T` or running `:MemosTemplate`),
 keymaps are overridden to support template operations:
 - `a` or `i` instantiates a new normal memo using the selected template (with the
-  `#type/template` tag stripped).
+  configured template_tag stripped; the default is `#type/template`).
 - `e` or `<CR>` edits the selected template.
 - `o` or `v` edits the selected template in a horizontal or vertical split.
 - `D` deletes the template from the remote server.

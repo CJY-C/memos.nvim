@@ -7,7 +7,7 @@
   - `init.lua`: setup, configuration loading, credential loading, and public API entrypoints.
   - `api.lua`: Memos `/api/v1` HTTP client using `plenary.job` and `curl`.
   - `ui.lua`: list buffers, edit/create buffers, stale cache rendering, buffer-local keymaps, pagination, and UI flows.
-  - `template.lua`: template creation/editing helpers and `#type/template` handling.
+  - `template.lua`: template creation/editing helpers and configured template-tag handling.
   - `latency.lua`: helpers used by latency scripts.
 - `docs/`: Vim help and project documentation, including `docs/memos.nvim.txt`, `docs/DEVELOPER.md`, `docs/FEATURES.md`, and performance notes.
 - `tests/`: Plenary test specs.

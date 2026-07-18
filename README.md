@@ -95,7 +95,7 @@ The plugin provides keymaps inside the list buffer and inside the memo compositi
 The list buffer behaves as an interactive dashboard that supports three viewing modes (toggled with `A` and `T`):
 - **Normal View**: Displays your active memos.
 - **Archive View**: Displays your archived memos.
-- **Template View**: Displays your archived memo templates (filtered by `#type/template`) fetched from the remote server.
+- **Template View**: Displays archived memo templates fetched with an exact tags filter using `template_tag` (default `type/template`).
 
 The table below lists all list-view keymaps. Note that some keys adjust behavior depending on the active viewing mode:
 
@@ -105,7 +105,7 @@ The table below lists all list-view keymaps. Note that some keys adjust behavior
 | `e` | **Edit** | Opens the memo under cursor for editing. | Opens the template under cursor for editing. |
 | `o` | **Horizontal Split** | Edits the memo in a horizontal split. | Edits the template in a horizontal split. |
 | `v` | **Vertical Split** | Edits the memo in a vertical split. | Edits the template in a vertical split. |
-| `a` / `i` | **New / Instantiate** | Opens a blank buffer to compose a new normal memo. | Instantiates a new normal memo *from* the template under the cursor (strips `#type/template`). |
+| `a` / `i` | **New / Instantiate** | Opens a blank buffer to compose a new normal memo. | Instantiates a new normal memo *from* the template under the cursor (strips the configured template tag). |
 | `n` | **New** | Opens a blank buffer to compose a new normal memo. | Opens a blank buffer to compose a new template. |
 | `D` | **Delete / Unlink** | Deletes the selected memo (or unlinks relation if on a relation line, requires confirmation). | Deletes the selected template from the remote server. |
 | `r` | **Refresh** | Refreshes the list from the remote server. | Refreshes the template list from the remote server. |

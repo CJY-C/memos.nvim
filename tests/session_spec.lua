@@ -622,6 +622,24 @@ describe("memos.ui ListSession encapsulation", function()
 		assert.are.same('"类型/模板" in tags', list_opts.filter)
 	end)
 
+	it("should instantiate a template after stripping the configured Unicode tag", function()
+		memos.setup({ template_tag = "类型/模板" })
+		ui.bind_list_keymaps(buf1)
+		vim.api.nvim_set_current_buf(buf1)
+		local s = ui.get_session(buf1)
+		s.current_list_state = "TEMPLATES"
+		s.memos_cache = { { name = "memos/template", content = "#类型/模板\n正文" } }
+		s.list_items = { { kind = "memo", index = 1 } }
+
+		local original_create = ui.create_memo_in_buffer
+		local created_content = nil
+		ui.create_memo_in_buffer = function(content) created_content = content end
+		ui.add_memo_command()
+		ui.create_memo_in_buffer = original_create
+
+		assert.are.same("正文", created_content)
+	end)
+
 	it("should update background cache when fetch returns after state changes", function()
 		ui.bind_list_keymaps(buf1)
 		local s = ui.get_session(buf1)
