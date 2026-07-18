@@ -24,7 +24,7 @@ The plugin is structured into distinct modules with minimal abstraction:
 - **`lua/memos/ui/search.lua`**: Internal search filter builder that converts plain text and `#tag` input to Memos CEL filters while passing raw CEL through.
 - **`lua/memos/ui/selection.lua`**: Internal selected list item helpers for current-row lookup, memo resolution, edit dispatch, copy ID, and cache removal.
 - **`lua/memos/ui/status.lua`**: Internal refresh-state coordination and statusline/header status text helpers.
-- **`lua/memos/template.lua`**: Templates composition helper (e.g. tag stripping, ensuring `#type/template` exists on save, archiving templates).
+- **`lua/memos/template.lua`**: Template composition helper. Tag stripping, creation, instantiation, rendering, and exact CEL filtering share `config.template_tag` (default `type/template`, without `#`); template saves ensure the configured tag exists before archiving.
 
 ---
 

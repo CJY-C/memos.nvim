@@ -84,6 +84,18 @@ describe("memos.ui.render", function()
 		assert.are.same("1. [T] Weekly note", line)
 	end)
 
+	it("should render templates using the configured Unicode tag", function()
+		local memos = require("memos")
+		memos.setup({ template_tag = "类型/模板" })
+		local session = test_session({ current_list_state = "TEMPLATES" })
+		local line = render.format_memo_line(session, test_config(), 1, {
+			name = "memos/1",
+			content = "#类型/模板\n每周回顾",
+		})
+		memos.setup({ template_tag = "type/template" })
+		assert.are.same("1. [T] 每周回顾", line)
+	end)
+
 	it("should align relation indicators using display width for CJK titles", function()
 		local old_columns = vim.o.columns
 		vim.o.columns = 50

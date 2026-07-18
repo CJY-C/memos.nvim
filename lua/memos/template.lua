@@ -2,29 +2,50 @@ local api = require("memos.api").new(function() return require("memos").config e
 
 local M = {}
 
-local TEMPLATE_TAG = "#type/template"
+local function template_tag()
+	return "#" .. (require("memos").config.template_tag or "type/template")
+end
+
+local function is_tag_byte(byte)
+	return byte and (byte >= 128 or (byte >= 48 and byte <= 57) or (byte >= 65 and byte <= 90)
+		or (byte >= 97 and byte <= 122) or byte == 45 or byte == 47 or byte == 95)
+end
 
 function M.strip_template_tag(content)
 	local text = tostring(content or "")
-	text = text:gsub("^%s*#type/template%s*\n?", "")
-	text = text:gsub("\n%s*#type/template%s*\n?", "\n")
-	text = text:gsub("%s+#type/template", "")
-	text = text:gsub("#type/template", "")
+	local marker = template_tag()
+	local from = 1
+	while true do
+		local start_pos, end_pos = text:find(marker, from, true)
+		if not start_pos then
+			break
+		end
+		if not is_tag_byte(text:byte(end_pos + 1)) then
+			text = text:sub(1, start_pos - 1) .. text:sub(end_pos + 1)
+			from = start_pos
+		else
+			from = end_pos + 1
+		end
+	end
+	text = text:gsub("[ \t]+\n", "\n")
+	text = text:gsub("\n[ \t]+", "\n")
+	text = text:gsub("[ \t][ \t]+", " ")
 	return vim.trim(text)
 end
 
 local function ensure_template_tag(content)
 	local text = tostring(content or "")
-	if text:find(TEMPLATE_TAG, 1, true) then
+	local marker = template_tag()
+	if M.strip_template_tag(text) ~= vim.trim(text) then
 		return text
 	end
 	if text == "" then
-		return TEMPLATE_TAG
+		return marker
 	end
 	if text:sub(-1) == "\n" then
-		return text .. TEMPLATE_TAG
+		return text .. marker
 	end
-	return text .. "\n" .. TEMPLATE_TAG
+	return text .. "\n" .. marker
 end
 
 local function extract_title(content)

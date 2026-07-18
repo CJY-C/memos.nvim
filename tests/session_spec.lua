@@ -19,6 +19,7 @@ describe("memos.ui ListSession encapsulation", function()
 		memos.setup({
 			host = "http://localhost:5230",
 			token = "fake-token",
+			template_tag = "type/template",
 		})
 	end)
 
@@ -597,7 +598,28 @@ describe("memos.ui ListSession encapsulation", function()
 		api_mod.Client.list_memos = original_list_memos
 
 		assert.are.same("ARCHIVED", list_opts.state)
-		assert.are.same("content.contains('#type/template') && (content.contains(\"work\"))", list_opts.filter)
+		assert.are.same('"type/template" in tags && (content.contains("work"))', list_opts.filter)
+	end)
+
+	it("should use the configured template tag for exact tag filtering", function()
+		memos.setup({ template_tag = "类型/模板" })
+		ui.bind_list_keymaps(buf1)
+		local s = ui.get_session(buf1)
+		s.current_list_state = "TEMPLATES"
+
+		local api_mod = require("memos.api")
+		local original_list_memos = api_mod.Client.list_memos
+		local list_opts = nil
+		api_mod.Client.list_memos = function(self_api, opts, callback)
+			list_opts = opts
+			callback({ memos = {}, next_page_token = "" }, nil)
+		end
+
+		s:fetch_memos({ append = false })
+		vim.wait(1000, function() return list_opts ~= nil end)
+		api_mod.Client.list_memos = original_list_memos
+
+		assert.are.same('"类型/模板" in tags', list_opts.filter)
 	end)
 
 	it("should update background cache when fetch returns after state changes", function()

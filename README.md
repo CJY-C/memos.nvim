@@ -165,6 +165,7 @@ require("memos").setup({
   list_order_by = "pinned desc, update_time desc",
   list_style = "default",
   auto_save = false,
+  template_tag = "type/template", -- no leading #; Unicode tags are supported
   window = {
     enable_float = true,
     width = 0.85,
@@ -229,7 +230,7 @@ content.contains("diary") && !("work" in tags)
 content.contains("journal") && ("daily" in tags || "private" in tags)
 ```
 
-In Template view, the plugin adds the template constraint around your filter, so searching `work` becomes `content.contains('#type/template') && (content.contains("work"))`.
+In Template view, the plugin adds an exact tags constraint using `template_tag`, so searching `work` with the default becomes `"type/template" in tags && (content.contains("work"))`.
 
 Copying a memo ID uses the memo resource name already present in the list response, such as `memos/abc123`. It does not issue any API request.
 
@@ -237,7 +238,7 @@ Toggling pin sends one PATCH request and then refreshes the list once in the bac
 
 Saving an existing memo sends one PATCH request that updates both `content` and `update_time`, so browser views and `update_time` ordering reflect edits made from Neovim.
 
-Saving a new template sends one POST request with the `#type/template` tag in the content, then one PATCH request to archive it because the Memos create API does not accept archive state in the create payload.
+Saving a new template sends one POST request with the configured `template_tag` (prefixed with `#`) in the content, then one PATCH request to archive it because the Memos create API does not accept archive state in the create payload. Template editing, instantiation, rendering, and filtering all use the same configured value.
 
 Deleting a memo asks for confirmation, sends one DELETE request, removes the memo from the local list immediately on success, and then refreshes the list once in the background. Force delete is intentionally not enabled.
 

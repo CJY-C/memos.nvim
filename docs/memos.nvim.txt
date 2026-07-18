@@ -121,6 +121,7 @@ Example:
     list_order_by = "pinned desc, update_time desc",
     list_style = "default",
     auto_save = false,
+    template_tag = "type/template", -- no leading #; Unicode is supported
     window = {
       enable_float = true,
       width = 0.85,
@@ -187,10 +188,10 @@ that look like CEL through unchanged, and Memos evaluates them on the server:
   content.contains("diary") && !("work" in tags)
   content.contains("journal") && ("daily" in tags || "private" in tags)
 <
-In Template view, the plugin adds the template constraint around your filter,
-so searching work becomes:
+In Template view, the plugin adds an exact tags constraint using template_tag,
+so searching work with the default becomes:
 >
-  content.contains('#type/template') && (content.contains("work"))
+  "type/template" in tags && (content.contains("work"))
 <
 
 Copying a memo ID uses the memo resource name already present in the list
@@ -202,9 +203,10 @@ background so server-side ordering is restored.
 Saving an existing memo sends one PATCH request that updates both content and
 update_time, so browser views and update_time ordering reflect Neovim edits.
 
-Saving a new template sends one POST request with the #type/template tag in the
-content, then one PATCH request to archive it because the Memos create API does
-not accept archive state in the create payload.
+Saving a new template sends one POST request with the configured template_tag
+(prefixed with #) in the content, then one PATCH request to archive it because
+the Memos create API does not accept archive state in the create payload.
+Editing, instantiation, rendering, and filtering use the same configured tag.
 
 A toggles between Normal and Archive views and sends one list request. x
 archives in the Normal view or restores in the Archive view, removes the memo

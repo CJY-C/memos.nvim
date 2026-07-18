@@ -1,6 +1,10 @@
 local template = require("memos.template")
 
 describe("memos.template", function()
+	before_each(function()
+		require("memos").setup({ template_tag = "type/template" })
+	end)
+
 	describe("strip_template_tag", function()
 		it("should strip tags from the beginning", function()
 			local input = "#type/template\nHello World"
@@ -18,6 +22,12 @@ describe("memos.template", function()
 			local input = "Hello #type/template World"
 			local output = template.strip_template_tag(input)
 			assert.are.same("Hello World", output)
+		end)
+
+		it("should strip a configured Unicode tag without stripping prefixed tags", function()
+			require("memos").setup({ template_tag = "类型/模板" })
+			assert.are.same("标题", template.strip_template_tag("#类型/模板\n标题"))
+			assert.are.same("#类型/模板化\n标题", template.strip_template_tag("#类型/模板化\n标题"))
 		end)
 	end)
 
@@ -58,6 +68,31 @@ describe("memos.template", function()
 	end)
 
 	describe("save_template_buffer", function()
+		it("should create templates with the configured tag", function()
+			require("memos").setup({ template_tag = "类型/模板" })
+			local api_mod = require("memos.api")
+			local old_create_memo = api_mod.Client.create_memo
+			local old_update_state = api_mod.Client.update_memo_state
+			local buf = vim.api.nvim_create_buf(false, true)
+			local created_content = nil
+			api_mod.Client.create_memo = function(self_api, content, callback)
+				created_content = content
+				callback({ name = "memos/unicode-template" }, nil, {})
+			end
+			api_mod.Client.update_memo_state = function(self_api, memo_name, state, callback)
+				callback(true, nil, {})
+			end
+
+			local done = false
+			template.save_template_buffer(buf, "每周", function(success) done = success end)
+			vim.wait(1000, function() return done end)
+
+			api_mod.Client.create_memo = old_create_memo
+			api_mod.Client.update_memo_state = old_update_state
+			vim.api.nvim_buf_delete(buf, { force = true })
+			assert.are.same("每周\n#类型/模板", created_content)
+		end)
+
 		it("should create templates then archive them", function()
 			local api_mod = require("memos.api")
 			local old_create_memo = api_mod.Client.create_memo

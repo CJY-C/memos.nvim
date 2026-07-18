@@ -1,10 +1,15 @@
 local M = {}
 
-local function template_filter(filter)
+local function cel_string(value)
+	return '"' .. tostring(value):gsub("\\", "\\\\"):gsub('"', '\\"') .. '"'
+end
+
+local function template_filter(filter, tag)
+	local constraint = cel_string(tag) .. " in tags"
 	if filter and filter ~= "" then
-		return "content.contains('#type/template') && (" .. filter .. ")"
+		return constraint .. " && (" .. filter .. ")"
 	end
-	return "content.contains('#type/template')"
+	return constraint
 end
 
 function M.save_current_state_cache(session)
@@ -52,7 +57,7 @@ function M.fetch_memos(session, ctx, opts)
 
 	if req_state == "TEMPLATES" then
 		state_param = "ARCHIVED"
-		filter_param = template_filter(session.current_filter)
+		filter_param = template_filter(session.current_filter, ctx.config.template_tag or "type/template")
 	end
 
 	if opts.append then

@@ -10,6 +10,7 @@ M.config = {
 	list_order_by = "pinned desc, update_time desc",
 	list_style = "default",
 	auto_save = false,
+	template_tag = "type/template",
 	window = {
 		enable_float = true,
 		width = 0.85,
@@ -161,6 +162,10 @@ function M.setup(opts)
 	apply_explicit_credentials(final_config, opts)
 
 	final_config.page_size = tonumber(final_config.page_size) or 50
+	if not is_non_empty(final_config.template_tag) or final_config.template_tag:sub(1, 1) == "#" then
+		vim.notify("Memos template_tag must be a non-empty tag without a leading #: " .. tostring(final_config.template_tag), vim.log.levels.WARN)
+		final_config.template_tag = "type/template"
+	end
 	local host_err = validate_host_value(final_config.host)
 	if host_err then
 		vim.notify(host_err, vim.log.levels.WARN)
