@@ -407,6 +407,27 @@ describe("memos.ui ListSession encapsulation", function()
 		assert.are.same(1, counts.edit)
 	end)
 
+	it("should keep floating pane borders from overlapping memo text", function()
+		memos.setup({ window = { enable_float = true, width = 0.7, height = 0.7 } })
+		local restore_list = stub_list_memos()
+		local list_window = require("memos.ui.list_window")
+
+		for _, layout in ipairs({ "vsplit", "split" }) do
+			local buf = ui.open_edit_buffer("# Title\n\n梦里在一个幻想的营地中", layout)
+			local list = vim.api.nvim_win_get_config(list_window.find_memos_float_window("list"))
+			local edit = vim.api.nvim_win_get_config(list_window.find_memos_float_window("edit"))
+			if layout == "vsplit" then
+				assert.are.same(list.col + list.width + 2, edit.col)
+			else
+				assert.are.same(list.row + list.height + 2, edit.row)
+			end
+			close_memos_floats()
+			vim.api.nvim_buf_delete(buf, { force = true })
+		end
+
+		restore_list()
+	end)
+
 	it("should keep Ctrl-W navigation inside the floating split workspace", function()
 		memos.setup({ window = { enable_float = true, width = 0.7, height = 0.7 } })
 		local restore_list = stub_list_memos()

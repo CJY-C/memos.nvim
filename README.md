@@ -133,7 +133,8 @@ By default, `<CR>`, `:MemosCreate`, and new template creation open a vertical
 list+edit split in the Memos workspace. `o` and `v` explicitly choose horizontal
 or vertical splits. Toggling `:Memos` closes or restores the whole workspace,
 including an active edit pane. Set `window.default_open = "enew"` to restore a
-single-pane default.
+single-pane default. Floating split panes meet at their borders without
+covering memo text.
 
 Inside a floating split workspace, `<C-w>h`/`<C-w>l` move between vertical
 panes and `<C-w>k`/`<C-w>j` move between horizontal panes; `<C-w>w` always

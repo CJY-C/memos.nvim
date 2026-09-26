@@ -186,8 +186,11 @@ local function open_workspace(ctx, layout, edit_buf, focus_role)
 	workspace.edit_buf = edit_buf
 
 	if layout == "vsplit" and edit_buf and vim.api.nvim_buf_is_valid(edit_buf) then
-		local list_width = math.max(math.floor(area.width * 0.4), 20)
-		local edit_width = math.max(area.width - list_width, 20)
+		local list_width = math.floor(area.width * 0.4)
+		if area.width >= 42 then
+			list_width = math.max(list_width, 20)
+		end
+		local edit_width = area.width - list_width - 2
 		open_pane(ctx, list_buf, "list", {
 			row = area.row,
 			col = area.col,
@@ -197,14 +200,17 @@ local function open_workspace(ctx, layout, edit_buf, focus_role)
 		})
 		open_pane(ctx, edit_buf, "edit", {
 			row = area.row,
-			col = area.col + list_width,
+			col = area.col + list_width + 2,
 			width = edit_width,
 			height = area.height,
 			enter = target_focus == "edit",
 		})
 	elseif layout == "split" and edit_buf and vim.api.nvim_buf_is_valid(edit_buf) then
-		local list_height = math.max(math.floor(area.height * 0.4), 5)
-		local edit_height = math.max(area.height - list_height, 5)
+		local list_height = math.floor(area.height * 0.4)
+		if area.height >= 12 then
+			list_height = math.max(list_height, 5)
+		end
+		local edit_height = area.height - list_height - 2
 		open_pane(ctx, list_buf, "list", {
 			row = area.row,
 			col = area.col,
@@ -213,7 +219,7 @@ local function open_workspace(ctx, layout, edit_buf, focus_role)
 			enter = target_focus ~= "edit",
 		})
 		open_pane(ctx, edit_buf, "edit", {
-			row = area.row + list_height,
+			row = area.row + list_height + 2,
 			col = area.col,
 			width = area.width,
 			height = edit_height,

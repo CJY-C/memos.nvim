@@ -38,6 +38,10 @@ jump list for Memos buffer navigation. Editing buffers are marked with
 dirty titles without requesting server data. Refresh titles and the existing
 list header after buffer modification, save completion, or buffer removal.
 
+When positioning two bordered floats, include both border cells in the next
+pane's row or column offset. Overlapping floats can hide the first display
+cells of memo text until a cursor movement repaints the edit pane.
+
 Populate edit buffers before displaying them, then set `filetype=markdown`
 after the edit window is stable. Markdown renderers can attach on `FileType`
 and capture the current window for their first update. If that event fires
