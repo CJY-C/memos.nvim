@@ -8,14 +8,20 @@ local function default_open_cmd(ctx)
 	return "vsplit"
 end
 
+local function create_edit_buffer(content)
+	local buf = vim.api.nvim_create_buf(false, true)
+	vim.b[buf].memos_edit_buffer = true
+	if type(content) == "string" then
+		vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(content, "\n"))
+	end
+	vim.bo[buf].filetype = "markdown"
+	return buf
+end
+
 function M.open_edit_buffer(ctx, content, open_cmd)
 	if ctx.config.window and ctx.config.window.enable_float and ctx.open_float_edit_window then
-		local buf = vim.api.nvim_create_buf(false, true)
-		vim.b[buf].memos_edit_buffer = true
+		local buf = create_edit_buffer(content)
 		ctx.open_float_edit_window(buf, open_cmd or "enew")
-		if type(content) == "string" then
-			vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(content, "\n"))
-		end
 		return buf
 	end
 
@@ -34,19 +40,15 @@ function M.open_edit_buffer(ctx, content, open_cmd)
 			pcall(vim.api.nvim_win_close, source_win, true)
 		end
 
-		local buf = vim.api.nvim_create_buf(false, true)
+		local buf = create_edit_buffer(content)
 		local split_dir = open_cmd == "vsplit" and "right" or "below"
 		vim.api.nvim_open_win(buf, true, {
 			split = split_dir,
 		})
-
-		if type(content) == "string" then
-			vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(content, "\n"))
-		end
 		return buf
 	end
 
-	local buf = vim.api.nvim_create_buf(false, true)
+	local buf = create_edit_buffer(content)
 	local used_float = false
 	if ctx.config.window and ctx.config.window.enable_float then
 		local float_win = ctx.find_memos_float_window()
@@ -69,9 +71,6 @@ function M.open_edit_buffer(ctx, content, open_cmd)
 		else
 			vim.api.nvim_win_set_buf(0, buf)
 		end
-	end
-	if type(content) == "string" then
-		vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(content, "\n"))
 	end
 	return buf
 end

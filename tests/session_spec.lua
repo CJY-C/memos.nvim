@@ -315,6 +315,39 @@ describe("memos.ui ListSession encapsulation", function()
 		vim.api.nvim_open_win = original_open_win
 	end)
 
+	it("should expose complete Markdown content when an edit pane first enters", function()
+		local content = "# First heading\n\nA paragraph"
+		for _, enable_float in ipairs({ false, true }) do
+			memos.setup({ window = { enable_float = enable_float, width = 0.7, height = 0.7 } })
+			local restore_list = enable_float and stub_list_memos() or nil
+			local entered = {}
+			local autocmd = vim.api.nvim_create_autocmd("BufWinEnter", {
+				callback = function(ev)
+					if vim.b[ev.buf].memos_edit_buffer then
+						entered[#entered + 1] = {
+							filetype = vim.bo[ev.buf].filetype,
+							lines = vim.api.nvim_buf_get_lines(ev.buf, 0, -1, false),
+						}
+					end
+				end,
+			})
+
+			local buf = ui.open_edit_buffer(content, "vsplit")
+			vim.api.nvim_del_autocmd(autocmd)
+			if restore_list then
+				restore_list()
+			end
+
+			assert.are.same(1, #entered)
+			assert.are.same("markdown", entered[1].filetype)
+			assert.are.same({ "# First heading", "", "A paragraph" }, entered[1].lines)
+			if not enable_float then
+				vim.api.nvim_win_close(vim.api.nvim_get_current_win(), true)
+			end
+			vim.api.nvim_buf_delete(buf, { force = true })
+		end
+	end)
+
 	it("should open vsplit edit panes inside the Memos float workspace", function()
 		memos.setup({
 			window = {

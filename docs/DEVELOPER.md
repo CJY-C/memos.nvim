@@ -38,6 +38,11 @@ jump list for Memos buffer navigation. Editing buffers are marked with
 dirty titles without requesting server data. Refresh titles and the existing
 list header after buffer modification, save completion, or buffer removal.
 
+Populate edit buffers and set `filetype=markdown` before displaying them in a
+window. Markdown renderers can attach on `FileType` and render on `BufWinEnter`;
+opening an empty buffer first can leave the initial memo display unrendered
+until the cursor moves.
+
 ---
 
 ## 2. The Stale Cache System
