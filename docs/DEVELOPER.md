@@ -38,10 +38,11 @@ jump list for Memos buffer navigation. Editing buffers are marked with
 dirty titles without requesting server data. Refresh titles and the existing
 list header after buffer modification, save completion, or buffer removal.
 
-Populate edit buffers and set `filetype=markdown` before displaying them in a
-window. Markdown renderers can attach on `FileType` and render on `BufWinEnter`;
-opening an empty buffer first can leave the initial memo display unrendered
-until the cursor moves.
+Populate edit buffers before displaying them, then set `filetype=markdown`
+after the edit window is stable. Markdown renderers can attach on `FileType`
+and capture the current window for their first update. If that event fires
+while the floating workspace is still replacing windows, the renderer can
+discard its first update and leave the memo unrendered until the cursor moves.
 
 ---
 

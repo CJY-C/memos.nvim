@@ -14,7 +14,6 @@ local function create_edit_buffer(content)
 	if type(content) == "string" then
 		vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(content, "\n"))
 	end
-	vim.bo[buf].filetype = "markdown"
 	return buf
 end
 

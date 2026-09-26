@@ -315,32 +315,48 @@ describe("memos.ui ListSession encapsulation", function()
 		vim.api.nvim_open_win = original_open_win
 	end)
 
-	it("should expose complete Markdown content when an edit pane first enters", function()
+	it("should populate memo content before window entry and set Markdown after the pane opens", function()
 		local content = "# First heading\n\nA paragraph"
 		for _, enable_float in ipairs({ false, true }) do
 			memos.setup({ window = { enable_float = enable_float, width = 0.7, height = 0.7 } })
 			local restore_list = enable_float and stub_list_memos() or nil
 			local entered = {}
-			local autocmd = vim.api.nvim_create_autocmd("BufWinEnter", {
+			local filetypes = {}
+			local entry_autocmd = vim.api.nvim_create_autocmd("BufWinEnter", {
 				callback = function(ev)
 					if vim.b[ev.buf].memos_edit_buffer then
-						entered[#entered + 1] = {
-							filetype = vim.bo[ev.buf].filetype,
+						entered[#entered + 1] = vim.api.nvim_buf_get_lines(ev.buf, 0, -1, false)
+					end
+				end,
+			})
+			local filetype_autocmd = vim.api.nvim_create_autocmd("FileType", {
+				pattern = "markdown",
+				callback = function(ev)
+					if vim.b[ev.buf].memos_edit_buffer then
+						filetypes[#filetypes + 1] = {
+							buf = ev.buf,
+							win = vim.fn.bufwinid(ev.buf),
 							lines = vim.api.nvim_buf_get_lines(ev.buf, 0, -1, false),
 						}
 					end
 				end,
 			})
 
-			local buf = ui.open_edit_buffer(content, "vsplit")
-			vim.api.nvim_del_autocmd(autocmd)
+			ui.open_memo_for_edit({ name = "memos/first-open-test", content = content }, "vsplit")
+			local buf = vim.api.nvim_get_current_buf()
+			vim.api.nvim_del_autocmd(entry_autocmd)
+			vim.api.nvim_del_autocmd(filetype_autocmd)
 			if restore_list then
 				restore_list()
 			end
 
 			assert.are.same(1, #entered)
-			assert.are.same("markdown", entered[1].filetype)
-			assert.are.same({ "# First heading", "", "A paragraph" }, entered[1].lines)
+			assert.are.same({ "# First heading", "", "A paragraph" }, entered[1])
+			assert.are.same(1, #filetypes)
+			assert.are.same(buf, filetypes[1].buf)
+			assert.is_true(vim.api.nvim_win_is_valid(filetypes[1].win))
+			assert.are.same(buf, vim.api.nvim_win_get_buf(filetypes[1].win))
+			assert.are.same(entered[1], filetypes[1].lines)
 			if not enable_float then
 				vim.api.nvim_win_close(vim.api.nvim_get_current_win(), true)
 			end
